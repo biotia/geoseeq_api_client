@@ -1,0 +1,76 @@
+
+import gzip
+from random import randint
+from pangea_api import (
+    Knex,
+    User,
+    Organization,
+)
+from requests.exceptions import HTTPError
+
+
+configfile: "config.yaml"
+
+"""
+Note: ordinarily we would not want a module name
+to be random. We only make the module name random
+for this example so that it can be run many times
+by many different people on the same dataset.
+"""
+UPLOAD_MODULE_NAME = f'example::simple_snakemake_example_{randint(0, 1000 * 1000)}'
+UPLOAD_FIELD_NAME = 'basic_read_stats'
+
+KNEX = Knex()
+User(KNEX, config['email'], config['password']).login()
+ORG = Organization(KNEX, config['organization_name']).get()
+GRP = ORG.sample_group(config['sample_group_name']).get()
+SAMPLE_NAMES = [
+    sample.name
+    for sample in GRP.get_samples()
+    if not sample.analysis_result(UPLOAD_MODULE_NAME).exists()
+]
+
+
+rule all:
+    input:
+        [f'{sample_name}.result_uploaded.flag' for sample_name in SAMPLE_NAMES]
+
+
+rule download_fastq_from_pangea:
+    output: '{sample_name}_reads.fq.gz'
+    run:
+        sample = GRP.sample(wildcards.sample_name).get()
+        ar = sample.analysis_result(config['module_name']).get()
+        field = ar.field(config['field_name']).get()
+        field.download_file(filename=output[0])
+
+
+rule process_fastq:
+    input: '{sample_name}_reads.fq.gz'
+    output: '{sample_name}_example_stats.tsv'
+    run:
+        with gzip.open(input[0], 'rt') as fastq:
+            read_count, gc_count, total_base_count = 0, 0, 0
+            for i, line in enumerate(fastq):
+                if i != 1:  # only process the reads from the fastq
+                    continue
+                read_count += 1
+                for base in line.strip().upper():
+                    total_base_count += 1
+                    if base in ['G', 'C']:
+                        gc_count += 1
+            gc_fraction = gc_count / total_base_count
+        with open(output[0], 'w') as f:
+            f.write(f'read_count\t{read_count}\n')
+            f.write(f'gc_fraction\t{gc_count}\n')
+
+
+rule upload_result_to_pangea:
+    input: '{sample_name}_example_stats.tsv'
+    output: '{sample_name}.result_uploaded.flag'
+    run:
+        sample = GRP.sample(wildcards.sample_name).get()
+        ar = sample.analysis_result(UPLOAD_MODULE_NAME).create()
+        field = ar.field(UPLOAD_FIELD_NAME).create()
+        field.upload_file(input[0])
+        open(output[0], 'w').close()
