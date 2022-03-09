@@ -10,7 +10,7 @@ from os.path import join, basename, getsize
 from .remote_object import RemoteObject, RemoteObjectError
 from urllib.request import urlretrieve
 from tempfile import NamedTemporaryFile
-
+from .utils import md5_checksum
 from .constants import FIVE_MB
 
 logger = logging.getLogger('pangea_api')  # Same name as calling module
@@ -390,10 +390,18 @@ class AnalysisResultField(RemoteObject):
             self._cached_filename = filename
         return filename
 
-    def upload_small_file(self, filepath):
+    def upload_small_file(self, filepath, optional_fields={}):
         url = f'/{self.canon_url()}/{self.uuid}/upload_s3'
         filename = basename(filepath)
-        response = self.knex.post(url, json={'filename': filename})
+        optional_fields.update({
+            'md5_checksum': md5_checksum(filepath),
+            'file_size_bytes': getsize(filepath),
+        })
+        data = {
+            'filename': filename,
+            'optional_fields': optional_fields,
+        }
+        response = self.knex.post(url, json=data)
         with open(filepath, 'rb') as f:
             files = {'file': (filename, f)}
             requests.post(  # Not a call to pangea so we do not use knex
@@ -403,15 +411,22 @@ class AnalysisResultField(RemoteObject):
             )
         return self
 
-    def upload_large_file(self, filepath, file_size, chunk_size=FIVE_MB, max_retries=3, logger=lambda x: x):
+    def upload_large_file(self, filepath, file_size,
+                          optional_fields={}, chunk_size=FIVE_MB, max_retries=3, logger=lambda x: x):
         n_parts = int(file_size / chunk_size) + 1
+        optional_fields.update({
+            'md5_checksum': md5_checksum(filepath),
+            'file_size_bytes': getsize(filepath),
+        })
+        data = {
+            'filename': basename(filepath),
+            'n_parts': n_parts,
+            'stance': 'upload-multipart',
+            'optional_fields': optional_fields,
+        }
         response = self.knex.post(
             f'/{self.canon_url()}/{self.uuid}/upload_s3',
-            json={
-                'filename': basename(filepath),
-                'n_parts': n_parts,
-                'stance': 'upload-multipart',
-            }
+            json=data
         )
         parts, urls, upload_id = [], response['urls'], response['upload_id']
         logger(f'[INFO] Starting upload for "{filepath}"')
@@ -451,7 +466,7 @@ class AnalysisResultField(RemoteObject):
         file_size = getsize(resolved_path)
         if file_size >= multipart_thresh:
             return self.upload_large_file(filepath, file_size, **kwargs)
-        return self.upload_small_file(filepath)
+        return self.upload_small_file(filepath, **kwargs)
 
     def __del__(self):
         if self._temp_filename and self._cached_filename:

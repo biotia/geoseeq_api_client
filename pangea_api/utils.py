@@ -1,4 +1,4 @@
-
+import hashlib
 import logging
 from .file_system_cache import FileSystemCache
 
@@ -25,3 +25,12 @@ def paginated_iterator(knex, initial_url, error_handler=None):
     if next_page:
         for blob in paginated_iterator(knex, next_page):
             yield blob
+
+
+
+def md5_checksum(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
