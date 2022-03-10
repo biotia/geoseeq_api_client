@@ -27,7 +27,6 @@ def paginated_iterator(knex, initial_url, error_handler=None):
             yield blob
 
 
-
 def md5_checksum(fname):
     hash_md5 = hashlib.md5()
     with open(fname, "rb") as f:

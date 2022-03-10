@@ -85,4 +85,4 @@ def upload_single_fastq(ar, sequencing_type, filepath, private):
             },
             logger=lambda x: click.echo(x, err=True),
         ) 
-    return reads 
+    return reads
