@@ -17,10 +17,11 @@ class SampleGroup(RemoteObject):
         'long_description',
         'description',
         'bucket',
+        'storage_provider_name',
     ]
     parent_field = 'org'
 
-    def __init__(self, knex, org, name, metadata={}, is_library=False, is_public=False):
+    def __init__(self, knex, org, name, metadata={}, is_library=False, is_public=False, storage_provider='default'):
         super().__init__(self)
         self.knex = knex
         self.org = org
@@ -32,6 +33,7 @@ class SampleGroup(RemoteObject):
         self._get_sample_cache = []
         self._get_result_cache = []
         self.metadata = metadata
+        self.storage_provider = storage_provider
 
     def nested_url(self):
         return self.org.nested_url() + f'/sample_groups/{self.name}'
@@ -88,6 +90,7 @@ class SampleGroup(RemoteObject):
             'name': self.name,
             'is_library': self.is_library,
             'metadata': self.metadata,
+            'storage_provider_name': self.storage_provider,
         })
         self.load_blob(blob)
 

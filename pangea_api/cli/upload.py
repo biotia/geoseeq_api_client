@@ -15,6 +15,11 @@ from .. import (
 )
 from .utils import use_common_state
 from .constants import *
+from .fastq_utils import (
+    group_paired_end_paths,
+    upload_fastq_pair,
+    upload_single_fastq,
+)
 
 
 @click.group('upload')
@@ -23,7 +28,7 @@ def cli_upload():
 
 dryrun_option = click.option('--dryrun/--wetrun', default=False, help='Print what will be created without actually creating it')
 overwrite_option = click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing samples and data')
-module_option = lambda x: click.option('-m', '--module-name', default=x, help='Name for the module that will store the data')
+module_option = lambda x: click.option('-m', '--module-name', type=click.Choice(x), default=x[0], help='Name for the module that will store the data')
 private_option = click.option('--private/--public', default=True, help='Make the reads private.')
 tag_option = click.option('-t', '--tag', multiple=True, help='Add tags to newly created samples.')
 
@@ -36,16 +41,15 @@ lib_arg = click.argument('library_name')
 @overwrite_option
 @private_option
 @tag_option
-@module_option(PAIRED_END)
+@module_option(['short_read::paired_end'])
 @click.option('-d', '--delim', default=None, help='Split sample name on this string')
 @click.option('-1', '--ext-1', default='.R1.fastq.gz')
 @click.option('-2', '--ext-2', default='.R2.fastq.gz')
 @org_arg
 @lib_arg
 @click.argument('file_list', type=click.File('r'))
-def cli_upload_pe_reads(state, overwrite, private, tag, module_name,
-                     delim, ext_1, ext_2,
-                     org_name, library_name, file_list):
+def cli_upload_pe_reads(state, overwrite, private, tag, module_name, delim,
+                        ext_1, ext_2, org_name, library_name, file_list):
     """Upload paired end reads to Pangea.
 
     This command will upload paired end reads to the specified
@@ -59,44 +63,22 @@ def cli_upload_pe_reads(state, overwrite, private, tag, module_name,
     name. 
 
     `file_list` is a file with a list of fastq filepaths, one per line
+
+    TODO: support multi lane files.
     """
     knex = state.get_knex()
     org = Organization(knex, org_name).get()
     lib = org.sample_group(library_name).get()
     tags = [Tag(knex, tag_name).get() for tag_name in tag]
-    samples = {}
-    for filepath in (l.strip() for l in file_list):
-        if ext_1 in filepath:
-            sname = filepath.split(ext_1)[0]
-            key = 'read_1'
-        elif ext_2 in filepath:
-            sname = filepath.split(ext_2)[0]
-            key = 'read_2'
-        else:
-            continue
-        sname = sname.split('/')[-1]
-        if delim:
-            sname = sname.split(delim)[0]
-        if sname not in samples:
-            samples[sname] = {}
-        samples[sname][key] = filepath
-
+    samples = group_paired_end_paths(file_list, ext_1, ext_2, delim=delim)
     for sname, reads in samples.items():
-        if len(reads) != 2:
-            raise ValueError(f'Sample {sname} has wrong number of reads: {reads}')
         sample = lib.sample(sname).idem()
         for tag in tags:
             tag(sample)
         ar = sample.analysis_result(module_name)
-        try:
-            if overwrite:
-                raise HTTPError()
-            r1 = ar.field('read_1').get()
-            r2 = ar.field('read_2').get()
-        except HTTPError:
-            ar.is_private = private
-            r1 = ar.field('read_1').idem().upload_file(reads['read_1'], logger=lambda x: click.echo(x, err=True))
-            r2 = ar.field('read_2').idem().upload_file(reads['read_2'], logger=lambda x: click.echo(x, err=True))
+        r1, r2 = upload_fastq_pair(
+            ar, reads['read_1'], reads['read_2'], private, overwrite=overwrite
+        )
         print(sample, ar, r1, r2, file=state.outfile)
 
 
@@ -106,15 +88,13 @@ def cli_upload_pe_reads(state, overwrite, private, tag, module_name,
 @private_option
 @dryrun_option
 @tag_option
-@module_option(SINGLE_END)
-@click.option('-f', '--field-name', default='reads', help='Name for the field that will store the data')
+@module_option(['short_read::single_end', 'long_read::nanopore'])
 @click.option('-e', '--ext', default='.fastq.gz')
 @org_arg
 @lib_arg
 @click.argument('file_list', type=click.File('r'))
 def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
-                     field_name, ext,
-                     org_name, library_name, file_list):
+                        ext, org_name, library_name, file_list):
     """Upload single ended reads to Pangea, including nanopore reads.
 
     This command will upload single reads to the specified
@@ -124,15 +104,6 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
     of the fastq files. Sample names will be determined by removing
     extensions from each file or, if a delimiter string is set by
     taking everything before that string.
-
-    In most cases `--module-name` should be one of:
-     - `raw::single_short_reads`
-     - `raw::basecalled_nanopore_reads`
-
-    In most cases `--field-name` should be one of:
-     - `reads`
-     - `fast5`
-
 
     `file_list` is a file with a list of fastq filepaths, one per line
     """
@@ -149,14 +120,7 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
         for tag in tags:
             tag(sample)
         ar = sample.analysis_result(module_name)
-        try:
-            if overwrite:
-                raise HTTPError()
-            reads = ar.field(field_name).get()
-        except HTTPError:
-            ar.is_private = private
-            reads = ar.field(field_name).idem()
-            reads.upload_file(filepath, logger=lambda x: click.echo(x, err=True))
+        reads = upload_single_fastq(ar, module_name, filepath, private)
         print(sample, ar, reads, file=outfile)
 
 
