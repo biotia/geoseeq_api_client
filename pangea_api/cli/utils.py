@@ -11,16 +11,18 @@ class State(object):
     def __init__(self):
         self.email = None
         self.password = None
-        self.endpoint = 'https://pangeabio.io'
+        self.api_token = None
+        self.endpoint = 'https://localhost:8000'
         self.outfile = None
         self.log_level = 20
 
     def get_knex(self):
         logger.setLevel(self.log_level)
         knex = Knex(self.endpoint)
-        if self.email and self.password:
-            User(knex, self.email, self.password).login()
+        if self.api_token:
+            knex.add_api_token(self.api_token)
         return knex
+
 
 pass_state = click.make_pass_decorator(State, ensure=True)
 
@@ -50,15 +52,15 @@ def email_option(f):
                         callback=callback)(f)
 
 
-def password_option(f):
+def api_token_option(f):
     def callback(ctx, param, value):
         state = ctx.ensure_object(State)
-        state.password = str(value)
+        state.api_token = str(value)
         return value
-    return click.option('-p', '--password',
-                        envvar='PANGEA_PASS',
+    return click.option('-t', '--token',
+                        envvar='PANGEA_API_TOKEN',
                         expose_value=False,
-                        help='Your Pangea password.',
+                        help='Your Pangea API token.',
                         callback=callback)(f)
 
 
@@ -68,7 +70,7 @@ def endpoint_option(f):
         state.endpoint = str(value)
         return value
     return click.option('--endpoint',
-                        default='https://pangeabio.io',
+                        default='http://localhost:8000',
                         expose_value=False,
                         help='The URL to use for Pangea.',
                         callback=callback)(f)
@@ -88,8 +90,8 @@ def outfile_option(f):
 
 def common_options(f):
     f = outfile_option(f)
-    f = password_option(f)
     f = email_option(f)
+    f = api_token_option(f)
     f = log_level_option(f)
     f = endpoint_option(f)
     return f
@@ -104,5 +106,3 @@ def use_common_state(f):
 def is_uuid(name):
     chunks = name.split('-')
     return len(chunks) == 5
-
-
