@@ -10,7 +10,6 @@ class State(object):
 
     def __init__(self):
         self.email = None
-        self.password = None
         self.api_token = None
         self.endpoint = 'https://localhost:8000'
         self.outfile = None
@@ -57,7 +56,7 @@ def api_token_option(f):
         state = ctx.ensure_object(State)
         state.api_token = str(value)
         return value
-    return click.option('-t', '--token',
+    return click.option('-a', '--api-token',
                         envvar='PANGEA_API_TOKEN',
                         expose_value=False,
                         help='Your Pangea API token.',

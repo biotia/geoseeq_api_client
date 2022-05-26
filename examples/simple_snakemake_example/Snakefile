@@ -21,7 +21,7 @@ UPLOAD_MODULE_NAME = f'example::simple_snakemake_example_{randint(0, 1000 * 1000
 UPLOAD_FIELD_NAME = 'basic_read_stats'
 
 KNEX = Knex()
-User(KNEX, config['email'], config['password']).login()
+KNEX.add_api_token(config['api_token'])
 ORG = Organization(KNEX, config['organization_name']).get()
 GRP = ORG.sample_group(config['sample_group_name']).get()
 SAMPLE_NAMES = [

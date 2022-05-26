@@ -44,6 +44,7 @@ class SampleGroup(RemoteObject):
             for field in self.remote_fields if hasattr(self, field)
         }
         data['organization'] = self.org.uuid
+        data['description'] = self.description if self.description else self.name
         url = f'sample_groups/{self.uuid}'
         self.knex.put(url, json=data)
 

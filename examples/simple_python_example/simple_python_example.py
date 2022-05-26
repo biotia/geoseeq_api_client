@@ -89,13 +89,12 @@ def handle_sample(sample, module_name, field_name):
 
 
 @click.command()
-@click.option('-e', '--email', help='Your login email for Pangea')
-@click.option('-p', '--password', help='Your password for Pangea')
+@click.option('-a', '--api-token', help='Your Pangea API token')
 @click.option('-m', '--module-name', default='raw::paired_short_reads')
 @click.option('-f', '--field-name', default='read_1')
 @click.argument('organization_name')
 @click.argument('sample_group_name')
-def main(email, password, module_name, field_name, organization_name, sample_group_name):
+def main(api_token, module_name, field_name, organization_name, sample_group_name):
     """Example script using Pangea and Python to analyze data.
 
     This script will process every sample in a given sample group.
@@ -103,7 +102,7 @@ def main(email, password, module_name, field_name, organization_name, sample_gro
     basic statistics for each read.
     """
     knex = Knex()
-    User(knex, email, password).login()
+    knex.add_api_token(api_token)
     org = Organization(knex, organization_name).get()
     grp = org.sample_group(sample_group_name).get()
     click.echo(f'Using result module name: {UPLOAD_MODULE_NAME}')
