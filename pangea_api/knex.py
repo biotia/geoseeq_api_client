@@ -7,7 +7,7 @@ from glob import glob
 
 from .file_system_cache import FileSystemCache
 
-DEFAULT_ENDPOINT = 'http://localhost:8000'
+DEFAULT_ENDPOINT = 'https://pangeabio.io'
 
 
 logger = logging.getLogger('pangea_api')  # Same name as calling module

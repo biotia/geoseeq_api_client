@@ -17,7 +17,7 @@ def cli_user_info(state):
     click.echo(json.dumps(response, indent=4, sort_keys=True))
 
 
-# New endpoint has to be created on server and can ve done with clerk backend API
+# New endpoint has to be created on server and can be done with clerk backend API
 
 # @cli_user.command('change-password')
 # @use_common_state

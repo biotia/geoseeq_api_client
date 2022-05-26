@@ -11,7 +11,7 @@ class State(object):
     def __init__(self):
         self.email = None
         self.api_token = None
-        self.endpoint = 'https://localhost:8000'
+        self.endpoint = 'https://pangeabio.io'
         self.outfile = None
         self.log_level = 20
 
@@ -69,7 +69,7 @@ def endpoint_option(f):
         state.endpoint = str(value)
         return value
     return click.option('--endpoint',
-                        default='http://localhost:8000',
+                        default='https://pangeabio.io',
                         expose_value=False,
                         help='The URL to use for Pangea.',
                         callback=callback)(f)

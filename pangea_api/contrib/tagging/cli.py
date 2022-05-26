@@ -1,10 +1,8 @@
 
 import click
-from pyrsistent import T
 from .tag import Tag
 from ... import (
     Knex,
-    User,
     Organization,
 )
 import logging
