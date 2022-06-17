@@ -31,7 +31,7 @@ def cli_ncbi_link():
 
 
 @cli_ncbi_link.command('bioproject')
-@click.option('-e', '--email', envvar='PANGEA_USER')
+@click.option('-e', '--email')
 @click.option('-a', '--api-token', envvar='PANGEA_API_TOKEN')
 @click.option('--endpoint', default='https://pangea.gimmebio.com')
 @click.argument('org_name')

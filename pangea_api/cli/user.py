@@ -9,7 +9,7 @@ def cli_user():
     pass
 
 
-@cli_user.command('info')
+@cli_user.command('info', deprecated=True)
 @use_common_state
 def cli_user_info(state):
     knex = state.get_knex()

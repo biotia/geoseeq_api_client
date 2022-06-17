@@ -9,7 +9,6 @@ logger = logging.getLogger('pangea_api')
 class State(object):
 
     def __init__(self):
-        self.email = None
         self.api_token = None
         self.endpoint = 'https://pangeabio.io'
         self.outfile = None
@@ -36,18 +35,6 @@ def log_level_option(f):
                         default=20,
                         envvar='PANGEA_CLI_LOG_LEVEL',
                         expose_value=False,
-                        callback=callback)(f)
-
-
-def email_option(f):
-    def callback(ctx, param, value):
-        state = ctx.ensure_object(State)
-        state.email = str(value)
-        return value
-    return click.option('-e', '--email',
-                        envvar='PANGEA_USER',
-                        expose_value=False,
-                        help='Your Pangea login email.',
                         callback=callback)(f)
 
 
@@ -89,7 +76,6 @@ def outfile_option(f):
 
 def common_options(f):
     f = outfile_option(f)
-    f = email_option(f)
     f = api_token_option(f)
     f = log_level_option(f)
     f = endpoint_option(f)
