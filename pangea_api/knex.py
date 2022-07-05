@@ -84,28 +84,8 @@ class Knex:
                 url += '?' + opts
         return url
 
-    def add_auth_token(self, token):
+    def add_api_token(self, token):
         self.auth = TokenAuth(token)
-
-    def login(self, username, password):
-        d = self._logging_info(email=username, password='*' * len(password))
-        logger.debug(f'Sending log in request. {d}')
-        blob = self.cache.get_cached_blob(username)
-        if not blob:
-            response = requests.post(
-                f'{self.endpoint_url}/auth/token/login',
-                headers=self.headers,
-                json={
-                    'email': username,
-                    'password': password,
-                }
-            )
-            response.raise_for_status()
-            logger.debug(f'Received log in response. {response.json()}')
-            blob = response.json()
-            self.cache.cache_blob(username, blob)
-        self.add_auth_token(blob['auth_token'])
-        return self
 
     def _handle_response(self, response, json_response=True):
         try:

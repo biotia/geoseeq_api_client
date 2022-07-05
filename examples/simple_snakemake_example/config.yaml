@@ -1,6 +1,4 @@
-
-email: 'demo_user@pangeabio.io'
-password: 'demo_user_password'
+api_token: 'demo_user_api_token'
 organization_name: 'Pangea Demo'
 sample_group_name: 'Simple Demo Group'
 module_name: 'raw::paired_short_reads'

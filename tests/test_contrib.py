@@ -31,11 +31,9 @@ class TestPangeaApiContribClient(TestCase):
 
     def setUp(self):
         self.knex = Knex(ENDPOINT)
-        self.user = User(self.knex, 'foo@bar.com', 'Foobar22')
-        try:
-            self.user.register()
-        except HTTPError:
-            self.user.login()
+        # Creates a test user and an API token for the user in database. Returns the token.
+        api_token = self.knex.post('/users/test-user', json={'email': f'{random_str()}@gmail.com'})
+        self.knex.add_api_token(api_token)
 
     def test_create_tag(self):
         """Test that we can create an tag."""

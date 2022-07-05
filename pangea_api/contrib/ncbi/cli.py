@@ -31,12 +31,12 @@ def cli_ncbi_link():
 
 
 @cli_ncbi_link.command('bioproject')
-@click.option('-e', '--email', envvar='PANGEA_USER')
-@click.option('-p', '--password', envvar='PANGEA_PASS')
+@click.option('-e', '--email')
+@click.option('-a', '--api-token', envvar='PANGEA_API_TOKEN')
 @click.option('--endpoint', default='https://pangea.gimmebio.com')
 @click.argument('org_name')
 @click.argument('bioproj_accession')
-def cli_ncbi_link_bioproject(email, password, endpoint, org_name, bioproj_accession):
+def cli_ncbi_link_bioproject(email, api_token, endpoint, org_name, bioproj_accession):
     """Create a pangea group from an NCBI BioProject.
 
     Creates a Pangea SampleGroup corresponding to the given bioproject accession.
@@ -49,8 +49,8 @@ def cli_ncbi_link_bioproject(email, password, endpoint, org_name, bioproj_access
     logger.info(f'Creating Pangea SampleGroup from BioProject "{bioproj_accession}"')
     Entrez.email = email
     knex = Knex(endpoint)
-    if email and password:
-        User(knex, email, password).login()
+    if api_token:
+        knex.add_api_token(api_token)
     org = Organization(knex, org_name).get()
     grp = create_pangea_group_from_bioproj(org, bioproj_accession)
     return grp
