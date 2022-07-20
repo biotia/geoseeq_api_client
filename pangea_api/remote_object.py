@@ -1,13 +1,10 @@
-
-import os
 import logging
-import json
-from time import time
-from glob import glob
+
 from requests.exceptions import HTTPError
+
 from .file_system_cache import FileSystemCache
 
-logger = logging.getLogger('pangea_api')  # Same name as calling module
+logger = logging.getLogger("pangea_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 
 
@@ -32,13 +29,13 @@ class RemoteObject:
         self.url_options = {}
 
     def __setattr__(self, key, val):
-        if hasattr(self, 'deleted') and self._deleted:
-            logger.error(f'Attribute cannot be set, RemoteObject has been deleted. {self}')
-            raise RemoteObjectError('This object has been deleted.')
+        if hasattr(self, "deleted") and self._deleted:
+            logger.error(f"Attribute cannot be set, RemoteObject has been deleted. {self}")
+            raise RemoteObjectError("This object has been deleted.")
         super(RemoteObject, self).__setattr__(key, val)
         if key in self.remote_fields or key == self.parent_field:
             logger.debug(f'Setting RemoteObject modified. key "{key}"')
-            super(RemoteObject, self).__setattr__('_modified', True)
+            super(RemoteObject, self).__setattr__("_modified", True)
 
     @property
     def inherited_url_options(self):
@@ -58,18 +55,21 @@ class RemoteObject:
         return self.cache.cache_blob(self, blob)
 
     def load_blob(self, blob):
-        logger.debug(f'Loading blob. {blob}')
+        logger.debug(f"Loading blob. {blob}")
         if self._deleted:
-            logger.error(f'Cannot load blob, RemoteObject has been deleted. {self}')
-            raise RemoteObjectError('This object has been deleted.')
+            logger.error(f"Cannot load blob, RemoteObject has been deleted. {self}")
+            raise RemoteObjectError("This object has been deleted.")
         for field in self.remote_fields:
             current = getattr(self, field, None)
             try:
                 new = blob[field]
             except KeyError:
                 if field not in self.optional_remote_fields:
-                    logger.error(f'Blob being loaded is missing key. {field}')
-                    raise KeyError(f'Key {field} is missing for object {self} (type {type(self)}) in blob: {blob}')
+                    logger.error(f"Blob being loaded is missing key. {field}")
+                    raise KeyError(
+                        f"Key {field} is missing for object {self} (type {type(self)})\
+                             in blob: {blob}"
+                    )
                 new = None
             if current and current != new:
                 is_overwrite = True
@@ -82,12 +82,14 @@ class RemoteObject:
                     if append_only:
                         is_overwrite = False
                 if is_overwrite:
-                    logger.error(f'Loading blob would overwrite key. {field}')
-                    raise RemoteObjectOverwriteError((
-                        f'Loading blob would overwrite field "{field}":\n\t'
-                        f'current: "{current}" (type: "{type(current)}")\n\t'
-                        f'new:     "{new}" (type: "{type(new)}")'
-                    ))
+                    logger.error(f"Loading blob would overwrite key. {field}")
+                    raise RemoteObjectOverwriteError(
+                        (
+                            f'Loading blob would overwrite field "{field}":\n\t'
+                            f'current: "{current}" (type: "{type(current)}")\n\t'
+                            f'new:     "{new}" (type: "{type(new)}")'
+                        )
+                    )
             setattr(self, field, new)
 
     def exists(self):
@@ -100,30 +102,30 @@ class RemoteObject:
     def get(self):
         """Fetch the object from the server."""
         if self._deleted:
-            logger.error(f'Cannot GET blob, RemoteObject has been deleted. {self}')
-            raise RemoteObjectError('This object has been deleted.')
+            logger.error(f"Cannot GET blob, RemoteObject has been deleted. {self}")
+            raise RemoteObjectError("This object has been deleted.")
         if not self._already_fetched:
-            logger.debug(f'Fetching RemoteBlob. {self}')
+            logger.debug(f"Fetching RemoteBlob. {self}")
             self._get()
             self._already_fetched = True
             self._modified = False
         else:
-            logger.debug(f'RemoteObject has already been fetched. {self}')
+            logger.debug(f"RemoteObject has already been fetched. {self}")
         return self
 
     def create(self):
         """Create this object on the server."""
         if self._deleted:
-            logger.error(f'Cannot create blob, RemoteObject has been deleted. {self}')
-            raise RemoteObjectError('This object has been deleted.')
+            logger.error(f"Cannot create blob, RemoteObject has been deleted. {self}")
+            raise RemoteObjectError("This object has been deleted.")
         if not self._already_fetched:
-            logger.debug(f'Creating RemoteBlob. {self}')
+            logger.debug(f"Creating RemoteBlob. {self}")
             self.cache.clear_blob(self)
             self._create()
             self._already_fetched = True
             self._modified = False
         else:
-            logger.debug(f'RemoteObject has already been fetched. {self}')
+            logger.debug(f"RemoteObject has already been fetched. {self}")
         return self
 
     def save(self):
@@ -131,23 +133,23 @@ class RemoteObject:
         match the state of this object.
         """
         if self._deleted:
-            logger.error(f'Cannot save blob, RemoteObject has been deleted. {self}')
-            raise RemoteObjectError('This object has been deleted.')
+            logger.error(f"Cannot save blob, RemoteObject has been deleted. {self}")
+            raise RemoteObjectError("This object has been deleted.")
         if not self._already_fetched:
-            msg = 'Attempting to SAVE an object which has not been fetched is disallowed.'
+            msg = "Attempting to SAVE an object which has not been fetched is disallowed."
             raise RemoteObjectError(msg)
         if self._modified:
-            logger.debug(f'Saving RemoteBlob. {self}')
+            logger.debug(f"Saving RemoteBlob. {self}")
             self.cache.clear_blob(self)
             self._save()
             self._modified = False
         else:
-            logger.debug(f'RemoteBlob has not been modified. Nothing to save. {self}')
+            logger.debug(f"RemoteBlob has not been modified. Nothing to save. {self}")
 
     def idem(self):
         """Make the state of this object match the server."""
         if self._deleted:
-            raise RemoteObjectError('This object has been deleted.')
+            raise RemoteObjectError("This object has been deleted.")
         if not self._already_fetched:
             try:
                 self.get()
@@ -158,7 +160,7 @@ class RemoteObject:
         return self
 
     def delete(self):
-        logger.debug(f'Deleting RemoteBlob. {self}')
+        logger.debug(f"Deleting RemoteBlob. {self}")
         self.knex.delete(self.nested_url())
         self._already_fetched = False
         self._deleted = True

@@ -1,19 +1,14 @@
 
-import click
 import json
-from Bio import Entrez
-from ... import (
-    Knex,
-    User,
-    Organization,
-)
-from .api import create_pangea_group_from_bioproj
-from .bioproject import (
-    BioProject,
-    SRARecord,
-)
-from .setup_logging import logger
 import logging
+
+import click
+from Bio import Entrez
+
+from ... import Knex, Organization
+from .api import create_pangea_group_from_bioproj
+from .bioproject import BioProject, SRARecord
+from .setup_logging import logger
 
 logger.setLevel(10)
 logger.handlers = []

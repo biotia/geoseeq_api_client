@@ -1,27 +1,35 @@
-
+from .analysis_result import SampleGroupAnalysisResult
 from .remote_object import RemoteObject
 from .sample import Sample
-from .analysis_result import SampleGroupAnalysisResult
 from .utils import paginated_iterator
 
 
 class SampleGroup(RemoteObject):
     remote_fields = [
-        'uuid',
-        'created_at',
-        'updated_at',
-        'name',
-        'is_library',
-        'is_public',
-        'metadata',
-        'long_description',
-        'description',
-        'bucket',
-        'storage_provider_name',
+        "uuid",
+        "created_at",
+        "updated_at",
+        "name",
+        "is_library",
+        "is_public",
+        "metadata",
+        "long_description",
+        "description",
+        "bucket",
+        "storage_provider_name",
     ]
-    parent_field = 'org'
+    parent_field = "org"
 
-    def __init__(self, knex, org, name, metadata={}, is_library=False, is_public=False, storage_provider='default'):
+    def __init__(
+        self,
+        knex,
+        org,
+        name,
+        metadata={},
+        is_library=False,
+        is_public=False,
+        storage_provider="default",
+    ):
         super().__init__(self)
         self.knex = knex
         self.org = org
@@ -36,16 +44,13 @@ class SampleGroup(RemoteObject):
         self.storage_provider = storage_provider
 
     def nested_url(self):
-        return self.org.nested_url() + f'/sample_groups/{self.name}'
+        return self.org.nested_url() + f"/sample_groups/{self.name}"
 
     def _save_group_obj(self):
-        data = {
-            field: getattr(self, field)
-            for field in self.remote_fields if hasattr(self, field)
-        }
-        data['organization'] = self.org.uuid
-        data['description'] = self.description if self.description else self.name
-        url = f'sample_groups/{self.uuid}'
+        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
+        data["organization"] = self.org.uuid
+        data["description"] = self.description if self.description else self.name
+        url = f"sample_groups/{self.uuid}"
         self.knex.put(url, json=data)
 
     def _save_sample_list(self):
@@ -54,8 +59,8 @@ class SampleGroup(RemoteObject):
             sample.idem()
             sample_uuids.append(sample.uuid)
         if sample_uuids:
-            url = f'sample_groups/{self.uuid}/samples'
-            self.knex.post(url, json={'sample_uuids': sample_uuids})
+            url = f"sample_groups/{self.uuid}/samples"
+            self.knex.post(url, json={"sample_uuids": sample_uuids})
         self._sample_cache = []
 
     def _delete_sample_list(self):
@@ -64,8 +69,8 @@ class SampleGroup(RemoteObject):
             sample.idem()
             sample_uuids.append(sample.uuid)
         if sample_uuids:
-            url = f'sample_groups/{self.uuid}/samples'
-            self.knex.delete(url, json={'sample_uuids': sample_uuids})
+            url = f"sample_groups/{self.uuid}/samples"
+            self.knex.delete(url, json={"sample_uuids": sample_uuids})
         self._deleted_sample_cache = []
 
     def _save(self):
@@ -86,13 +91,16 @@ class SampleGroup(RemoteObject):
 
     def _create(self):
         self.org.idem()
-        blob = self.knex.post(f'sample_groups?format=json', json={
-            'organization': self.org.uuid,
-            'name': self.name,
-            'is_library': self.is_library,
-            'metadata': self.metadata,
-            'storage_provider_name': self.storage_provider,
-        })
+        blob = self.knex.post(
+            f"sample_groups?format=json",
+            json={
+                "organization": self.org.uuid,
+                "name": self.name,
+                "is_library": self.is_library,
+                "metadata": self.metadata,
+                "storage_provider_name": self.storage_provider,
+            },
+        )
         self.load_blob(blob)
 
     def add_sample(self, sample):
@@ -117,7 +125,9 @@ class SampleGroup(RemoteObject):
         return Sample(self.knex, self, sample_name, metadata=metadata)
 
     def analysis_result(self, module_name, replicate=None, metadata={}):
-        return SampleGroupAnalysisResult(self.knex, self, module_name, replicate=replicate, metadata=metadata)
+        return SampleGroupAnalysisResult(
+            self.knex, self, module_name, replicate=replicate, metadata=metadata
+        )
 
     def get_samples(self, cache=True, error_handler=None):
         """Yield samples fetched from the server."""
@@ -125,9 +135,9 @@ class SampleGroup(RemoteObject):
             for sample in self._get_sample_cache:
                 yield sample
             return
-        url = f'sample_groups/{self.uuid}/samples'
+        url = f"sample_groups/{self.uuid}/samples"
         for sample_blob in paginated_iterator(self.knex, url, error_handler=error_handler):
-            sample = self.sample(sample_blob['name'])
+            sample = self.sample(sample_blob["name"])
             sample.load_blob(sample_blob)
             sample.cache_blob(sample_blob)
             # We just fetched from the server so we change the RemoteObject
@@ -148,10 +158,10 @@ class SampleGroup(RemoteObject):
             for ar in self._get_result_cache:
                 yield ar
             return
-        url = f'sample_group_ars?sample_group_id={self.uuid}'
+        url = f"sample_group_ars?sample_group_id={self.uuid}"
         result = self.knex.get(url)
-        for result_blob in result['results']:
-            result = self.analysis_result(result_blob['module_name'])
+        for result_blob in result["results"]:
+            result = self.analysis_result(result_blob["module_name"])
             result.load_blob(result_blob)
             # We just fetched from the server so we change the RemoteObject
             # meta properties to reflect that
@@ -167,19 +177,19 @@ class SampleGroup(RemoteObject):
 
     def get_manifest(self):
         """Return a manifest for this group."""
-        url = f'sample_groups/{self.uuid}/manifest'
+        url = f"sample_groups/{self.uuid}/manifest"
         return self.knex.get(url)
 
     def get_module_counts(self):
         """Return a dictionary with module counts for samples in this group."""
-        url = f'sample_groups/{self.uuid}/module_counts'
+        url = f"sample_groups/{self.uuid}/module_counts"
         return self.knex.get(url)
 
     def __str__(self):
-        return f'<Pangea::SampleGroup {self.name} {self.uuid} />'
+        return f"<Pangea::SampleGroup {self.name} {self.uuid} />"
 
     def __repr__(self):
-        return f'<Pangea::SampleGroup {self.name} {self.uuid} />'
+        return f"<Pangea::SampleGroup {self.name} {self.uuid} />"
 
     def pre_hash(self):
-        return 'SG' + self.name + self.org.pre_hash()
+        return "SG" + self.name + self.org.pre_hash()

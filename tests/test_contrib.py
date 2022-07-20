@@ -1,19 +1,11 @@
 """Test suite for experimental functions."""
-import random
 import json
+import random
 from os import environ
-from os.path import join, dirname
-from requests.exceptions import HTTPError
-from unittest import TestCase, skip
+from os.path import dirname, join
+from unittest import TestCase
 
-from pangea_api import (
-    Knex,
-    Sample,
-    Organization,
-    SampleGroup,
-    User,
-    RemoteObjectError,
-)
+from pangea_api import Knex, Organization
 from pangea_api.contrib.tagging import Tag
 
 PACKET_DIR = join(dirname(__file__), 'built_packet')

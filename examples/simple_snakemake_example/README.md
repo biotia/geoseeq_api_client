@@ -19,4 +19,3 @@ snakemake --cores 1
 When you run this command you should see sankemake output running 4 jobs.
 
 To run the example on your own data you will need a [Pangea](https://pangeabio.io) login and a sample group to process. Once you have these edit the `config.yaml` file and run `snakemake --cores 1`.
-

@@ -1,8 +1,6 @@
-
 # Pangea API Client
 
 This is a python library to interact with the Pangea API.
-
 
 ## Downloading Data and Metadata
 
@@ -17,6 +15,7 @@ Pangea is designed to store massive amounts of data. Downloads of large files ar
 The simplest way to download data is using the CLI.
 
 Download metadata from the sample group `UW Madison Biotech 2020`
+
 ```
 $ pangea-api download metadata 'Mason Lab' 'UW Madison Biotech 2020'
 ```
@@ -28,11 +27,13 @@ $ pangea-api download sample-results --module-name 'cap1::microbe_census' 'Mason
 ```
 
 Download all results for all smaples in the group `UW Madison Biotech 2020`
+
 ```
 $ pangea-api download sample-results 'Mason Lab' 'UW Madison Biotech 2020'
 ```
 
 Use `--help` to see more options
+
 ```
 $ pangea-api download metadata --help
 $ pangea-api download sample-results --help
@@ -45,12 +46,13 @@ Please see `pangea_api/cli.py` for examples of how to download data using the Py
 ## Pangea Data Model
 
 Pangea is based on a hierarchical data model with three components:
+
 ```
 Sample Group -> Sample -> Analysis Result
 ```
 
 - `Analysis Results` store actual data, the results of analyses and raw data (e.g short reads)
-- `Samples` represent biological samples and group results 
+- `Samples` represent biological samples and group results
 - `Sample Groups` are projects that group multiple samples
 
 In practice this model includes additional components: `Result Fields` and `Analysis Results` for groups
@@ -95,7 +97,48 @@ Download this directory and run `python setup.py install`
 To test you will need a local version of pange-django running.
 
 Tests can be run using unittest
+
 ```
 python -m unittest
 ```
 
+## Local development
+
+### Linting, formatting
+
+Recommended linter is pylint, general formatter black and isort to format imports on save. To setup in your development enviroment run:
+
+```sh
+  pip install pylint black isort
+```
+
+Add the following lines to the settings.json:
+
+```sh
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": true,
+  "python.linting.pylintArgs": [
+    "--max-line-length=100",
+  ],
+  "python.sortImports.args": [
+    "--profile", "black"
+  ],
+  "[python]": {
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true
+    }
+  },
+  "python.formatting.provider": "black",
+  "python.formatting.blackArgs": ["--line-length", "100"]
+```
+
+### Commit linting
+
+We use conventional commits. [read](https://www.conventionalcommits.org)\
+To setup pre-commit run:
+
+```sh
+pip install pre-commit
+pre-commit install
+pre-commit install --hook-type commit-msg
+```

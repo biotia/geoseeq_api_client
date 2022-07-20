@@ -1,14 +1,6 @@
 import click
-import pandas as pd
-from requests.exceptions import HTTPError
-from os import environ
 
-
-from .. import (
-    Knex,
-    User,
-    Organization,
-)
+from .. import Knex, Organization
 
 
 @click.group('copy')
@@ -30,7 +22,7 @@ def cli_copy():
 def cli_list_samples(outfile,
                      source_api_token, target_api_token,
                      source_endpoint, target_endpoint,
-                     source_org_name, source_grp_name, 
+                     source_org_name, source_grp_name,
                      target_org_name, target_grp_name):
     """Copy a group and its samples from one pangea instance to another."""
     source_knex = Knex(source_endpoint)

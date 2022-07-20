@@ -1,13 +1,8 @@
 
 import gzip
 from random import randint
-from pangea_api import (
-    Knex,
-    User,
-    Organization,
-)
-from requests.exceptions import HTTPError
 
+from pangea_api import Knex, Organization
 
 configfile: "config.yaml"
 
