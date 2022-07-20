@@ -1,27 +1,20 @@
 """Test suite for experimental functions."""
 import random
 from os import environ
-from os.path import join, dirname
-from requests.exceptions import HTTPError
+from os.path import dirname, join
 from unittest import TestCase, skip
 
-from pangea_api import (
-    Knex,
-    Sample,
-    Organization,
-    SampleGroup,
-    User,
-    RemoteObjectError,
-)
+from pangea_api import Knex, Organization, RemoteObjectError, SampleGroup
+from requests.exceptions import HTTPError
 
-PACKET_DIR = join(dirname(__file__), 'built_packet')
-ENDPOINT = environ.get('PANGEA_API_TESTING_ENDPOINT', 'http://127.0.0.1:8000')
+PACKET_DIR = join(dirname(__file__), "built_packet")
+ENDPOINT = environ.get("PANGEA_API_TESTING_ENDPOINT", "http://127.0.0.1:8000")
 
 
 def random_str(len=12):
     """Return a random alphanumeric string of length `len`."""
-    out = random.choices('abcdefghijklmnopqrtuvwxyzABCDEFGHIJKLMNOPQRTUVWXYZ0123456789', k=len)
-    return ''.join(out)
+    out = random.choices("abcdefghijklmnopqrtuvwxyzABCDEFGHIJKLMNOPQRTUVWXYZ0123456789", k=len)
+    return "".join(out)
 
 
 class TestPangeaApiClient(TestCase):
@@ -30,31 +23,31 @@ class TestPangeaApiClient(TestCase):
     def setUp(self):
         self.knex = Knex(ENDPOINT)
         # Creates a test user and an API token for the user in database. Returns the token.
-        api_token = self.knex.post('/users/test-user', json={'email': f'{random_str()}@gmail.com'})
+        api_token = self.knex.post("/users/test-user", json={"email": f"{random_str()}@gmail.com"})
         self.knex.add_api_token(api_token)
 
     def test_create_org(self):
         """Test that we can create an org."""
-        org = Organization(self.knex, f'my_client_test_org {random_str()}')
+        org = Organization(self.knex, f"my_client_test_org {random_str()}")
         org.create()
         self.assertTrue(org.uuid)
 
     def test_get_org(self):
         """Test that we can get an org."""
-        name = f'my_client_test_org {random_str()}'
+        name = f"my_client_test_org {random_str()}"
         Organization(self.knex, name).create()
         org = Organization(self.knex, name).get()
         self.assertTrue(org.uuid)
 
     def test_idem_create_org(self):
         """Test that we can create an org using idem."""
-        org = Organization(self.knex, f'my_client_test_org {random_str()}')
+        org = Organization(self.knex, f"my_client_test_org {random_str()}")
         org.idem()
         self.assertTrue(org.uuid)
 
     def test_idem_get_org(self):
         """Test that we can get an org using idem."""
-        name = f'my_client_test_org {random_str()}'
+        name = f"my_client_test_org {random_str()}"
         Organization(self.knex, name).create()
         org = Organization(self.knex, name).idem()
         self.assertTrue(org.uuid)
@@ -62,9 +55,9 @@ class TestPangeaApiClient(TestCase):
     def test_create_group(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
+        org = Organization(self.knex, f"my_client_test_org {key}")
         # N.B. It should NOT be necessary to call org.create()
-        grp = org.sample_group(f'my_client_test_grp {key}')
+        grp = org.sample_group(f"my_client_test_grp {key}")
         grp.create()
         self.assertTrue(org.uuid)
         self.assertTrue(grp.uuid)
@@ -72,8 +65,8 @@ class TestPangeaApiClient(TestCase):
     def test_create_library(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}').create()
-        grp_name = f'my_client_test_grp {key}'
+        org = Organization(self.knex, f"my_client_test_org {key}").create()
+        grp_name = f"my_client_test_grp {key}"
         org.sample_group(grp_name, is_library=True).create()
         grp = SampleGroup(self.knex, org, grp_name).get()
         self.assertTrue(org.uuid)
@@ -83,10 +76,10 @@ class TestPangeaApiClient(TestCase):
     def test_create_group_result(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}')
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}")
         # N.B. It should NOT be necessary to call <parent>.create()
-        ar = grp.analysis_result(f'my_client_test_module_name')  # no {key} necessary
+        ar = grp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
         ar.create()
         self.assertTrue(org.uuid)
         self.assertTrue(grp.uuid)
@@ -95,11 +88,11 @@ class TestPangeaApiClient(TestCase):
     def test_create_group_result_field(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}')
-        ar = grp.analysis_result(f'my_client_test_module_name')  # no {key} necessary
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}")
+        ar = grp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
         # N.B. It should NOT be necessary to call <parent>.create()
-        field = ar.field('my_client_test_field_name', {'foo': 'bar'})
+        field = ar.field("my_client_test_field_name", {"foo": "bar"})
         field.create()
         self.assertTrue(org.uuid)
         self.assertTrue(grp.uuid)
@@ -109,10 +102,10 @@ class TestPangeaApiClient(TestCase):
     def test_create_sample(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
         # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f'my_client_test_sample {key}')
+        samp = grp.sample(f"my_client_test_sample {key}")
         samp.create()
         self.assertTrue(org.uuid)
         self.assertTrue(grp.uuid)
@@ -121,23 +114,23 @@ class TestPangeaApiClient(TestCase):
     def test_add_sample(self):
         """Test that we can add a sample to a (non-library) sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        lib = org.sample_group(f'my_client_test_lib {key}', is_library=True)
-        samp = lib.sample(f'my_client_test_sample {key}').create()
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        lib = org.sample_group(f"my_client_test_lib {key}", is_library=True)
+        samp = lib.sample(f"my_client_test_sample {key}").create()
 
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=False).create()
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=False).create()
         grp.add_sample(samp).save()
         self.assertIn(samp.uuid, {samp.uuid for samp in grp.get_samples()})
 
     def test_get_samples_in_group(self):
         """Test that we can get the samples in a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp_names = [f'my_client_test_sample_{i} {key}' for i in range(10)]
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp_names = [f"my_client_test_sample_{i} {key}" for i in range(10)]
         for samp_name in samp_names:
             grp.sample(samp_name).create()
-        retrieved = org.sample_group(f'my_client_test_grp {key}', is_library=True).get()
+        retrieved = org.sample_group(f"my_client_test_grp {key}", is_library=True).get()
         retrieved_names = set()
         for samp in retrieved.get_samples():
             retrieved_names.add(samp.name)
@@ -148,12 +141,12 @@ class TestPangeaApiClient(TestCase):
     def test_get_results_in_group(self):
         """Test that we can get the results in a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        result_names = [('my_client_test_module', f'replicate_{i}') for i in range(10)]
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        result_names = [("my_client_test_module", f"replicate_{i}") for i in range(10)]
         for module_name, replicate in result_names:
             grp.analysis_result(module_name, replicate=replicate).create()
-        retrieved = org.sample_group(f'my_client_test_grp {key}', is_library=True).get()
+        retrieved = org.sample_group(f"my_client_test_grp {key}", is_library=True).get()
         retrieved_names = set()
         for result in retrieved.get_analysis_results():
             retrieved_names.add((result.module_name, result.replicate))
@@ -164,13 +157,13 @@ class TestPangeaApiClient(TestCase):
     def test_get_results_in_sample(self):
         """Test that we can get the results in a sample."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp = grp.sample(f'my_client_test_sample {key}').create()
-        result_names = [('my_client_test_module', f'replicate_{i}') for i in range(10)]
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp = grp.sample(f"my_client_test_sample {key}").create()
+        result_names = [("my_client_test_module", f"replicate_{i}") for i in range(10)]
         for module_name, replicate in result_names:
             samp.analysis_result(module_name, replicate=replicate).create()
-        retrieved = grp.sample(f'my_client_test_sample {key}').get()
+        retrieved = grp.sample(f"my_client_test_sample {key}").get()
         retrieved_names = set()
         for result in retrieved.get_analysis_results():
             retrieved_names.add((result.module_name, result.replicate))
@@ -181,17 +174,17 @@ class TestPangeaApiClient(TestCase):
     def test_get_result_fields(self):
         """Test that we can get the fields of an analysis result."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp = grp.sample(f'my_client_test_sample {key}')
-        ar = samp.analysis_result('my_client_test_module').create()
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp = grp.sample(f"my_client_test_sample {key}")
+        ar = samp.analysis_result("my_client_test_module").create()
         self.assertTrue(grp.uuid)
 
-        field_names = [f'field_{i}' for i in range(10)]
+        field_names = [f"field_{i}" for i in range(10)]
         for field_name in field_names:
             ar.field(field_name).create()
 
-        retrieved = samp.analysis_result('my_client_test_module').get()
+        retrieved = samp.analysis_result("my_client_test_module").get()
         retrieved_names = set()
         for result in retrieved.get_fields():
             retrieved_names.add(result.name)
@@ -199,69 +192,68 @@ class TestPangeaApiClient(TestCase):
         for result_name_rep in field_names:
             self.assertIn(result_name_rep, retrieved_names)
 
-    @skip('nonfunctional currently')
+    @skip("nonfunctional currently")
     def test_delete_sample(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
         # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f'my_client_test_sample {key}')
+        samp = grp.sample(f"my_client_test_sample {key}")
         samp.create()
         self.assertTrue(samp.uuid)
         samp.delete()
-        self.assertRaises(lambda: setattr(samp, 'name', 'foo'), RemoteObjectError)
-        retrieved = grp.sample(f'my_client_test_sample {key}')
+        self.assertRaises(lambda: setattr(samp, "name", "foo"), RemoteObjectError)
+        retrieved = grp.sample(f"my_client_test_sample {key}")
         self.assertRaises(retrieved.get, HTTPError)
-        self.assertRaises()
 
     def test_modify_sample_save(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
         # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f'my_client_test_sample {key}')
+        samp = grp.sample(f"my_client_test_sample {key}")
         samp.create()
         self.assertTrue(grp.is_public)
         self.assertTrue(samp.uuid)
         self.assertTrue(samp._already_fetched)
         self.assertFalse(samp._modified)
-        samp.metadata = {f'metadata_{key}': 'some_new_metadata'}
+        samp.metadata = {f"metadata_{key}": "some_new_metadata"}
         self.assertTrue(samp._modified)
         samp.save()
         self.assertTrue(samp._already_fetched)
         self.assertFalse(samp._modified)
-        retrieved = grp.sample(f'my_client_test_sample {key}').get()
-        self.assertIn(f'metadata_{key}', retrieved.metadata)
+        retrieved = grp.sample(f"my_client_test_sample {key}").get()
+        self.assertIn(f"metadata_{key}", retrieved.metadata)
 
     def test_modify_sample_idem(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
         # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f'my_client_test_sample {key}')
+        samp = grp.sample(f"my_client_test_sample {key}")
         samp.create()
         self.assertTrue(samp.uuid)
         self.assertTrue(samp._already_fetched)
         self.assertFalse(samp._modified)
-        samp.metadata = {f'metadata_{key}': 'some_new_metadata'}
+        samp.metadata = {f"metadata_{key}": "some_new_metadata"}
         self.assertTrue(samp._modified)
         samp.idem()
         self.assertTrue(samp._already_fetched)
         self.assertFalse(samp._modified)
-        retrieved = grp.sample(f'my_client_test_sample {key}').get()
-        self.assertIn(f'metadata_{key}', retrieved.metadata)
+        retrieved = grp.sample(f"my_client_test_sample {key}").get()
+        self.assertIn(f"metadata_{key}", retrieved.metadata)
 
     def test_create_sample_result(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp = grp.sample(f'my_client_test_sample {key}')
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp = grp.sample(f"my_client_test_sample {key}")
         # N.B. It should NOT be necessary to call <parent>.create()
-        ar = samp.analysis_result(f'my_client_test_module_name')  # no {key} necessary
+        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
         ar.create()
         self.assertTrue(org.uuid)
         self.assertTrue(grp.uuid)
@@ -271,12 +263,12 @@ class TestPangeaApiClient(TestCase):
     def test_create_sample_result_field(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp = grp.sample(f'my_client_test_sample {key}')
-        ar = samp.analysis_result(f'my_client_test_module_name')  # no {key} necessary
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp = grp.sample(f"my_client_test_sample {key}")
+        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
         # N.B. It should NOT be necessary to call <parent>.create()
-        field = ar.field('my_client_test_field_name', {'foo': 'bar'})
+        field = ar.field("my_client_test_field_name", {"foo": "bar"})
         field.create()
         self.assertTrue(org.uuid)
         self.assertTrue(grp.uuid)
@@ -287,27 +279,27 @@ class TestPangeaApiClient(TestCase):
     def test_modify_sample_result_field_idem(self):
         """Test that we can create a sample group."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp = grp.sample(f'my_client_test_sample {key}')
-        ar = samp.analysis_result(f'my_client_test_module_name')  # no {key} necessary      
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp = grp.sample(f"my_client_test_sample {key}")
+        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
         # N.B. It should NOT be necessary to call <parent>.create()
-        field = ar.field(f'my_client_test_field_name {key}', {'foo': 'bar'})
+        field = ar.field(f"my_client_test_field_name {key}", {"foo": "bar"})
         field.create()
         self.assertTrue(field.uuid)
-        field.stored_data = {'foo': 'bizz'}  # TODO: handle deep modifications
+        field.stored_data = {"foo": "bizz"}  # TODO: handle deep modifications
         field.idem()
-        retrieved = ar.field(f'my_client_test_field_name {key}').get()
-        self.assertEqual(retrieved.stored_data['foo'], 'bizz')
+        retrieved = ar.field(f"my_client_test_field_name {key}").get()
+        self.assertEqual(retrieved.stored_data["foo"], "bizz")
 
     def test_get_sample_group_manifest(self):
         """Test that we can get a group manifest."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp = grp.sample(f'my_client_test_sample {key}')
-        ar = samp.analysis_result(f'my_client_test_module_name')  # no {key} necessary      
-        field = ar.field('my_client_test_field_name', {'foo': 'bar'})
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp = grp.sample(f"my_client_test_sample {key}")
+        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
+        field = ar.field("my_client_test_field_name", {"foo": "bar"})
         field.create()
         manifest = grp.get_manifest()
         self.assertTrue(manifest)
@@ -315,11 +307,11 @@ class TestPangeaApiClient(TestCase):
     def test_get_sample_manifest(self):
         """Test that we can get a group manifest."""
         key = random_str()
-        org = Organization(self.knex, f'my_client_test_org {key}')
-        grp = org.sample_group(f'my_client_test_grp {key}', is_library=True)
-        samp = grp.sample(f'my_client_test_sample {key}')
-        ar = samp.analysis_result(f'my_client_test_module_name')  # no {key} necessary
-        field = ar.field('my_client_test_field_name', {'foo': 'bar'})
+        org = Organization(self.knex, f"my_client_test_org {key}")
+        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        samp = grp.sample(f"my_client_test_sample {key}")
+        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
+        field = ar.field("my_client_test_field_name", {"foo": "bar"})
         field.create()
         manifest = samp.get_manifest()
         self.assertTrue(manifest)

@@ -1,8 +1,8 @@
 
-from .bioproject import BioProject
-from ..tagging import Tag
 from time import sleep
-import logging
+
+from ..tagging import Tag
+from .bioproject import BioProject
 from .setup_logging import logger
 
 

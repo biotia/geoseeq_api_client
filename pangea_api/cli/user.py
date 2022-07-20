@@ -1,5 +1,6 @@
-import click
 import json
+
+import click
 
 from .utils import use_common_state
 

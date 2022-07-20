@@ -1,20 +1,9 @@
-import click
 import logging
-import json
-import pandas as pd
 
-from requests.exceptions import HTTPError
-from os import environ
-from os.path import join, dirname
-from os import makedirs
+import click
 
-from .. import (
-    Knex,
-    User,
-    Organization,
-)
+from .. import Organization
 from .utils import use_common_state
-
 
 logger = logging.getLogger('pangea_api')
 
@@ -40,4 +29,3 @@ def cli_delete_samples(state, confirm, org_name, grp_name, sample_names):
         if confirm and click.confirm(f'Delete Sample {sample}?'):
             sample.delete()
             logger.info(f'Deleted Sample {sample}')
-        

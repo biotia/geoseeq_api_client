@@ -1,38 +1,38 @@
-
-import os
 import json
-import requests
-import time
 import logging
+import os
+import time
+from os.path import basename, getsize, join
 from pathlib import Path
-from os.path import join, basename, getsize
-
-from .remote_object import RemoteObject, RemoteObjectError
-from urllib.request import urlretrieve
 from tempfile import NamedTemporaryFile
-from .utils import md5_checksum
-from .constants import FIVE_MB
+from urllib.request import urlretrieve
 
-logger = logging.getLogger('pangea_api')  # Same name as calling module
+import requests
+
+from .constants import FIVE_MB
+from .remote_object import RemoteObject, RemoteObjectError
+from .utils import md5_checksum
+
+logger = logging.getLogger("pangea_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 
 
 def diff_dicts(blob1, blob2):
-    for problem in _diff_dicts('original', '$', blob1, blob2):
+    for problem in _diff_dicts("original", "$", blob1, blob2):
         yield problem
-    for problem in _diff_dicts('serialized', '$', blob2, blob1):
+    for problem in _diff_dicts("serialized", "$", blob2, blob1):
         yield problem
 
 
 def _diff_lists(suffix, depth, l1, l2):
     if len(l1) != len(l2):
-        yield (f'MISMATCHED_LENGTHS:{suffix}:{depth}', len(l1), len(l2))
+        yield (f"MISMATCHED_LENGTHS:{suffix}:{depth}", len(l1), len(l2))
     for i in range(len(l1)):
         v1, v2 = l1[i], l2[i]
         if v1 != v2:
-            mydepth = f'{depth}.index_{i}'
+            mydepth = f"{depth}.index_{i}"
             if not isinstance(v1, type(v2)):
-                yield (f'MISMATCHED_TYPES:{suffix}:{mydepth}', v1, v2)
+                yield (f"MISMATCHED_TYPES:{suffix}:{mydepth}", v1, v2)
             elif isinstance(v1, dict):
                 for problem in _diff_dicts(suffix, mydepth, v1, v2):
                     yield problem
@@ -40,24 +40,24 @@ def _diff_lists(suffix, depth, l1, l2):
                 for problem in _diff_lists(suffix, mydepth, v1, v2):
                     yield problem
             else:
-                yield (f'MISMATCHED_LIST_VALUES:{suffix}:{mydepth}', v1, v2)
+                yield (f"MISMATCHED_LIST_VALUES:{suffix}:{mydepth}", v1, v2)
 
 
 def _diff_dicts(suffix, depth, blob1, blob2):
     for k, v in blob1.items():
         if k not in blob2:
-            yield (f'MISSING_KEY:{suffix}:{depth}', k, None)
+            yield (f"MISSING_KEY:{suffix}:{depth}", k, None)
         elif v != blob2[k]:
             if not isinstance(v, type(blob2[k])):
-                yield (f'MISMATCHED_TYPES:{suffix}:{depth}', v, blob2[k])
+                yield (f"MISMATCHED_TYPES:{suffix}:{depth}", v, blob2[k])
             elif isinstance(v, dict):
-                for problem in _diff_dicts(suffix, depth + '.' + k, v, blob2[k]):
+                for problem in _diff_dicts(suffix, depth + "." + k, v, blob2[k]):
                     yield problem
             elif isinstance(v, list):
-                for problem in _diff_lists(suffix, depth + '.' + k, v, blob2[k]):
+                for problem in _diff_lists(suffix, depth + "." + k, v, blob2[k]):
                     yield problem
             else:
-                yield (f'MISMATCHED_DICT_VALUES:{suffix}:{depth}', v, blob2[k])
+                yield (f"MISMATCHED_DICT_VALUES:{suffix}:{depth}", v, blob2[k])
 
 
 def check_json_serialization(blob):
@@ -68,34 +68,34 @@ def check_json_serialization(blob):
     if isinstance(blob, dict):
         issues = list(diff_dicts(blob, json_serialized))
     else:
-        issues = [('MISMATCHED_VALUES:values_only:0', blob, json_serialized)]
+        issues = [("MISMATCHED_VALUES:values_only:0", blob, json_serialized)]
     issues = [str(el) for el in issues]
-    issues = '\n'.join(issues)
-    raise RemoteObjectError(f'JSON Serialization modifies object\nIssues:\n{issues}')
+    issues = "\n".join(issues)
+    raise RemoteObjectError(f"JSON Serialization modifies object\nIssues:\n{issues}")
 
 
 class AnalysisResult(RemoteObject):
     remote_fields = [
-        'uuid',
-        'created_at',
-        'updated_at',
-        'module_name',
-        'replicate',
-        'metadata',
-        'description',
-        'is_private',
-        'pipeline_module',
+        "uuid",
+        "created_at",
+        "updated_at",
+        "module_name",
+        "replicate",
+        "metadata",
+        "description",
+        "is_private",
+        "pipeline_module",
     ]
 
     def _get(self):
         """Fetch the result from the server."""
         self.parent.idem()
-        logger.debug(f'Getting AnalysisResult.')
+        logger.debug(f"Getting AnalysisResult.")
         blob = self.get_cached_blob()
         if not blob:
             url = self.nested_url()
             if self.replicate:
-                url += f'?replicate={self.replicate}'
+                url += f"?replicate={self.replicate}"
             blob = self.knex.get(url, url_options=self.inherited_url_options)
             self.load_blob(blob)
             self.cache_blob(blob)
@@ -104,17 +104,15 @@ class AnalysisResult(RemoteObject):
 
     def pre_hash(self):
         key = self.module_name + self.parent.pre_hash()
-        key += self.replicate if self.replicate else ''
+        key += self.replicate if self.replicate else ""
         return key
 
     def __str__(self):
-        return f'<Pangea::Sample {self.module_name} {self.replicate} {self.uuid} />'
+        return f"<Pangea::Sample {self.module_name} {self.replicate} {self.uuid} />"
 
     def copy(self, new_parent, save=True):
         copied = new_parent.analysis_result(
-            self.module_name,
-            replicate=self.replicate,
-            metadata=self.metadata
+            self.module_name, replicate=self.replicate, metadata=self.metadata
         )
         for field in self.get_fields():
             field.copy(copied, save=save)
@@ -124,7 +122,7 @@ class AnalysisResult(RemoteObject):
 
 
 class SampleAnalysisResult(AnalysisResult):
-    parent_field = 'sample'
+    parent_field = "sample"
 
     def __init__(self, knex, sample, module_name, replicate=None, metadata={}, is_private=False):
         super().__init__(self)
@@ -138,17 +136,14 @@ class SampleAnalysisResult(AnalysisResult):
         self.is_private = is_private
 
     def nested_url(self):
-        return self.sample.nested_url() + f'/analysis_results/{self.module_name}'
+        return self.sample.nested_url() + f"/analysis_results/{self.module_name}"
 
     def _save(self):
-        data = {
-            field: getattr(self, field)
-            for field in self.remote_fields if hasattr(self, field)
-        }
-        data['sample'] = self.sample.uuid
-        url = f'sample_ars/{self.uuid}'
-        d = {'data': data, 'url': url, 'sample_ar': self}
-        logger.debug(f'Saving SampleAnalysisResult. {d}')
+        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
+        data["sample"] = self.sample.uuid
+        url = f"sample_ars/{self.uuid}"
+        d = {"data": data, "url": url, "sample_ar": self}
+        logger.debug(f"Saving SampleAnalysisResult. {d}")
         self.knex.put(url, json=data, url_options=self.inherited_url_options)
 
     def _create(self):
@@ -158,17 +153,19 @@ class SampleAnalysisResult(AnalysisResult):
             for field in self.remote_fields
             if hasattr(self, field) and getattr(self, field) is not None
         }
-        data['sample'] = self.sample.uuid
+        data["sample"] = self.sample.uuid
         if self.replicate:
-            data['replicate'] = self.replicate
-        d = {'data': data, 'sample_ar': self}
-        logger.debug(f'Creating SampleAnalysisResult. {d}')
-        blob = self.knex.post(f'sample_ars?format=json', json=data, url_options=self.inherited_url_options)
+            data["replicate"] = self.replicate
+        d = {"data": data, "sample_ar": self}
+        logger.debug(f"Creating SampleAnalysisResult. {d}")
+        blob = self.knex.post(
+            f"sample_ars?format=json", json=data, url_options=self.inherited_url_options
+        )
         self.load_blob(blob)
 
     def field(self, field_name, data={}):
-        d = {'data': data, 'field_name': field_name, 'sample_ar': self}
-        logger.debug(f'Creating SampleAnalysisResultField for SampleAnalysisResult. {d}')
+        d = {"data": data, "field_name": field_name, "sample_ar": self}
+        logger.debug(f"Creating SampleAnalysisResultField for SampleAnalysisResult. {d}")
         return SampleAnalysisResultField(self.knex, self, field_name, data=data)
 
     def get_fields(self, cache=True):
@@ -177,11 +174,11 @@ class SampleAnalysisResult(AnalysisResult):
             for field in self._get_field_cache:
                 yield field
             return
-        url = f'sample_ar_fields?analysis_result_id={self.uuid}'
-        logger.debug(f'Fetching SampleAnalysisResultFields. {self}')
+        url = f"sample_ar_fields?analysis_result_id={self.uuid}"
+        logger.debug(f"Fetching SampleAnalysisResultFields. {self}")
         result = self.knex.get(url)
-        for result_blob in result['results']:
-            result = self.field(result_blob['name'])
+        for result_blob in result["results"]:
+            result = self.field(result_blob["name"])
             result.load_blob(result_blob)
             # We just fetched from the server so we change the RemoteObject
             # meta properties to reflect that
@@ -197,7 +194,7 @@ class SampleAnalysisResult(AnalysisResult):
 
 
 class SampleGroupAnalysisResult(AnalysisResult):
-    parent_field = 'grp'
+    parent_field = "grp"
 
     def __init__(self, knex, grp, module_name, replicate=None, metadata={}, is_private=False):
         super().__init__(self)
@@ -210,26 +207,23 @@ class SampleGroupAnalysisResult(AnalysisResult):
         self.is_private = is_private
 
     def nested_url(self):
-        return self.grp.nested_url() + f'/analysis_results/{self.module_name}'
+        return self.grp.nested_url() + f"/analysis_results/{self.module_name}"
 
     def _save(self):
-        data = {
-            field: getattr(self, field)
-            for field in self.remote_fields if hasattr(self, field)
-        }
-        data['sample_group'] = self.grp.uuid
-        url = f'sample_group_ars/{self.uuid}'
+        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
+        data["sample_group"] = self.grp.uuid
+        url = f"sample_group_ars/{self.uuid}"
         self.knex.put(url, json=data)
 
     def _create(self):
         self.grp.idem()
         data = {
-            'sample_group': self.grp.uuid,
-            'module_name': self.module_name,
+            "sample_group": self.grp.uuid,
+            "module_name": self.module_name,
         }
         if self.replicate:
-            data['replicate'] = self.replicate
-        blob = self.knex.post(f'sample_group_ars?format=json', json=data)
+            data["replicate"] = self.replicate
+        blob = self.knex.post(f"sample_group_ars?format=json", json=data)
         self.load_blob(blob)
 
     def field(self, field_name, data={}):
@@ -237,10 +231,10 @@ class SampleGroupAnalysisResult(AnalysisResult):
 
     def get_fields(self):
         """Return a list of ar-fields fetched from the server."""
-        url = f'sample_group_ar_fields?analysis_result_id={self.uuid}'
+        url = f"sample_group_ar_fields?analysis_result_id={self.uuid}"
         result = self.knex.get(url)
-        for result_blob in result['results']:
-            result = self.field(result_blob['name'])
+        for result_blob in result["results"]:
+            result = self.field(result_blob["name"])
             result.load_blob(result_blob)
             # We just fetched from the server so we change the RemoteObject
             # meta properties to reflect that
@@ -251,13 +245,13 @@ class SampleGroupAnalysisResult(AnalysisResult):
 
 class AnalysisResultField(RemoteObject):
     remote_fields = [
-        'uuid',
-        'created_at',
-        'updated_at',
-        'name',
-        'stored_data',
+        "uuid",
+        "created_at",
+        "updated_at",
+        "name",
+        "stored_data",
     ]
-    parent_field = 'parent'
+    parent_field = "parent"
 
     def __init__(self, knex, parent, field_name, data={}):
         super().__init__(self)
@@ -269,42 +263,39 @@ class AnalysisResultField(RemoteObject):
         self._temp_filename = False
 
     def nested_url(self):
-        return self.parent.nested_url() + f'/fields/{self.name}'
+        return self.parent.nested_url() + f"/fields/{self.name}"
 
     def get_blob_filename(self):
-        sname = self.parent.parent.name.replace('.', '-')
-        mname = self.parent.module_name.replace('.', '-')
-        fname = self.name.replace('.', '-')
-        filename = join(
-            self.parent.parent.name, f'{sname}.{mname}.{fname}.json'
-        ).replace('::', '__')
+        sname = self.parent.parent.name.replace(".", "-")
+        mname = self.parent.module_name.replace(".", "-")
+        fname = self.name.replace(".", "-")
+        filename = join(self.parent.parent.name, f"{sname}.{mname}.{fname}.json").replace(
+            "::", "__"
+        )
         return filename
 
     def get_referenced_filename(self):
         key = None
-        for key in ['filename', 'uri', 'url']:
+        for key in ["filename", "uri", "url"]:
             if key in self.stored_data:
                 break
         if key is None:
-            raise TypeError('Cannot make a reference filename for a BLOB type result field.')
-        ext = self.stored_data[key].split('.')[-1]
-        if ext in ['gz']:
-            ext = self.stored_data[key].split('.')[-2] + '.' + ext
-        sname = self.parent.parent.name.replace('.', '-')
-        mname = self.parent.module_name.replace('.', '-')
-        fname = self.name.replace('.', '-')
-        filename = join(
-            self.parent.parent.name, f'{sname}.{mname}.{fname}.{ext}'
-        ).replace('::', '__')
+            raise TypeError("Cannot make a reference filename for a BLOB type result field.")
+        ext = self.stored_data[key].split(".")[-1]
+        if ext in ["gz"]:
+            ext = self.stored_data[key].split(".")[-2] + "." + ext
+        sname = self.parent.parent.name.replace(".", "-")
+        mname = self.parent.module_name.replace(".", "-")
+        fname = self.name.replace(".", "-")
+        filename = join(self.parent.parent.name, f"{sname}.{mname}.{fname}.{ext}").replace(
+            "::", "__"
+        )
         return filename
 
     def _save(self):
-        data = {
-            field: getattr(self, field)
-            for field in self.remote_fields if hasattr(self, field)
-        }
-        data['analysis_result'] = self.parent.uuid
-        url = f'{self.canon_url()}/{self.uuid}'
+        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
+        data["analysis_result"] = self.parent.uuid
+        url = f"{self.canon_url()}/{self.uuid}"
         self.knex.put(url, json=data)
 
     def _get(self):
@@ -317,51 +308,51 @@ class AnalysisResultField(RemoteObject):
         check_json_serialization(self.stored_data)
         self.parent.idem()
         data = {
-            'analysis_result': self.parent.uuid,
-            'name': self.name,
-            'stored_data': self.stored_data,
+            "analysis_result": self.parent.uuid,
+            "name": self.name,
+            "stored_data": self.stored_data,
         }
-        blob = self.knex.post(f'{self.canon_url()}?format=json', json=data)
+        blob = self.knex.post(f"{self.canon_url()}?format=json", json=data)
         self.load_blob(blob)
 
     def get_download_url(self):
         """Return a URL that can be used to download the file for this result."""
-        blob_type = self.stored_data.get('__type__', '').lower()
-        if blob_type not in ['s3', 'sra']:
-            raise TypeError('Cannot fetch a file for a BLOB type result field.')
-        if blob_type == 's3':
+        blob_type = self.stored_data.get("__type__", "").lower()
+        if blob_type not in ["s3", "sra"]:
+            raise TypeError("Cannot fetch a file for a BLOB type result field.")
+        if blob_type == "s3":
             try:
-                url = self.stored_data['presigned_url']
+                url = self.stored_data["presigned_url"]
             except KeyError:
-                url = self.stored_data['uri']
-            if url.startswith('s3://'):
-                url = self.stored_data['endpoint_url'] + '/' + url[5:]
+                url = self.stored_data["uri"]
+            if url.startswith("s3://"):
+                url = self.stored_data["endpoint_url"] + "/" + url[5:]
             return url
-        elif blob_type == 'sra':
-            url = self.stored_data['url']
+        elif blob_type == "sra":
+            url = self.stored_data["url"]
             return url
 
     def download_file(self, filename=None, cache=True):
         """Return a local filepath to the file this result points to."""
-        blob_type = self.stored_data.get('__type__', '').lower()
-        if blob_type not in ['s3', 'sra', 'ftp']:
-            raise TypeError('Cannot fetch a file for a BLOB type result field.')
+        blob_type = self.stored_data.get("__type__", "").lower()
+        if blob_type not in ["s3", "sra", "ftp"]:
+            raise TypeError("Cannot fetch a file for a BLOB type result field.")
         if cache and self._cached_filename:
             return self._cached_filename
-        if blob_type == 's3':
+        if blob_type == "s3":
             return self._download_s3(filename, cache)
-        elif blob_type == 'sra':
+        elif blob_type == "sra":
             return self._download_sra(filename, cache)
-        elif blob_type == 'ftp':
+        elif blob_type == "ftp":
             return self._download_ftp(filename, cache)
 
     def _download_s3(self, filename, cache):
         try:
-            url = self.stored_data['presigned_url']
+            url = self.stored_data["presigned_url"]
         except KeyError:
-            url = self.stored_data['uri']
-        if url.startswith('s3://'):
-            url = self.stored_data['endpoint_url'] + '/' + url[5:]
+            url = self.stored_data["uri"]
+        if url.startswith("s3://"):
+            url = self.stored_data["endpoint_url"] + "/" + url[5:]
         if not filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
@@ -379,7 +370,7 @@ class AnalysisResultField(RemoteObject):
         return self._download_generic_url(filename, cache)
 
     def _download_generic_url(self, filename, cache):
-        url = self.stored_data['url']
+        url = self.stored_data["url"]
         if not filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
@@ -391,46 +382,52 @@ class AnalysisResultField(RemoteObject):
         return filename
 
     def upload_small_file(self, filepath, optional_fields={}):
-        url = f'/{self.canon_url()}/{self.uuid}/upload_s3'
+        url = f"/{self.canon_url()}/{self.uuid}/upload_s3"
         filename = basename(filepath)
-        optional_fields.update({
-            'md5_checksum': md5_checksum(filepath),
-            'file_size_bytes': getsize(filepath),
-        })
+        optional_fields.update(
+            {
+                "md5_checksum": md5_checksum(filepath),
+                "file_size_bytes": getsize(filepath),
+            }
+        )
         data = {
-            'filename': filename,
-            'optional_fields': optional_fields,
+            "filename": filename,
+            "optional_fields": optional_fields,
         }
         response = self.knex.post(url, json=data)
-        with open(filepath, 'rb') as f:
-            files = {'file': (filename, f)}
+        with open(filepath, "rb") as f:
+            files = {"file": (filename, f)}
             requests.post(  # Not a call to pangea so we do not use knex
-                response['url'],
-                data=response['fields'],
-                files=files
+                response["url"], data=response["fields"], files=files
             )
         return self
 
-    def upload_large_file(self, filepath, file_size,
-                          optional_fields={}, chunk_size=FIVE_MB, max_retries=3, logger=lambda x: x):
+    def upload_large_file(
+        self,
+        filepath,
+        file_size,
+        optional_fields={},
+        chunk_size=FIVE_MB,
+        max_retries=3,
+        logger=lambda x: x,
+    ):
         n_parts = int(file_size / chunk_size) + 1
-        optional_fields.update({
-            'md5_checksum': md5_checksum(filepath),
-            'file_size_bytes': getsize(filepath),
-        })
-        data = {
-            'filename': basename(filepath),
-            'n_parts': n_parts,
-            'stance': 'upload-multipart',
-            'optional_fields': optional_fields,
-        }
-        response = self.knex.post(
-            f'/{self.canon_url()}/{self.uuid}/upload_s3',
-            json=data
+        optional_fields.update(
+            {
+                "md5_checksum": md5_checksum(filepath),
+                "file_size_bytes": getsize(filepath),
+            }
         )
-        parts, urls, upload_id = [], response['urls'], response['upload_id']
+        data = {
+            "filename": basename(filepath),
+            "n_parts": n_parts,
+            "stance": "upload-multipart",
+            "optional_fields": optional_fields,
+        }
+        response = self.knex.post(f"/{self.canon_url()}/{self.uuid}/upload_s3", json=data)
+        parts, urls, upload_id = [], response["urls"], response["upload_id"]
         logger(f'[INFO] Starting upload for "{filepath}"')
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             for num, url in enumerate(urls):
                 file_data = f.read(chunk_size)
                 attempts = 0
@@ -440,21 +437,18 @@ class AnalysisResultField(RemoteObject):
                         http_response.raise_for_status()
                         break
                     except requests.exceptions.HTTPError:
-                        logger(f'[WARN] Upload for part {num + 1} failed. Attempt {attempts + 1}')
+                        logger(f"[WARN] Upload for part {num + 1} failed. Attempt {attempts + 1}")
                         attempts += 1
                         if attempts == max_retries:
                             raise
-                        time.sleep(10 ** attempts)  # exponential backoff, (10 ** 2)s default max
-                parts.append({
-                    'ETag': http_response.headers['ETag'],
-                    'PartNumber': num + 1
-                })
+                        time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
+                parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
                 logger(f'[INFO] Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
-            f'/{self.canon_url()}/{self.uuid}/complete_upload_s3',
+            f"/{self.canon_url()}/{self.uuid}/complete_upload_s3",
             json={
-                'parts': parts,
-                'upload_id': upload_id,
+                "parts": parts,
+                "upload_id": upload_id,
             },
             json_response=False,
         )
@@ -483,12 +477,10 @@ class AnalysisResultField(RemoteObject):
 
 
 class SampleAnalysisResultField(AnalysisResultField):
-
     def canon_url(self):
-        return 'sample_ar_fields'
+        return "sample_ar_fields"
 
 
 class SampleGroupAnalysisResultField(AnalysisResultField):
-
     def canon_url(self):
-        return 'sample_group_ar_fields'
+        return "sample_group_ar_fields"
