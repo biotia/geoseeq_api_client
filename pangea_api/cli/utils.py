@@ -1,7 +1,8 @@
-import click
 import logging
 
-from .. import Knex, User
+import click
+
+from .. import Knex
 
 logger = logging.getLogger('pangea_api')
 

@@ -1,0 +1,13 @@
+[MASTER]
+
+[FORMAT]
+max-line-length=100
+
+[MESSAGES CONTROL]
+
+disable=R,C,W,no-member
+
+enable=
+    line-too-long,
+    unused-import,
+    unused-variable,
