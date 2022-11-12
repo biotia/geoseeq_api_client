@@ -5,7 +5,7 @@ import click
 from .. import Organization
 from .utils import use_common_state
 
-logger = logging.getLogger('pangea_api')
+logger = logging.getLogger('geoseeq_api')
 
 
 @click.group('delete')

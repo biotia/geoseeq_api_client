@@ -1,6 +1,6 @@
 
-from .remote_object import RemoteObject
 from .blob_constructors import sample_from_uuid, sample_group_from_uuid
+from .remote_object import RemoteObject
 
 
 class WorkOrderProto(RemoteObject):
@@ -52,10 +52,10 @@ class WorkOrderProto(RemoteObject):
         return wo
 
     def __str__(self):
-        return f'<Pangea::WorkOrderProto {self.name} {self.uuid} />'
+        return f'<Geoseeq::WorkOrderProto {self.name} {self.uuid} />'
 
     def __repr__(self):
-        return f'<Pangea::WorkOrderProto {self.name} {self.uuid} />'
+        return f'<Geoseeq::WorkOrderProto {self.name} {self.uuid} />'
 
     @classmethod
     def from_uuid(cls, knex, uuid):
@@ -105,10 +105,10 @@ class WorkOrder(RemoteObject):
         return jo
 
     def __str__(self):
-        return f'<Pangea::WorkOrder {self.name} {self.uuid} />'
+        return f'<Geoseeq::WorkOrder {self.name} {self.uuid} />'
 
     def __repr__(self):
-        return f'<Pangea::WorkOrder {self.name} {self.uuid} />'
+        return f'<Geoseeq::WorkOrder {self.name} {self.uuid} />'
 
     @classmethod
     def from_blob(cls, knex, blob):
@@ -158,10 +158,10 @@ class JobOrder(RemoteObject):
             self.load_blob(blob)
 
     def __str__(self):
-        return f'<Pangea::JobOrder {self.name} {self.uuid} />'
+        return f'<Geoseeq::JobOrder {self.name} {self.uuid} />'
 
     def __repr__(self):
-        return f'<Pangea::JobOrder {self.name} {self.uuid} />'
+        return f'<Geoseeq::JobOrder {self.name} {self.uuid} />'
 
     def pre_hash(self):
         key = self.work_order.uuid + self.name if self.name else ''
@@ -214,10 +214,10 @@ class GroupWorkOrderProto(RemoteObject):
         return wo
 
     def __str__(self):
-        return f'<Pangea::GroupWorkOrderProto {self.name} {self.uuid} />'
+        return f'<Geoseeq::GroupWorkOrderProto {self.name} {self.uuid} />'
 
     def __repr__(self):
-        return f'<Pangea::GropWorkOrderProto {self.name} {self.uuid} />'
+        return f'<Geoseeq::GropWorkOrderProto {self.name} {self.uuid} />'
 
     @classmethod
     def from_uuid(cls, knex, uuid):
@@ -260,10 +260,10 @@ class GroupWorkOrder(RemoteObject):
             yield obj
 
     def __str__(self):
-        return f'<Pangea::GroupWorkOrder {self.name} {self.uuid} />'
+        return f'<Geoseeq::GroupWorkOrder {self.name} {self.uuid} />'
 
     def __repr__(self):
-        return f'<Pangea::GroupWorkOrder {self.name} {self.uuid} />'
+        return f'<Geoseeq::GroupWorkOrder {self.name} {self.uuid} />'
 
     @classmethod
     def from_blob(cls, knex, blob):

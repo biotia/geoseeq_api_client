@@ -1,14 +1,10 @@
 
-import click
 import gzip
 from random import randint
-from pangea_api import (
-    Knex,
-    User,
-    Organization,
-)
-from requests.exceptions import HTTPError
 
+import click
+from geoseeq_api import Knex, Organization, User
+from requests.exceptions import HTTPError
 
 """
 Note: ordinarily we would not want a module name

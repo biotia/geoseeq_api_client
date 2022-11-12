@@ -13,7 +13,7 @@ from .constants import FIVE_MB
 from .remote_object import RemoteObject, RemoteObjectError
 from .utils import md5_checksum
 
-logger = logging.getLogger("pangea_api")  # Same name as calling module
+logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 
 
@@ -108,7 +108,7 @@ class AnalysisResult(RemoteObject):
         return key
 
     def __str__(self):
-        return f"<Pangea::Sample {self.module_name} {self.replicate} {self.uuid} />"
+        return f"<Geoseeq::Sample {self.module_name} {self.replicate} {self.uuid} />"
 
     def copy(self, new_parent, save=True):
         copied = new_parent.analysis_result(
@@ -397,7 +397,7 @@ class AnalysisResultField(RemoteObject):
         response = self.knex.post(url, json=data)
         with open(filepath, "rb") as f:
             files = {"file": (filename, f)}
-            requests.post(  # Not a call to pangea so we do not use knex
+            requests.post(  # Not a call to geoseeq so we do not use knex
                 response["url"], data=response["fields"], files=files
             )
         return self

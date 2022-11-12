@@ -1,17 +1,18 @@
 import logging
 
 import click
+from geoseeq_api.knex import DEFAULT_ENDPOINT
 
 from .. import Knex
 
-logger = logging.getLogger('pangea_api')
+logger = logging.getLogger('geoseeq_api')
 
 
 class State(object):
 
     def __init__(self):
         self.api_token = None
-        self.endpoint = 'https://pangeabio.io'
+        self.endpoint = DEFAULT_ENDPOINT
         self.outfile = None
         self.log_level = 20
 
@@ -34,7 +35,7 @@ def log_level_option(f):
     return click.option('-l', '--log-level',
                         type=int,
                         default=20,
-                        envvar='PANGEA_CLI_LOG_LEVEL',
+                        envvar='GEOSEEQ_CLI_LOG_LEVEL',
                         expose_value=False,
                         callback=callback)(f)
 
@@ -45,9 +46,9 @@ def api_token_option(f):
         state.api_token = str(value)
         return value
     return click.option('-a', '--api-token',
-                        envvar='PANGEA_API_TOKEN',
+                        envvar='GEOSEEQ_API_TOKEN',
                         expose_value=False,
-                        help='Your Pangea API token.',
+                        help='Your GEOSEEQ API token.',
                         callback=callback)(f)
 
 
@@ -57,9 +58,9 @@ def endpoint_option(f):
         state.endpoint = str(value)
         return value
     return click.option('--endpoint',
-                        default='https://pangeabio.io',
+                        default=DEFAULT_ENDPOINT,
                         expose_value=False,
-                        help='The URL to use for Pangea.',
+                        help='The URL to use for GEOSEEQ.',
                         callback=callback)(f)
 
 
@@ -71,7 +72,7 @@ def outfile_option(f):
     return click.option('-o', '--outfile',
                         default='-', type=click.File('w'),
                         expose_value=False,
-                        help='The URL to use for Pangea.',
+                        help='The URL to use for GEOSEEQ.',
                         callback=callback)(f)
 
 

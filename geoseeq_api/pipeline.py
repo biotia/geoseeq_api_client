@@ -49,10 +49,10 @@ class Pipeline(RemoteObject):
         self.load_blob(blob)
 
     def __str__(self):
-        return f'<Pangea::Pipeline {self.name} {self.uuid} />'
+        return f'<Geoseeq::Pipeline {self.name} {self.uuid} />'
 
     def __repr__(self):
-        return f'<Pangea::Pipeline {self.name} {self.uuid} />'
+        return f'<Geoseeq::Pipeline {self.name} {self.uuid} />'
 
     def pre_hash(self):
         return 'PIPELINE' + self.name
@@ -139,10 +139,10 @@ class PipelineModule(RemoteObject):
         self.dependencies.append(upstream.uuid)
 
     def __str__(self):
-        return f'<Pangea::PipelineModule "{self.name}" "{self.version}" {self.uuid} />'
+        return f'<Geoseeq::PipelineModule "{self.name}" "{self.version}" {self.uuid} />'
 
     def __repr__(self):
-        return f'<Pangea::PipelineModule "{self.name}" "{self.version}" {self.uuid} />'
+        return f'<Geoseeq::PipelineModule "{self.name}" "{self.version}" {self.uuid} />'
 
     def pre_hash(self):
         return 'PIPELINE_MODULE' + self.name + self.version + self.pip.pre_hash()

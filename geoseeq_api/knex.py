@@ -4,10 +4,11 @@ import requests
 
 from .file_system_cache import FileSystemCache
 
-DEFAULT_ENDPOINT = "https://pangeabio.io"
+# DEFAULT_ENDPOINT = "https://portal.geoseeq.com"
+DEFAULT_ENDPOINT = "https://dev.geoseeq.com"
 
 
-logger = logging.getLogger("pangea_api")  # Same name as calling module
+logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 
 
@@ -33,23 +34,23 @@ class TokenAuth(requests.auth.AuthBase):
         return self.token
 
 
-class PangeaGeneralError(requests.exceptions.HTTPError):
+class GeoseeqGeneralError(requests.exceptions.HTTPError):
     pass
 
 
-class PangeaNotFoundError(PangeaGeneralError):
+class GeoseeqNotFoundError(GeoseeqGeneralError):
     pass
 
 
-class PangeaForbiddenError(PangeaGeneralError):
+class GeoseeqForbiddenError(GeoseeqGeneralError):
     pass
 
 
-class PangeaInternalError(PangeaGeneralError):
+class GeoseeqInternalError(GeoseeqGeneralError):
     pass
 
 
-class PangeaOtherError(PangeaGeneralError):
+class GeoseeqOtherError(GeoseeqGeneralError):
     pass
 
 
@@ -88,12 +89,12 @@ class Knex:
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
             if response.status_code == 403:
-                raise PangeaForbiddenError(e)
+                raise GeoseeqForbiddenError(e)
             if response.status_code == 404:
-                raise PangeaNotFoundError(e)
+                raise GeoseeqNotFoundError(e)
             if response.status_code == 500:
-                raise PangeaInternalError(e)
-            raise PangeaOtherError(e)
+                raise GeoseeqInternalError(e)
+            raise GeoseeqOtherError(e)
         except Exception:
             logger.debug(f"Request failed. {response}\n{response.content}")
             raise

@@ -4,11 +4,11 @@ from os import environ
 from os.path import dirname, join
 from unittest import TestCase, skip
 
-from pangea_api import Knex, Organization, RemoteObjectError, SampleGroup
+from geoseeq_api import Knex, Organization, RemoteObjectError, SampleGroup
 from requests.exceptions import HTTPError
 
 PACKET_DIR = join(dirname(__file__), "built_packet")
-ENDPOINT = environ.get("PANGEA_API_TESTING_ENDPOINT", "http://127.0.0.1:8000")
+ENDPOINT = environ.get("GEOSEEQ_API_TESTING_ENDPOINT", "http://127.0.0.1:8000")
 
 
 def random_str(len=12):
@@ -17,7 +17,7 @@ def random_str(len=12):
     return "".join(out)
 
 
-class TestPangeaApiClient(TestCase):
+class TestGeoseeqApiClient(TestCase):
     """Test suite for packet building."""
 
     def setUp(self):

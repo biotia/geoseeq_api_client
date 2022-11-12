@@ -1,6 +1,6 @@
 # Longtail Additions
 
-.pangea_api_cache
+.geoseeq_api_cache
 
 ### Environment ###
 .env

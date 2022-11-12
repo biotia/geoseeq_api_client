@@ -1,25 +1,16 @@
 
-import click
 import json
+from os import environ, makedirs
+from os.path import dirname, join
+
+import click
 import pandas as pd
-
 from requests.exceptions import HTTPError
-from os import environ
-from os.path import join, dirname
-from os import makedirs
 
-from .. import (
-    Knex,
-    User,
-    Organization,
-)
-from .utils import use_common_state
+from .. import Knex, Organization, User
 from .constants import *
-from .fastq_utils import (
-    group_paired_end_paths,
-    upload_fastq_pair,
-    upload_single_fastq,
-)
+from .fastq_utils import group_paired_end_paths, upload_fastq_pair, upload_single_fastq
+from .utils import use_common_state
 
 
 @click.group('upload')
@@ -50,7 +41,7 @@ lib_arg = click.argument('library_name')
 @click.argument('file_list', type=click.File('r'))
 def cli_upload_pe_reads(state, overwrite, private, tag, module_name, delim,
                         ext_1, ext_2, org_name, library_name, file_list):
-    """Upload paired end reads to Pangea.
+    """Upload paired end reads to Geoseeq.
 
     This command will upload paired end reads to the specified
     sample library.
@@ -95,7 +86,7 @@ def cli_upload_pe_reads(state, overwrite, private, tag, module_name, delim,
 @click.argument('file_list', type=click.File('r'))
 def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
                         ext, org_name, library_name, file_list):
-    """Upload single ended reads to Pangea, including nanopore reads.
+    """Upload single ended reads to Geoseeq, including nanopore reads.
 
     This command will upload single reads to the specified
     sample library.

@@ -1,14 +1,14 @@
-# Pangea API Client
+# Geoseeq API Client
 
-This is a python library to interact with the Pangea API.
+This is a python library to interact with the Geoseeq API.
 
 ## Downloading Data and Metadata
 
-This package may be used to download data from Pangea.
+This package may be used to download data from Geoseeq.
 
 An example download script can be seen [here](https://gist.github.com/dcdanko/c70304e5eb9c20fc81111929598edda0).
 
-Pangea is designed to store massive amounts of data. Downloads of large files are likely to take a long time.
+Geoseeq is designed to store massive amounts of data. Downloads of large files are likely to take a long time.
 
 ### Using the CLI
 
@@ -17,35 +17,35 @@ The simplest way to download data is using the CLI.
 Download metadata from the sample group `UW Madison Biotech 2020`
 
 ```
-$ pangea-api download metadata 'Mason Lab' 'UW Madison Biotech 2020'
+$ geoseeq-api download metadata 'Mason Lab' 'UW Madison Biotech 2020'
 ```
 
 Download the result `cap1::microbe_census` from sample `BC-0235081664`
 
 ```
-$ pangea-api download sample-results --module-name 'cap1::microbe_census' 'Mason Lab' 'UW Madison Biotech 2020' BC-0235081664
+$ geoseeq-api download sample-results --module-name 'cap1::microbe_census' 'Mason Lab' 'UW Madison Biotech 2020' BC-0235081664
 ```
 
 Download all results for all smaples in the group `UW Madison Biotech 2020`
 
 ```
-$ pangea-api download sample-results 'Mason Lab' 'UW Madison Biotech 2020'
+$ geoseeq-api download sample-results 'Mason Lab' 'UW Madison Biotech 2020'
 ```
 
 Use `--help` to see more options
 
 ```
-$ pangea-api download metadata --help
-$ pangea-api download sample-results --help
+$ geoseeq-api download metadata --help
+$ geoseeq-api download sample-results --help
 ```
 
 ### Using the Python API in a program
 
-Please see `pangea_api/cli.py` for examples of how to download data using the Python API directly.
+Please see `geoseeq_api/cli.py` for examples of how to download data using the Python API directly.
 
-## Pangea Data Model
+## Geoseeq Data Model
 
-Pangea is based on a hierarchical data model with three components:
+Geoseeq is based on a hierarchical data model with three components:
 
 ```
 Sample Group -> Sample -> Analysis Result
@@ -72,11 +72,11 @@ User <-> Organization -> (Group or Library) -> Sample -> ...
                       |-> Analysis Result -> ...
 ```
 
-- `Users` are people signed up on Pangea
+- `Users` are people signed up on Geoseeq
 - `Organizations` represent groups (e.g. a Lab). Organizations own groups and set permissions
 - `Libraries` are special `Sample Groups` that act as a home base for samples. Every sample has exactly one `Library`
 
-### Storing Data on Pangea
+### Storing Data on Geoseeq
 
 Data is stored in `AnalysisResultFields`, attached to either `Samples` or `SampleGroups`. Each `AnalysisResultField` contains a JSON blob. This blob may be the data itself or, often, is a pointer to data stored somewhere else on the internet like `S3` or `FTP`.
 
@@ -90,11 +90,11 @@ Download this directory and run `python setup.py install`
 
 ### Install from PyPi
 
-`pip install pangea-api`
+`pip install geoseeq-api`
 
 ### Testing
 
-To test you will need a local version of pange-django running.
+To test you will need a local version of geoseeq-django running.
 
 Tests can be run using unittest
 

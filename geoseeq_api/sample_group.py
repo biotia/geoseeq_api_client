@@ -186,10 +186,10 @@ class SampleGroup(RemoteObject):
         return self.knex.get(url)
 
     def __str__(self):
-        return f"<Pangea::SampleGroup {self.name} {self.uuid} />"
+        return f"<Geoseeq::SampleGroup {self.name} {self.uuid} />"
 
     def __repr__(self):
-        return f"<Pangea::SampleGroup {self.name} {self.uuid} />"
+        return f"<Geoseeq::SampleGroup {self.name} {self.uuid} />"
 
     def pre_hash(self):
         return "SG" + self.name + self.org.pre_hash()

@@ -1,15 +1,15 @@
-import os
-import logging
 import json
-from time import time
+import logging
+import os
 from glob import glob
 from hashlib import sha256
 from random import randint
+from time import time
 
 logger = logging.getLogger(__name__)  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 CACHED_BLOB_TIME = 3 * 60 * 60  # 3 hours in seconds
-CACHE_DIR = os.environ.get('PANGEA_API_CACHE_DIR', '.')
+CACHE_DIR = os.environ.get('GEOSEEQ_API_CACHE_DIR', '.')
 
 
 def hash_obj(obj):
@@ -30,7 +30,7 @@ def time_since_file_cached(blob_filepath):
 class FileSystemCache:
 
     def __init__(self, timeout=CACHED_BLOB_TIME):
-        self.no_cache = 'false' in os.environ.get('USE_PANGEA_CACHE', 'TRUE').lower()
+        self.no_cache = 'false' in os.environ.get('USE_GEOSEEQ_CACHE', 'TRUE').lower()
         self.timeout = timeout
 
     def clear_blob(self, obj):
@@ -46,7 +46,7 @@ class FileSystemCache:
                 pass
 
     def get_cached_blob_filepath(self, obj):
-        path_base = f'{CACHE_DIR}/.pangea_api_cache/v1/pangea_api_cache__{hash_obj(obj)}'
+        path_base = f'{CACHE_DIR}/.geoseeq_api_cache/v1/geoseeq_api_cache__{hash_obj(obj)}'
         os.makedirs(os.path.dirname(path_base), exist_ok=True)
         paths = sorted(glob(f'{path_base}__*.json'))
         if paths:

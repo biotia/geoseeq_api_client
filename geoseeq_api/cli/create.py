@@ -1,20 +1,15 @@
-import click
 import json
+from os import environ, makedirs
+from os.path import dirname, join
+
+import click
 import pandas as pd
-
 from requests.exceptions import HTTPError
-from os import environ
-from os.path import join, dirname
-from os import makedirs
 
-from .. import (
-    Knex,
-    User,
-    Organization,
-)
-from ..blob_constructors import sample_from_uuid, sample_ar_from_uuid
-from .utils import use_common_state
+from .. import Knex, Organization, User
+from ..blob_constructors import sample_ar_from_uuid, sample_from_uuid
 from .constants import *
+from .utils import use_common_state
 
 
 @click.group('create')
@@ -26,7 +21,7 @@ def cli_create():
 @use_common_state
 @click.argument('org_name')
 def cli_create_org(state, org_name):
-    """Create an organization on Pangea."""
+    """Create an organization on Geoseeq."""
     knex = state.get_knex()
     org = Organization(knex, org_name).create()
     click.echo(f'Created: {org}', err=True)
@@ -39,7 +34,7 @@ def cli_create_org(state, org_name):
 @click.argument('org_name')
 @click.argument('grp_name')
 def cli_create_grp(state, private, library, org_name, grp_name):
-    """Create a sample group on Pangea."""
+    """Create a sample group on Geoseeq."""
     knex = state.get_knex()
     org = Organization(knex, org_name).get()
     grp = org.sample_group(grp_name, is_library=library, is_public=not private).create()

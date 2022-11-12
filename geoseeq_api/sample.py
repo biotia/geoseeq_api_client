@@ -103,10 +103,10 @@ class Sample(RemoteObject):
         return self.knex.get(url)
 
     def __str__(self):
-        return f"<Pangea::Sample {self.name} {self.uuid} />"
+        return f"<Geoseeq::Sample {self.name} {self.uuid} />"
 
     def __repr__(self):
-        return f"<Pangea::Sample {self.name} {self.uuid} />"
+        return f"<Geoseeq::Sample {self.name} {self.uuid} />"
 
     def pre_hash(self):
         return "SAMPLE" + self.name + self.lib.pre_hash()
