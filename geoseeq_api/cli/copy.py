@@ -12,15 +12,15 @@ def cli_copy():
 @cli_copy.command('group')
 @click.option('-l', '--log-level', type=int, default=20, envvar='GEOSEEQ_CLI_LOG_LEVEL')
 @click.option('-o', '--outfile', type=click.File('w'), default='-')
-@click.option('--source-api-token', envvar='GEOSEEQ_API_TOKEN')
+@click.option('--source-api-token', envvar='SOURCE_GEOSEEQ_API_TOKEN')
 @click.option('--target-api-token', envvar='GEOSEEQ_API_TOKEN')
 @click.option('--source-endpoint', default=DEFAULT_ENDPOINT)
-@click.option('--target-endpoint', default=DEFAULT_ENDPOINT)
+@click.option('--target-endpoint', default="https://geoseeq.dev.biotia.io")
 @click.argument('source_org_name')
 @click.argument('source_grp_name')
 @click.argument('target_org_name')
 @click.argument('target_grp_name')
-def cli_list_samples(outfile,
+def cli_list_samples(log_level, outfile,
                      source_api_token, target_api_token,
                      source_endpoint, target_endpoint,
                      source_org_name, source_grp_name,
