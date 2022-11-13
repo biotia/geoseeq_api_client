@@ -2,7 +2,7 @@
 import gzip
 from random import randint
 
-from pangea_api import Knex, Organization
+from geoseeq_api import Knex, Organization
 
 configfile: "config.yaml"
 
@@ -31,7 +31,7 @@ rule all:
         [f'{sample_name}.result_uploaded.flag' for sample_name in SAMPLE_NAMES]
 
 
-rule download_fastq_from_pangea:
+rule download_fastq_from_geoseeq:
     output: '{sample_name}_reads.fq.gz'
     run:
         sample = GRP.sample(wildcards.sample_name).get()
@@ -60,7 +60,7 @@ rule process_fastq:
             f.write(f'gc_fraction\t{gc_count}\n')
 
 
-rule upload_result_to_pangea:
+rule upload_result_to_geoseeq:
     input: '{sample_name}_example_stats.tsv'
     output: '{sample_name}.result_uploaded.flag'
     run:

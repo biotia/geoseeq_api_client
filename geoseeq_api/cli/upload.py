@@ -1,13 +1,11 @@
 
 import json
-from os import environ, makedirs
-from os.path import dirname, join
 
 import click
 import pandas as pd
-from requests.exceptions import HTTPError
+from geoseeq_api.contrib.tagging.tag import Tag
 
-from .. import Knex, Organization, User
+from .. import Organization
 from .constants import *
 from .fastq_utils import group_paired_end_paths, upload_fastq_pair, upload_single_fastq
 from .utils import use_common_state
@@ -111,8 +109,8 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
         for tag in tags:
             tag(sample)
         ar = sample.analysis_result(module_name)
-        reads = upload_single_fastq(ar, module_name, filepath, private)
-        print(sample, ar, reads, file=outfile)
+        reads = upload_single_fastq(ar, module_name, filepath, private, overwrite=overwrite)
+        print(sample, ar, reads, file=state.outfile)
 
 
 @cli_upload.command('metadata')

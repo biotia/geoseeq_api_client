@@ -1,5 +1,5 @@
-from requests.exceptions import HTTPError
 import click
+from requests.exceptions import HTTPError
 
 
 def group_paired_end_paths(file_list, ext_1, ext_2, delim=''):
@@ -68,7 +68,7 @@ def upload_fastq_pair(ar, read_1, read_2, private, overwrite=False):
     return r1, r2
 
 
-def upload_single_fastq(ar, sequencing_type, filepath, private):
+def upload_single_fastq(ar, sequencing_type, filepath, private, overwrite):
     try:
         if overwrite:
             raise HTTPError()

@@ -5,7 +5,7 @@ import requests
 from .file_system_cache import FileSystemCache
 
 # DEFAULT_ENDPOINT = "https://portal.geoseeq.com"
-DEFAULT_ENDPOINT = "https://dev.geoseeq.com"
+DEFAULT_ENDPOINT = "https://dev1.geoseeq.com"
 
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module

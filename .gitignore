@@ -1,9 +1,12 @@
-# Longtail Additions
+### Cache ###
 
 .geoseeq_api_cache
 
 ### Environment ###
 .env
+
+### Test commands ###
+test_commands.txt
 
 
 # Created by https://www.gitignore.io/api/linux,macos,django,windows

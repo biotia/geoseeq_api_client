@@ -3,7 +3,7 @@ import gzip
 from random import randint
 
 import click
-from geoseeq_api import Knex, Organization, User
+from geoseeq_api import Knex, Organization
 from requests.exceptions import HTTPError
 
 """
@@ -42,8 +42,8 @@ def process_fastq(sample, local_filepath):
     return output_filename
 
 
-def upload_result_to_pangea(sample, result_filepath):
-    """Upload the local result to Pangea.
+def upload_result_to_geoseeq(sample, result_filepath):
+    """Upload the local result to Geoseeq.
 
     Note that field.upload_file will automatically handle 
     uploads for large files.
@@ -53,7 +53,7 @@ def upload_result_to_pangea(sample, result_filepath):
     field.upload_file(result_filepath)
 
 
-def download_reads_from_pangea(sample, module_name, field_name):
+def download_reads_from_geoseeq(sample, module_name, field_name):
     """Return the local filepath for reads from the sample after downloading."""
     filename = f'{sample.name}_reads.fq.gz'
     ar = sample.analysis_result(module_name).get()
@@ -64,15 +64,15 @@ def download_reads_from_pangea(sample, module_name, field_name):
 
 def process_sample(sample, module_name, field_name):
     """Find some basic stats for reads in a sample and upload
-    the results to Pangea.
+    the results to Geoseeq.
     """
     try:
-        local_filepath = download_reads_from_pangea(sample, module_name, field_name)
+        local_filepath = download_reads_from_geoseeq(sample, module_name, field_name)
     except HTTPError:
         click.echo(f'Reads not found for sample {sample.name}')
         return
     local_result = process_fastq(sample, local_filepath)
-    upload_result_to_pangea(sample, local_result)
+    upload_result_to_geoseeq(sample, local_result)
 
 
 def handle_sample(sample, module_name, field_name):
@@ -85,13 +85,13 @@ def handle_sample(sample, module_name, field_name):
 
 
 @click.command()
-@click.option('-a', '--api-token', help='Your Pangea API token')
+@click.option('-a', '--api-token', help='Your Geoseeq API token')
 @click.option('-m', '--module-name', default='raw::paired_short_reads')
 @click.option('-f', '--field-name', default='read_1')
 @click.argument('organization_name')
 @click.argument('sample_group_name')
 def main(api_token, module_name, field_name, organization_name, sample_group_name):
-    """Example script using Pangea and Python to analyze data.
+    """Example script using Geoseeq and Python to analyze data.
 
     This script will process every sample in a given sample group.
     It will download reads from each sample then calculate some

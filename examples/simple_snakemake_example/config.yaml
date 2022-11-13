@@ -1,5 +1,5 @@
 api_token: 'demo_user_api_token'
-organization_name: 'Pangea Demo'
+organization_name: 'Geoseeq Demo'
 sample_group_name: 'Simple Demo Group'
 module_name: 'raw::paired_short_reads'
 field_name: 'read_1'

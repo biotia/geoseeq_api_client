@@ -59,7 +59,9 @@ class Sample(RemoteObject):
         self.lib.idem()
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
         data["library"] = self.lib.uuid
-        url = "samples?format=json"
+        url = "samples"
+        # Server gives error if uuid=None is sent in the payload
+        data.pop('uuid')
         blob = self.knex.post(url, json=data, url_options=self.inherited_url_options)
         self.load_blob(blob)
 

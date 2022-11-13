@@ -381,6 +381,8 @@ class AnalysisResultField(RemoteObject):
             self._cached_filename = filename
         return filename
 
+    # DEV: to simplify the uplaod process we will use only the multipart upload. It works well for small files also.
+    # This function is currently unused.
     def upload_small_file(self, filepath, optional_fields={}):
         url = f"/{self.canon_url()}/{self.uuid}/upload_s3"
         filename = basename(filepath)
@@ -402,7 +404,7 @@ class AnalysisResultField(RemoteObject):
             )
         return self
 
-    def upload_large_file(
+    def multipart_upload_file(
         self,
         filepath,
         file_size,
@@ -420,15 +422,22 @@ class AnalysisResultField(RemoteObject):
         )
         data = {
             "filename": basename(filepath),
-            "n_parts": n_parts,
-            "stance": "upload-multipart",
             "optional_fields": optional_fields,
         }
-        response = self.knex.post(f"/{self.canon_url()}/{self.uuid}/upload_s3", json=data)
-        parts, urls, upload_id = [], response["urls"], response["upload_id"]
+        response = self.knex.post(f"/{self.canon_url()}/{self.uuid}/create_s3_upload", json=data)
+        upload_id = response["upload_id"]
+        parts = [*range(1, n_parts + 1)]
+        data = {
+            "parts": parts,
+            "stance": 'upload-multipart',
+            "upload_id": upload_id,
+        }
+        response = self.knex.post(f"/{self.canon_url()}/{self.uuid}/create_upload_urls", json=data)
+        urls = response
+        complete_parts = []
         logger(f'[INFO] Starting upload for "{filepath}"')
         with open(filepath, "rb") as f:
-            for num, url in enumerate(urls):
+            for num, url in enumerate(list(urls.values())):
                 file_data = f.read(chunk_size)
                 attempts = 0
                 while attempts < max_retries:
@@ -442,12 +451,12 @@ class AnalysisResultField(RemoteObject):
                         if attempts == max_retries:
                             raise
                         time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
-                parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
+                complete_parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
                 logger(f'[INFO] Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
             f"/{self.canon_url()}/{self.uuid}/complete_upload_s3",
             json={
-                "parts": parts,
+                "parts": complete_parts,
                 "upload_id": upload_id,
             },
             json_response=False,
@@ -458,9 +467,7 @@ class AnalysisResultField(RemoteObject):
     def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
         resolved_path = Path(filepath).resolve()
         file_size = getsize(resolved_path)
-        if file_size >= multipart_thresh:
-            return self.upload_large_file(filepath, file_size, **kwargs)
-        return self.upload_small_file(filepath, **kwargs)
+        return self.multipart_upload_file(filepath, file_size, **kwargs)
 
     def __del__(self):
         if self._temp_filename and self._cached_filename:
