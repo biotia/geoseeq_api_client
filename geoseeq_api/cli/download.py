@@ -41,6 +41,7 @@ def cli_download_metadata(state, sample_manifest, org_name, grp_name, sample_nam
         metadata[sample.name] = sample.metadata
     metadata = pd.DataFrame.from_dict(metadata, orient="index")
     metadata.to_csv(state.outfile)
+    click.echo("Metadata successfully downloaded for samples.", err=True)
 
 
 @cli_download.command("sample-results")

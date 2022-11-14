@@ -72,7 +72,7 @@ def outfile_option(f):
     return click.option('-o', '--outfile',
                         default='-', type=click.File('w'),
                         expose_value=False,
-                        help='The URL to use for GEOSEEQ.',
+                        help='Output file path',
                         callback=callback)(f)
 
 

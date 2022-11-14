@@ -1,12 +1,6 @@
-import json
-from os import environ, makedirs
-from os.path import dirname, join
-
 import click
-import pandas as pd
-from requests.exceptions import HTTPError
 
-from .. import Knex, Organization, User
+from .. import Organization
 from ..blob_constructors import sample_ar_from_uuid, sample_from_uuid
 from .constants import *
 from .utils import use_common_state
@@ -94,14 +88,17 @@ def cli_create_samples(state, module_name, org_name, library_name, sample_name, 
     sample = lib.sample(sample_name).idem()
     ar = sample.analysis_result(module_name).create()
     if module_name in [SINGLE_END, NANOPORE]:
-        r1 = ar.field('reads').create()
+        field_name=f"{module_name}::read_1::lane_1"
+        r1 = ar.field(field_name).create()
         r1.upload_file(data_files[0])
     elif module_name == PAIRED_END:
-        r1 = ar.field('read_1').create()
+        field_name=f"{module_name}::read_1::lane_1"
+        r1 = ar.field(field_name).create()
         r1.upload_file(data_files[0])
-        r2 = ar.field('read_2').create()
+        field_name=f"{module_name}::read_2::lane_1"
+        r2 = ar.field(field_name).create()
         r2.upload_file(data_files[1])
-    click.echo('success', err=True)
+    click.echo('Sample with data successfully created', err=True)
 
 
 @cli_create.command('sample-ar')
@@ -109,6 +106,18 @@ def cli_create_samples(state, module_name, org_name, library_name, sample_name, 
 @click.option('-r', '--replicate')
 @click.argument('names', nargs=-1)
 def cli_create_sample_ar(state, replicate, names):
+    """Create new sample analysis result for a sample.
+
+    Names must be one of:
+    <org name> <library name> <sample name> <new module name>
+    <sample uuid> <new module name>
+    
+    `org name` is the name of the organization where the sample exists
+    `library name` is the name of the library where the sample exists
+    `sample name` is the name of the sample
+    `sample uuid` is the uuid of the sample
+    `new module name` module name for the created analysis result
+    """
     if len(names) not in [2, 4]:
         click.echo('''
             Names must be one of:
@@ -132,6 +141,21 @@ def cli_create_sample_ar(state, replicate, names):
 @use_common_state
 @click.argument('names', nargs=-1)
 def cli_create_field(state, names):
+    """Create new sample analysis result field.
+
+    Names must be one of:
+    <org name> <library name> <sample name> <module name> <new field name> <filename>
+    <module uuid> <new field name> <filename>
+    
+    `org name` is the name of the organization where the sample exists
+    `library name` is the name of the library where the sample exists
+    `sample name` is the name of the sample
+    `module name` module name of the target sample analysis result
+    `module uuid` uuid of the target sample analysis result
+    `new field name` name of the created field
+    `filename` route to the selected file
+
+    """
     if len(names) not in [3, 6]:
         click.echo('''
             Names must be one of:
@@ -152,3 +176,4 @@ def cli_create_field(state, names):
     click.echo(f'Created: {arf}', err=True)
     click.echo(f'Uploading file: {names[-1]}', err=True)
     arf.upload_file(names[-1], logger=lambda x: click.echo(x, err=True))
+    click.echo('File successfully uploaded', err=True)

@@ -20,7 +20,7 @@ def cli_delete():
 @click.argument('grp_name')
 @click.argument('sample_names', nargs=-1)
 def cli_delete_samples(state, confirm, org_name, grp_name, sample_names):
-    """Print a list of samples in the specified group."""
+    """Delete a list of samples in the specified group."""
     knex = state.get_knex()
     org = Organization(knex, org_name).get()
     grp = org.sample_group(grp_name).get()
