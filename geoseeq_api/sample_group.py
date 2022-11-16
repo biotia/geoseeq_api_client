@@ -104,6 +104,7 @@ class SampleGroup(RemoteObject):
                 "organization": self.org.uuid,
                 "name": self.name,
                 "is_library": self.is_library,
+                "is_public": self.is_public,
                 "metadata": self.metadata,
                 "storage_provider_name": self.storage_provider,
             },
