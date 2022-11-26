@@ -292,6 +292,13 @@ class AnalysisResultField(RemoteObject):
         )
         return filename
 
+    def get_local_filename(self):
+        """Return a filename that can be used to store this field locally."""
+        try:
+            return get_referenced_filename()
+        except TypeError:
+            return get_blob_filename()
+
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
         data["analysis_result"] = self.parent.uuid
@@ -481,6 +488,12 @@ class AnalysisResultField(RemoteObject):
         if save:
             copied.idem()
         return copied
+
+    def checksum(self):
+        """Return a checksum for this field as a blob."""
+        return {'value': '', 'method': 'none'}
+
+    def local_fi
 
 
 class SampleAnalysisResultField(AnalysisResultField):

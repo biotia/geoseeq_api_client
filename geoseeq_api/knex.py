@@ -102,6 +102,9 @@ class Knex:
             return response.json()
         return response
 
+    def instance_code(self):
+        return "gsr1"  # TODO
+
     def get(self, url, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth)

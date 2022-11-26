@@ -2,6 +2,7 @@ from .analysis_result import SampleAnalysisResult
 from .organization import Organization
 from .sample import Sample
 from .sample_group import SampleGroup
+from .knex import GeoseeqNotFoundError
 
 
 def org_from_blob(knex, blob, already_fetched=True, modified=False):
@@ -63,3 +64,14 @@ def sample_ar_from_uuid(knex, uuid):
     blob = knex.get(f"sample_ars/{uuid}")
     ar = sample_ar_from_blob(knex, blob)
     return ar
+
+
+def resolve_brn(knex, brn):
+    """Return the object which the brn points to."""
+    assert brn.startswith(f'brn:{knex.instance_code()}:')
+    _, _, object_type, uuid = brn.split(':')
+    if object_type == 'project':
+        return object_type, sample_group_from_uuid(knex, uuid)
+    if object_type == 'sample':
+        return object_type, sample_from_uuid(knex, uuid)
+    raise GeoseeqNotFoundError(f'Type "{object_type}" not found')
