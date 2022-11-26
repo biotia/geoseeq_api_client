@@ -41,7 +41,13 @@ def cli_vc_clone(state, uuids, brn):
 @click.argument('paths', nargs=-1)
 def cli_vc_download(state, extension, paths):
     """Download files from GeoSeeq to local storage."""
-    pass
+    knex = state.get_knex()
+    knex._verify = False
+    if len(paths) == 0: paths = ['.']
+    for path in paths:
+        for stub in VCDir(path, extension=extension).stubs():
+            _, field = stub.field(knex)
+            field.download_file(stub.local_path)
 
 
 @cli_vc.command('status')
@@ -52,6 +58,6 @@ def cli_vc_status(state, extension, paths):
     """Check the status of all link files in the current folder or in specified paths. Recursive."""
     if len(paths) == 0: paths = ['.']
     for path in paths:
-        for stub in VCDir(path, extension=extension):
+        for stub in VCDir(path, extension=extension).stubs():
             click.echo(f'{stub.brn}\t{stub.local_path}\t{stub.verify()}')
 

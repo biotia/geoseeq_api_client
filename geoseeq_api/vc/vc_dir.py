@@ -1,6 +1,7 @@
 
 import json
 from .vc_stub import VCStub
+from glob import glob
 
 
 class VCDir:

@@ -1,4 +1,9 @@
-from .analysis_result import SampleAnalysisResult
+from .analysis_result import (
+    SampleAnalysisResult,
+    SampleGroupAnalysisResult,
+    SampleAnalysisResultField,
+    SampleGroupAnalysisResultField,
+)
 from .organization import Organization
 from .sample import Sample
 from .sample_group import SampleGroup
@@ -35,6 +40,19 @@ def sample_from_blob(knex, blob, already_fetched=True, modified=False):
     return sample
 
 
+def sample_group_ar_from_blob(knex, blob, already_fetched=True, modified=False):
+    group = sample_group_from_blob(
+        knex, blob["sample_group_obj"], already_fetched=already_fetched, modified=modified
+    )
+    ar = SampleGroupAnalysisResult(
+        knex, sample, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
+    )
+    ar.load_blob(blob)
+    ar._already_fetched = already_fetched
+    ar._modified = modified
+    return ar
+
+
 def sample_ar_from_blob(knex, blob, already_fetched=True, modified=False):
     sample = sample_from_blob(
         knex, blob["sample_obj"], already_fetched=already_fetched, modified=modified
@@ -46,6 +64,45 @@ def sample_ar_from_blob(knex, blob, already_fetched=True, modified=False):
     ar._already_fetched = already_fetched
     ar._modified = modified
     return ar
+
+
+def sample_group_ar_from_blob(knex, blob, already_fetched=True, modified=False):
+    group = sample_group_from_blob(
+        knex, blob["sample_group_obj"], already_fetched=already_fetched, modified=modified
+    )
+    ar = SampleGroupAnalysisResult(
+        knex, sample, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
+    )
+    ar.load_blob(blob)
+    ar._already_fetched = already_fetched
+    ar._modified = modified
+    return ar
+
+
+def sample_ar_field_from_blob(knex, blob, already_fetched=True, modified=False):
+    ar = sample_ar_from_blob(
+        knex, blob["analysis_result_obj"], already_fetched=already_fetched, modified=modified
+    )
+    arf = SampleAnalysisResultField(
+        knex, ar, blob["name"], data=blob["stored_data"]
+    )
+    arf.load_blob(blob)
+    ar._already_fetched = already_fetched
+    ar._modified = modified
+    return arf
+
+
+def sample_group_ar_field_from_blob(knex, blob, already_fetched=True, modified=False):
+    ar = sample_group_ar_from_blob(
+        knex, blob["analysis_result_obj"], already_fetched=already_fetched, modified=modified
+    )
+    arf = SampleGroupAnalysisResultField(
+        knex, ar, blob["name"], data=blob["stored_data"]
+    )
+    arf.load_blob(blob)
+    ar._already_fetched = already_fetched
+    ar._modified = modified
+    return arf
 
 
 def sample_group_from_uuid(knex, uuid):
@@ -66,6 +123,24 @@ def sample_ar_from_uuid(knex, uuid):
     return ar
 
 
+def sample_group_ar_from_uuid(knex, uuid):
+    blob = knex.get(f"sample_group_ars/{uuid}")
+    ar = sample_group_ar_from_blob(knex, blob)
+    return ar
+
+
+def sample_ar_field_from_uuid(knex, uuid):
+    blob = knex.get(f"sample_ar_fields/{uuid}")
+    ar = sample_ar_field_from_blob(knex, blob)
+    return ar
+
+
+def sample_group_ar_field_from_uuid(knex, uuid):
+    blob = knex.get(f"sample_group_ar_fields/{uuid}")
+    ar = sample_group_ar_field_from_blob(knex, blob)
+    return ar
+
+
 def resolve_brn(knex, brn):
     """Return the object which the brn points to."""
     assert brn.startswith(f'brn:{knex.instance_code()}:')
@@ -74,4 +149,12 @@ def resolve_brn(knex, brn):
         return object_type, sample_group_from_uuid(knex, uuid)
     if object_type == 'sample':
         return object_type, sample_from_uuid(knex, uuid)
+    if object_type == 'sample_result':
+        return object_type, sample_ar_from_uuid(knex, uuid)
+    if object_type == 'sample_result_field':
+        return object_type, sample_ar_field_from_uuid(knex, uuid)
+    if object_type == 'project_result':
+        return object_type, sample_group_ar_from_uuid(knex, uuid)
+    if object_type == 'project_result_field':
+        return object_type, sample_group_ar_field_from_uuid(knex, uuid)
     raise GeoseeqNotFoundError(f'Type "{object_type}" not found')
