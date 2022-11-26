@@ -13,6 +13,7 @@ from .download import cli_download
 from .list import cli_list
 from .upload import cli_upload
 from .user import cli_user
+from geoseeq_api.vc.cli import cli_vc
 
 logger = logging.getLogger('geoseeq_api')
 logger.addHandler(logging.StreamHandler())
@@ -40,3 +41,4 @@ main.add_command(cli_upload)
 main.add_command(cli_user)
 main.add_command(cli_delete)
 main.add_command(cli_copy)
+main.add_command(cli_vc)

@@ -32,6 +32,6 @@ class VCStub:
         )
     
     @classmethod
-    def from_path(self, path)
+    def from_path(self, path):
         blob = json.loads(open(path).read())
         return VCStub.from_blob(blob)

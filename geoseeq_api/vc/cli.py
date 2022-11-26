@@ -18,17 +18,20 @@ def cli_vc():
 
 @cli_vc.command('clone')
 @use_common_state
+@click.option('--uuids/--names', default=False, help='Use UUIDs instead of names for objects')
 @click.argument('brn')
-def cli_vc_clone(state, brn):
+def cli_vc_clone(state, uuids, brn):
     """Clone GeoSeeq stub files from a project or sample to local storage.
     
     Only downloads stub files, not the files they link to.
     """
-    object_type, obj = resolve_brn(brn)
+    knex = state.get_knex()
+    knex._verify = False
+    object_type, obj = resolve_brn(knex, brn)
     if object_type == 'project':
-        return clone_project(state.knex, obj)
+        return clone_project(obj, '.', uuid=uuids)
     if object_type == 'sample':
-        return clone_sample(state.knex, obj)
+        return clone_sample(obj, '.', uuid=uuids)
     pass
 
 

@@ -4,8 +4,7 @@ import requests
 
 from .file_system_cache import FileSystemCache
 
-# DEFAULT_ENDPOINT = "https://portal.geoseeq.com"
-DEFAULT_ENDPOINT = "https://dev1.geoseeq.com"
+DEFAULT_ENDPOINT = "https://backend.geoseeq.com"
 
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
@@ -61,6 +60,7 @@ class Knex:
         self.auth = None
         self.headers = {"Accept": "application/json"}
         self.cache = FileSystemCache()
+        self._verify = True  # if false do not do ssl verification
 
     def _logging_info(self, **kwargs):
         base = {"endpoint_url": self.endpoint_url, "headers": self.headers}
@@ -113,6 +113,7 @@ class Knex:
             f"{self.endpoint_url}/{url}",
             headers=self.headers,
             auth=self.auth,
+            verify=self._verify,
         )
         return self._handle_response(response, **kwargs)
 
@@ -121,7 +122,8 @@ class Knex:
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
         logger.debug(f"Sending POST request. {d}")
         response = requests.post(
-            f"{self.endpoint_url}/{url}", headers=self.headers, auth=self.auth, json=json
+            f"{self.endpoint_url}/{url}",
+            headers=self.headers, auth=self.auth, json=json, verify=self._verify,
         )
         return self._handle_response(response, **kwargs)
 
@@ -130,7 +132,8 @@ class Knex:
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
         logger.debug(f"Sending PUT request. {d}")
         response = requests.put(
-            f"{self.endpoint_url}/{url}", headers=self.headers, auth=self.auth, json=json
+            f"{self.endpoint_url}/{url}",
+            headers=self.headers, auth=self.auth, json=json, verify=self._verify,
         )
         return self._handle_response(response, **kwargs)
 
@@ -139,7 +142,8 @@ class Knex:
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
         logger.debug(f"Sending PATCH request. {d}")
         response = requests.patch(
-            f"{self.endpoint_url}/{url}", headers=self.headers, auth=self.auth, json=json
+            f"{self.endpoint_url}/{url}",
+            headers=self.headers, auth=self.auth, json=json, verify=self._verify,
         )
         return self._handle_response(response, **kwargs)
 
@@ -151,6 +155,7 @@ class Knex:
             f"{self.endpoint_url}/{url}",
             headers=self.headers,
             auth=self.auth,
+            verify=self._verify,
         )
         logger.debug(f"DELETE request response:\n{response}")
         return self._handle_response(response, json_response=False, **kwargs)

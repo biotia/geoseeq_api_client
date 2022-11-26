@@ -276,8 +276,9 @@ class AnalysisResultField(RemoteObject):
 
     def get_referenced_filename(self):
         key = None
-        for key in ["filename", "uri", "url"]:
-            if key in self.stored_data:
+        for a_key in ["filename", "uri", "url"]:
+            if a_key in self.stored_data:
+                key = a_key
                 break
         if key is None:
             raise TypeError("Cannot make a reference filename for a BLOB type result field.")
@@ -295,9 +296,9 @@ class AnalysisResultField(RemoteObject):
     def get_local_filename(self):
         """Return a filename that can be used to store this field locally."""
         try:
-            return get_referenced_filename()
+            return basename(self.get_referenced_filename())
         except TypeError:
-            return get_blob_filename()
+            return basename(self.get_blob_filename())
 
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
@@ -492,8 +493,6 @@ class AnalysisResultField(RemoteObject):
     def checksum(self):
         """Return a checksum for this field as a blob."""
         return {'value': '', 'method': 'none'}
-
-    def local_fi
 
 
 class SampleAnalysisResultField(AnalysisResultField):
