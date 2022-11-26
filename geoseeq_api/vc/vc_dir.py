@@ -13,5 +13,5 @@ class VCDir:
 
     def stubs(self):
         """Return an iterator over stub files."""
-        for path in glob(f'{self.path}/*{self.ext}') + glob(f'{self.path}/**/*{self.ext}'):
+        for path in glob(f'{self.path}/**/*{self.ext}', recursive=True):
             yield VCStub.from_path(path)

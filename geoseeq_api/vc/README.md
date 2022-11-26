@@ -1,16 +1,25 @@
 # GeoSeeq Version Control
 
-This module allows GeoSeeq to be integrated with version control systems like git.
+GeoSeeq VC is a toolkit that makes it easy to use geoseeq with version control systems like `git`.
+
+Most of the files stored on GeoSeeq are too large to version control directly. This package creates lightweight stub files that record a files location and checksum. This package also contains tools to download files, and check that local files match those stored on the server. The stub files are small enough to version control directly.
 
 ## CLI
 
-Cloning a project
+You can clone a project or sample from GeoSeeq. You will need to get the `brn` number from the project or sample then run these commands from your CLI 
 
 ```
-geoseeq-api vc clone brn:gsr1:project:bed763fb-f6b8-4739-8320-95c06d68f442
+geoseeq-api vc clone brn:gsr1:project:bed763fb-f6b8-4739-8320-95c06d68f442  # creates a directory tree with stub files
+geoseeq-api vc download  # downloads the files that the stubs link to
+geoseeq-api vc status  # checks that the local files match the files on GeoSeeq
 ```
 
-Th
+If you are using git you probably want to add files from geoseeq to your `.gitignore`
+
+```
+geoseeq-api vc list >> .gitignore
+```
+
 ## Stub Files
 
 GeoSeeq interfaces with version control by creating small stub files that represent a larger file (AKA result field) stored on GeoSeeq. This package can be used to download those files and validate that the checksum of local files matches them. Since these files are small they can be easily stored with a version control system while the larger files can be ignored.

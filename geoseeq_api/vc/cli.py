@@ -1,5 +1,6 @@
 import logging
 import click
+from os.path import isfile
 from geoseeq_api.cli.utils import use_common_state
 from geoseeq_api.blob_constructors import resolve_brn
 from .vc_dir import VCDir
@@ -59,5 +60,19 @@ def cli_vc_status(state, extension, paths):
     if len(paths) == 0: paths = ['.']
     for path in paths:
         for stub in VCDir(path, extension=extension).stubs():
-            click.echo(f'{stub.brn}\t{stub.local_path}\t{stub.verify()}')
+            verified = 'checksum_matches' if stub.verify() else 'no_checksum_match'
+            color = 'green' if verified == 'checksum_matches' else 'red'
+            click.echo(click.style(f'{stub.brn}\t{stub.local_path}\t{verified}', fg=color))
 
+
+@cli_vc.command('list')
+@click.option('--outfile', type=click.File('w'), default='-', help='File to write paths to')
+@click.option('--extension', default='.gvcf', help='File extension for GeoSeeq version control files')
+@click.argument('paths', nargs=-1)
+def cli_vc_list(outfile, extension, paths):
+    """Recursively list all filepaths for files pointed to by stub files."""
+    if len(paths) == 0: paths = ['.']
+    for path in paths:
+        for stub in VCDir(path, extension=extension).stubs():
+            if isfile(stub.local_path):
+                print(stub.local_path, file=outfile)
