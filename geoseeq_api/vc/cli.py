@@ -27,7 +27,6 @@ def cli_vc_clone(state, uuids, brn):
     Only downloads stub files, not the files they link to.
     """
     knex = state.get_knex()
-    knex._verify = False
     object_type, obj = resolve_brn(knex, brn)
     if object_type == 'project':
         return clone_project(obj, '.', uuid=uuids)
@@ -43,12 +42,10 @@ def cli_vc_clone(state, uuids, brn):
 def cli_vc_download(state, extension, paths):
     """Download files from GeoSeeq to local storage."""
     knex = state.get_knex()
-    knex._verify = False
     if len(paths) == 0: paths = ['.']
     for path in paths:
         for stub in VCDir(path, extension=extension).stubs():
-            _, field = stub.field(knex)
-            field.download_file(stub.local_path)
+            stub.download(knex)
 
 
 @cli_vc.command('status')

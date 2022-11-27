@@ -491,7 +491,10 @@ class AnalysisResultField(RemoteObject):
         return copied
 
     def checksum(self):
-        """Return a checksum for this field as a blob."""
+        """Return a checksum for this field as a blob.
+        
+        TODO
+        """
         return {'value': '', 'method': 'none'}
 
 
