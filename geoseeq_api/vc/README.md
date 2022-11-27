@@ -20,6 +20,10 @@ If you are using git you probably want to add files from geoseeq to your `.gitig
 geoseeq-api vc list >> .gitignore
 ```
 
+## Shared Cache
+
+To avoid downloading or storing the same file multiple times users can specify a cache by setting the `GEOSEEQ_VC_CACHE_DIR` envvar to an absolute filepath. When set geoseeq will download files to a location in the cahce directory and create symlinks to those files.
+
 ## Stub Files
 
 GeoSeeq interfaces with version control by creating small stub files that represent a larger file (AKA result field) stored on GeoSeeq. This package can be used to download those files and validate that the checksum of local files matches them. Since these files are small they can be easily stored with a version control system while the larger files can be ignored.
