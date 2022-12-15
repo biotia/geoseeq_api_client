@@ -11,8 +11,8 @@ def clone_project(project, target_dir, uuid=False, ext='.gvcf'):
     name = project.uuid if uuid else project.name
     root_dir = join(target_dir, name)
     result_dir, sample_dir = join(root_dir, 'results'), join(root_dir, 'samples')
-    makedirs(result_dir)
-    makedirs(sample_dir)
+    makedirs(result_dir, exist_ok=True)
+    makedirs(sample_dir, exist_ok=True)
     stub_files = []
     for result in project.get_analysis_results():
         stub_files += clone_result(result, result_dir, uuid=uuid, ext=ext, project=True)
@@ -28,7 +28,7 @@ def clone_sample(sample, target_dir, uuid=False, ext='.gvcf'):
     """
     name = sample.uuid if uuid else sample.name
     root_dir = join(target_dir, name)
-    makedirs(root_dir)
+    makedirs(root_dir, exist_ok=True)
     stub_files = []
     for result in sample.get_analysis_results():
         stub_files += clone_result(result, root_dir, uuid=uuid, ext=ext)
@@ -42,7 +42,7 @@ def clone_result(result, target_dir, uuid=False, ext='.gvcf', project=False):
     """
     name = result.uuid if uuid else result.module_name + '__' + result.replicate
     root_dir = join(target_dir, name)
-    makedirs(root_dir)
+    makedirs(root_dir, exist_ok=True)
     stub_files = []
     for field in result.get_fields():
         stub_files.append(clone_field(field, root_dir, uuid=uuid, ext=ext, project=project))

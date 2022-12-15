@@ -19,9 +19,10 @@ def cli_vc():
 
 @cli_vc.command('clone')
 @use_common_state
+@click.option('--target-dir', default=".", help='Choose a target directory for stub files')
 @click.option('--uuids/--names', default=False, help='Use UUIDs instead of names for objects')
 @click.argument('brn')
-def cli_vc_clone(state, uuids, brn):
+def cli_vc_clone(state, target_dir, uuids, brn):
     """Clone GeoSeeq stub files from a project or sample to local storage.
     
     Only downloads stub files, not the files they link to.
@@ -29,9 +30,9 @@ def cli_vc_clone(state, uuids, brn):
     knex = state.get_knex()
     object_type, obj = resolve_brn(knex, brn)
     if object_type == 'project':
-        return clone_project(obj, '.', uuid=uuids)
+        return clone_project(obj, target_dir, uuid=uuids)
     if object_type == 'sample':
-        return clone_sample(obj, '.', uuid=uuids)
+        return clone_sample(obj, target_dir, uuid=uuids)
     pass
 
 
