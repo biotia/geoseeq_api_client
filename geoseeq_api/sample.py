@@ -61,7 +61,8 @@ class Sample(RemoteObject):
         data["library"] = self.lib.uuid
         url = "samples"
         # Server gives error if uuid=None is sent in the payload
-        # data.pop('uuid')
+        if data['uuid'] is None:
+            data.pop('uuid')
         blob = self.knex.post(url, json=data, url_options=self.inherited_url_options)
         self.load_blob(blob)
 

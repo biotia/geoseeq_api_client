@@ -59,7 +59,7 @@ class Knex:
         self.auth = None
         self.headers = {"Accept": "application/json"}
         self.cache = FileSystemCache()
-        self._verify = not bool(os.environ.get('GEOSEEQ_NO_SSL_VERIFICATION', False))  # if false do not do ssl verification
+        self._verify = not bool(environ.get('GEOSEEQ_NO_SSL_VERIFICATION', False))  # if false do not do ssl verification
 
     def _logging_info(self, **kwargs):
         base = {"endpoint_url": self.endpoint_url, "headers": self.headers}

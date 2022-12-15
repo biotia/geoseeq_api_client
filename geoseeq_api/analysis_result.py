@@ -432,7 +432,7 @@ class AnalysisResultField(RemoteObject):
             "filename": basename(filepath),
             "optional_fields": optional_fields,
         }
-        response = self.knex.post(f"/{self.canon_url()}/{self.uuid}/create_s3_upload", json=data)
+        response = self.knex.post(f"/ar_fields/{self.uuid}/create_s3_upload", json=data)
         upload_id = response["upload_id"]
         parts = [*range(1, n_parts + 1)]
         data = {
@@ -440,7 +440,7 @@ class AnalysisResultField(RemoteObject):
             "stance": 'upload-multipart',
             "upload_id": upload_id,
         }
-        response = self.knex.post(f"/{self.canon_url()}/{self.uuid}/create_upload_urls", json=data)
+        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
         urls = response
         complete_parts = []
         logger(f'[INFO] Starting upload for "{filepath}"')
@@ -462,7 +462,7 @@ class AnalysisResultField(RemoteObject):
                 complete_parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
                 logger(f'[INFO] Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
-            f"/{self.canon_url()}/{self.uuid}/complete_upload_s3",
+            f"/ar_fields/{self.uuid}/complete_upload_s3",
             json={
                 "parts": complete_parts,
                 "upload_id": upload_id,
