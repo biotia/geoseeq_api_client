@@ -3,14 +3,13 @@
 
 import setuptools
 
-
 setuptools.setup(
-    name='pangea_api',
+    name='geoseeq_api',
     version='0.9.24',  # remember to update version string in CLI as well
     author="David C. Danko",
     author_email='dcdanko@gmail.com',
     packages=setuptools.find_packages(),
-    package_dir={'pangea_api': 'pangea_api'},
+    package_dir={'geoseeq_api': 'geoseeq_api'},
     install_requires=[
         'requests',
         'click',
@@ -19,7 +18,7 @@ setuptools.setup(
     ],
     entry_points={
         'console_scripts': [
-            'pangea-api=pangea_api.cli:main'
+            'geoseeq-api=geoseeq_api.cli:main'
         ]
     },
     classifiers=[

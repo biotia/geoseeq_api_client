@@ -1,2 +1,0 @@
-READ_MODULE_NAMES = [
-]

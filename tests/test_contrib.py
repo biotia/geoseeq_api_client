@@ -5,11 +5,11 @@ from os import environ
 from os.path import dirname, join
 from unittest import TestCase
 
-from pangea_api import Knex, Organization
-from pangea_api.contrib.tagging import Tag
+from geoseeq_api import Knex, Organization
+from geoseeq_api.contrib.tagging import Tag
 
 PACKET_DIR = join(dirname(__file__), 'built_packet')
-ENDPOINT = environ.get('PANGEA_API_TESTING_ENDPOINT', 'http://127.0.0.1:8000')
+ENDPOINT = environ.get('GEOSEEQ_API_TESTING_ENDPOINT', 'http://127.0.0.1:8000')
 
 
 def random_str(len=12):

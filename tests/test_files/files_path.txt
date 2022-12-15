@@ -1,0 +1,1 @@
+/Users/tamasnemcsok/Documents/Nemcsok Tamas/Programming/Biotia/geoseeq_api_client/tests/test_files/single-end.fastq.gz
