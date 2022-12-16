@@ -23,6 +23,10 @@ class Sample(RemoteObject):
         self.metadata = metadata
         self._get_result_cache = []
 
+    @property
+    def brn(self):
+        return f'brn:{self.knex.instance_code()}:sample:{self.uuid}'
+
     def nested_url(self):
         return self.lib.nested_url() + f"/samples/{self.name}"
 

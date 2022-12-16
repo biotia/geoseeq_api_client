@@ -2,6 +2,10 @@ from os.path import join, basename
 from os import makedirs
 import json
 
+from .vc_stub import VCStub
+from .vc_sample import VCSample
+from .constants import GVCF_EXT
+
 
 def clone_project(project, target_dir, uuid=False, ext='.gvcf'):
     """Download stub files from a project to local storage.
@@ -21,7 +25,7 @@ def clone_project(project, target_dir, uuid=False, ext='.gvcf'):
     return stub_files
 
 
-def clone_sample(sample, target_dir, uuid=False, ext='.gvcf'):
+def clone_sample(sample, target_dir, uuid=False):
     """Download stub files from a sample to local storage.
     
     Return a list of paths to stub files.
@@ -29,10 +33,16 @@ def clone_sample(sample, target_dir, uuid=False, ext='.gvcf'):
     name = sample.uuid if uuid else sample.name
     root_dir = join(target_dir, name)
     makedirs(root_dir, exist_ok=True)
+    gsq_dir = join(root_dir, '.geoseeq')
+    makedirs(gsq_dir, exist_ok=True)
+    vcsample = VCSample(sample, '.')
+    vcsample.save_settings(gsq_dir)
     stub_files = []
-    for result in sample.get_analysis_results():
-        stub_files += clone_result(result, root_dir, uuid=uuid, ext=ext)
-    return root_dir
+    for stub, path in vcsample.stubs_from_remote():
+        stub_path = path + GVCF_EXT
+        stub.save_to_file(stub_path)
+        stub_files.append(stub_path)
+    return stub_files
 
 
 def clone_result(result, target_dir, uuid=False, ext='.gvcf', project=False):
@@ -57,13 +67,6 @@ def clone_field(field, target_dir, uuid=False, ext='.gvcf', project=False):
     name = field.uuid if uuid else field.name
     name += ext
     target_path = join(target_dir, name)
-    obj_type = 'project_result_field' if project else 'sample_result_field'
-    blob = {
-        "brn": f'brn:{field.knex.instance_code()}:{obj_type}:{field.uuid}',
-        "checksum": field.checksum(),
-        "local_path": field.get_local_filename(),
-    }
-    with open(target_path, 'w') as f_out:
-        f_out.write(json.dumps(blob, indent=4))
-
+    stub = VCStub(field.brn, field.get_local_filename(), field.checksum())
+    stub.save_to_file(target_path)
     return target_path

@@ -1,0 +1,2 @@
+
+GVCF_EXT = '.gvcf'

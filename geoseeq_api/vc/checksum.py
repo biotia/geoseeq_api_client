@@ -14,6 +14,12 @@ class Checksum:
             return md5_checksum(path) == self.value
         raise NotImplementedError(f'Mehtod "{self.method}" not supported')
 
+    def to_blob(self):
+        return {
+            "value": self.value,
+            "method": self.method,
+        }
+
     @classmethod
     def from_blob(cls, blob):
         return cls(blob['value'], blob['method'])

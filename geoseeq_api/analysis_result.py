@@ -262,6 +262,11 @@ class AnalysisResultField(RemoteObject):
         self._cached_filename = None  # Used if the field points to S3, FTP, etc
         self._temp_filename = False
 
+    @property
+    def brn(self):
+        obj_type = 'sample' if self.canon_url() == 'sample_ar_fields' else 'project'
+        brn = f'brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}'
+
     def nested_url(self):
         return self.parent.nested_url() + f"/fields/{self.name}"
 
@@ -274,17 +279,18 @@ class AnalysisResultField(RemoteObject):
         )
         return filename
 
-    def get_referenced_filename(self):
-        key = None
-        for a_key in ["filename", "uri", "url"]:
-            if a_key in self.stored_data:
-                key = a_key
-                break
-        if key is None:
+    def get_referenced_filename_ext(self):
+        try:
+            key = [k for k in ["filename", "uri", "url"] if k in self.stored_data][0]
+        except KeyError:
             raise TypeError("Cannot make a reference filename for a BLOB type result field.")
         ext = self.stored_data[key].split(".")[-1]
         if ext in ["gz"]:
             ext = self.stored_data[key].split(".")[-2] + "." + ext
+        return ext
+
+    def get_referenced_filename(self):
+        ext = self.get_referenced_filename_ext()
         sname = self.parent.parent.name.replace(".", "-")
         mname = self.parent.module_name.replace(".", "-")
         fname = self.name.replace(".", "-")

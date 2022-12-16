@@ -32,11 +32,17 @@ The stub files are JSON and have the following structure:
 
 ```
 {
-    "brn": "brn:<instance name>:result_field:<uuid>",
+    "__schema_version__": "v0",
+    "brn": "brn:<instance name>:result_field:<uuid>",  # optional if stub is new and parent_info is set
     "checksum": {
         "value": "<value>",
         "method": "md5",
     },
     "local_path": "<filename>",  # a filepath relative to the stub file
+    "parent_info": {  # optional if brn is set
+        "parent_obj_brn": "brn:<brn info>",
+        "result_module_name": <string>,
+        "result_module_replicate": <string>,
+    }  # NB if brn and parent_info are both set but disagree `brn` is correct
 }
 ```
