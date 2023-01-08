@@ -125,7 +125,7 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
 @lib_arg
 @click.argument('table', type=click.File('rb'))
 def cli_metadata(state, overwrite,
-                 create, update, index_col, encoding,
+                 create, update, index_col, sep, encoding,
                  org_name, library_name, table):
     knex = state.get_knex()
     tbl = pd.read_csv(table, index_col=index_col, encoding=encoding, sep=sep)
