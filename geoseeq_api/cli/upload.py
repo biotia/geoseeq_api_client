@@ -117,6 +117,7 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
 @use_common_state
 @overwrite_option
 @click.option('--create/--no-create', default=False)
+@click.option('--overwrite/--no-overwrite', default=False)
 @click.option('--update/--no-update', default=False)
 @click.option('--index-col', default=0)
 @click.option('--sep', default="\t")
