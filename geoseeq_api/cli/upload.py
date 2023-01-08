@@ -119,6 +119,7 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
 @click.option('--create/--no-create', default=False)
 @click.option('--update/--no-update', default=False)
 @click.option('--index-col', default=0)
+@click.option('--sep', default="\t")
 @click.option('--encoding', default='utf_8')
 @org_arg
 @lib_arg
@@ -127,7 +128,7 @@ def cli_metadata(state, overwrite,
                  create, update, index_col, encoding,
                  org_name, library_name, table):
     knex = state.get_knex()
-    tbl = pd.read_csv(table, index_col=index_col, encoding=encoding)
+    tbl = pd.read_csv(table, index_col=index_col, encoding=encoding, sep=sep)
     tbl.index = tbl.index.to_series().map(str)
     org = Organization(knex, org_name).get()
     lib = org.sample_group(library_name).get()
