@@ -1,15 +1,17 @@
 
 import json
 
+import ftplib
+import os
 import click
 import pandas as pd
 from geoseeq_api.contrib.tagging.tag import Tag
 
 from .. import Organization
-from .constants import *
-from .fastq_utils import group_paired_end_paths, upload_fastq_pair, upload_single_fastq
-from .utils import use_common_state
-
+from .. import SampleGroup
+from geoseeq_api.constants import *
+from geoseeq_api.cli.fastq_utils import group_paired_end_paths, upload_fastq_pair, upload_single_fastq
+from geoseeq_api.cli.utils import use_common_state
 
 @click.group('upload')
 def cli_upload():
@@ -36,7 +38,8 @@ lib_arg = click.argument('library_name')
 @click.option('-2', '--ext-2', default='.R2.fastq.gz')
 @org_arg
 @lib_arg
-@click.argument('file_list', type=click.File('r'))
+#@click.argument('file_list', type=click.File('r'))
+@click.argument('file_list')
 def cli_upload_pe_reads(state, overwrite, private, tag, module_name, delim,
                         ext_1, ext_2, org_name, library_name, file_list):
     """Upload paired end reads to Geoseeq.
@@ -101,24 +104,85 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
     lib = org.sample_group(library_name).get()
     tags = [Tag(knex, tag_name).get() for tag_name in tag]
     for filepath in (l.strip() for l in file_list):
+        print(filepath)
         assert ext in filepath
         sname = filepath.split('/')[-1].split(ext)[0]
+        print(sname)
         if dryrun:
             click.echo(f'Sample: {sname} {filepath}')
         sample = lib.sample(sname).idem()
         for tag in tags:
             tag(sample)
         ar = sample.analysis_result(module_name)
+        print("Wol")
         reads = upload_single_fastq(ar, module_name, filepath, private, overwrite=overwrite)
         print(sample, ar, reads, file=state.outfile)
+
+@cli_upload.command('single-ended-reads-ftp')
+@use_common_state
+@overwrite_option
+@private_option
+@dryrun_option
+@tag_option
+@module_option(['short_read::single_end', 'long_read::nanopore'])
+@click.option('-e', '--ext', default='.fastq.gz')
+@click.option('-h', '--hostname', default=None)
+@click.option('-u', '--username', default=None)
+@click.option('-p', '--password', default=None)
+@click.option('-l', '--folder', default=None)
+@org_arg
+@lib_arg
+@click.argument('file_list')
+def cli_upload_se_reads_ftp(state, overwrite, private, dryrun, tag, module_name,
+                        ext, org_name, library_name, file_list, hostname, username, password, folder):
+    """Upload single ended reads to Geoseeq, including nanopore reads.
+
+    This command will upload single reads to the specified
+    sample library.
+
+    Sample names will be automatically generated from the names
+    of the fastq files. Sample names will be determined by removing
+    extensions from each file or, if a delimiter string is set by
+    taking everything before that string.
+
+    `file_list` is a file with a list of fastq filepaths, one per line
+    """
+    knex = state.get_knex()
+    org = Organization(knex, org_name).get()
+    try:
+        lib = org.sample_group(library_name).get()
+    except:
+        grp = SampleGroup(knex, org, library_name).create()
+        lib = org.sample_group(library_name).get()
+    tags = [Tag(knex, tag_name).get() for tag_name in tag]
+    ftp_server = ftplib.FTP(hostname, username, password)
+    ftp_server.encoding = "utf-8"
+    ftp_server.cwd(folder)
+    for filepath in (l.strip() for l in file_list.split(",")):
+        with open(filepath, "wb") as file:
+            ftp_server.retrbinary(f"RETR {filepath}", file.write)
+        assert ext in filepath
+        sname = filepath.split('/')[-1].split(ext)[0]
+        print(sname)
+        if dryrun:
+            click.echo(f'Sample: {sname} {filepath}')
+            continue
+        sample = lib.sample(sname).idem()
+        for tag in tags:
+            tag(sample)
+        ar = sample.analysis_result(module_name)
+        reads = upload_single_fastq(ar, module_name, filepath, private, overwrite=overwrite)
+        print(sample, ar, reads, file=state.outfile)
+        os.remove(filepath) 
+    ftp_server.quit()
 
 
 @cli_upload.command('metadata')
 @use_common_state
 @overwrite_option
 @click.option('--create/--no-create', default=False)
-@click.option('--overwrite/--no-overwrite', default=False)
 @click.option('--update/--no-update', default=False)
+@click.option('--overwrite/--no-overwrite', default=False)
 @click.option('--index-col', default=0)
 @click.option('--sep', default="\t")
 @click.option('--encoding', default='utf_8')
