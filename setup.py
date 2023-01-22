@@ -10,6 +10,7 @@ setuptools.setup(
     author_email='dcdanko@gmail.com',
     packages=setuptools.find_packages(),
     package_dir={'geoseeq_api': 'geoseeq_api'},
+    package_data={'geoseeq_api': ['vc/*.dat']},
     install_requires=[
         'requests',
         'click',
