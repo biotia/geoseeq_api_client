@@ -10,6 +10,7 @@ from .knex import (
     GeoseeqGeneralError,
     GeoseeqInternalError,
     GeoseeqNotFoundError,
+    GeoseeqTimeoutError,
     GeoseeqOtherError,
     Knex,
 )
