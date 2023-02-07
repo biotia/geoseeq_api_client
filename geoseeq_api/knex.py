@@ -47,19 +47,53 @@ class GeoseeqForbiddenError(GeoseeqGeneralError):
 class GeoseeqInternalError(GeoseeqGeneralError):
     pass
 
+class GeoseeqTimeoutError(GeoseeqGeneralError):
+    pass
 
 class GeoseeqOtherError(GeoseeqGeneralError):
     pass
 
 
 class Knex:
+
     def __init__(self, endpoint_url=DEFAULT_ENDPOINT):
         self.endpoint_url = endpoint_url
         self.endpoint_url += "/api"
         self.auth = None
         self.headers = {"Accept": "application/json"}
         self.cache = FileSystemCache()
-        self._verify = not bool(environ.get('GEOSEEQ_NO_SSL_VERIFICATION', False))  # if false do not do ssl verification
+        self._verify = self._set_verify()
+        self.sess = self._new_session()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def close(self):
+        self.sess.close()
+
+    def _new_session(self):
+        if hasattr(self, 'sess') and self.sess:
+            self.sess.close()
+        sess = requests.Session()
+        sess.headers = self.headers
+        sess.auth = self.auth
+        sess.verify = self._verify
+        return sess
+
+    def _set_verify(self):
+        try:
+            val = environ['GEOSEEQ_NO_SSL_VERIFICATION']
+            if val.lower() == 'true':
+                return False
+            if val.lower() == 'false':
+                return True
+            return val
+        except KeyError:
+            return True
+
 
     def _logging_info(self, **kwargs):
         base = {"endpoint_url": self.endpoint_url, "headers": self.headers}
@@ -82,6 +116,7 @@ class Knex:
 
     def add_api_token(self, token):
         self.auth = TokenAuth(token)
+        self.sess = self._new_session()
 
     def _handle_response(self, response, json_response=True):
         try:
@@ -93,6 +128,8 @@ class Knex:
                 raise GeoseeqNotFoundError(e)
             if response.status_code == 500:
                 raise GeoseeqInternalError(e)
+            if response.status_code == 504:
+                raise GeoseeqTimeoutError(e)
             raise GeoseeqOtherError(e)
         except Exception:
             logger.debug(f"Request failed. {response}\n{response.content}")
@@ -108,21 +145,17 @@ class Knex:
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth)
         logger.debug(f"Sending GET request. {d}")
-        response = requests.get(
-            f"{self.endpoint_url}/{url}",
-            headers=self.headers,
-            auth=self.auth,
-            verify=self._verify,
-        )
-        return self._handle_response(response, **kwargs)
+        response = self.sess.get(f"{self.endpoint_url}/{url}")
+        resp = self._handle_response(response, **kwargs)
+        return resp
 
     def post(self, url, json={}, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
         logger.debug(f"Sending POST request. {d}")
-        response = requests.post(
+        response = self.sess.post(
             f"{self.endpoint_url}/{url}",
-            headers=self.headers, auth=self.auth, json=json, verify=self._verify,
+            json=json
         )
         return self._handle_response(response, **kwargs)
 
@@ -130,9 +163,9 @@ class Knex:
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
         logger.debug(f"Sending PUT request. {d}")
-        response = requests.put(
+        response = self.sess.put(
             f"{self.endpoint_url}/{url}",
-            headers=self.headers, auth=self.auth, json=json, verify=self._verify,
+            json=json,
         )
         return self._handle_response(response, **kwargs)
 
@@ -140,9 +173,9 @@ class Knex:
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
         logger.debug(f"Sending PATCH request. {d}")
-        response = requests.patch(
+        response = self.sess.patch(
             f"{self.endpoint_url}/{url}",
-            headers=self.headers, auth=self.auth, json=json, verify=self._verify,
+            json=json,
         )
         return self._handle_response(response, **kwargs)
 
@@ -150,11 +183,6 @@ class Knex:
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth)
         logger.debug(f"Sending DELETE request. {d}")
-        response = requests.delete(
-            f"{self.endpoint_url}/{url}",
-            headers=self.headers,
-            auth=self.auth,
-            verify=self._verify,
-        )
+        response = self.sess.delete(f"{self.endpoint_url}/{url}")
         logger.debug(f"DELETE request response:\n{response}")
         return self._handle_response(response, json_response=False, **kwargs)

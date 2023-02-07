@@ -145,9 +145,9 @@ class SampleAnalysisResult(AnalysisResult):
         d = {"data": data, "url": url, "sample_ar": self}
         logger.debug(f"Saving SampleAnalysisResult. {d}")
         self.knex.put(url, json=data, url_options=self.inherited_url_options)
-
-    def _create(self):
-        self.sample.idem()
+    
+    def get_post_data(self):
+        """Return a dict that can be used to POST this result to the server."""
         data = {
             field: getattr(self, field)
             for field in self.remote_fields
@@ -156,6 +156,11 @@ class SampleAnalysisResult(AnalysisResult):
         data["sample"] = self.sample.uuid
         if self.replicate:
             data["replicate"] = self.replicate
+        return data
+
+    def _create(self):
+        self.sample.idem()
+        data = self.get_post_data()
         d = {"data": data, "sample_ar": self}
         logger.debug(f"Creating SampleAnalysisResult. {d}")
         blob = self.knex.post(
@@ -174,7 +179,8 @@ class SampleAnalysisResult(AnalysisResult):
             for field in self._get_field_cache:
                 yield field
             return
-        url = f"sample_ar_fields?analysis_result_id={self.uuid}"
+        #url = f"sample_ar_fields?analysis_result_id={self.uuid}"
+        url = self.nested_url() + f"/fields"
         logger.debug(f"Fetching SampleAnalysisResultFields. {self}")
         result = self.knex.get(url)
         for result_blob in result["results"]:
@@ -318,14 +324,19 @@ class AnalysisResultField(RemoteObject):
         blob = self.knex.get(self.nested_url())
         self.load_blob(blob)
 
-    def _create(self):
-        check_json_serialization(self.stored_data)
-        self.parent.idem()
+    def get_post_data(self):
+        """Return a dict that can be used to POST this field to the server."""
         data = {
             "analysis_result": self.parent.uuid,
             "name": self.name,
             "stored_data": self.stored_data,
         }
+        return data
+
+    def _create(self):
+        check_json_serialization(self.stored_data)
+        self.parent.idem()
+        data = self.get_post_data()
         blob = self.knex.post(f"{self.canon_url()}?format=json", json=data)
         self.load_blob(blob)
 

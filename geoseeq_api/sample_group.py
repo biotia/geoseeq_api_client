@@ -91,13 +91,6 @@ class SampleGroup(RemoteObject):
 
     def _create(self):
         self.org.idem()
-        print({
-                "organization": self.org.uuid,
-                "name": self.name,
-                "is_library": self.is_library,
-                "metadata": self.metadata,
-                "storage_provider_name": self.storage_provider,
-            })
         blob = self.knex.post(
             f"sample_groups?format=json",
             json={
