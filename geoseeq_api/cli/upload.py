@@ -3,7 +3,6 @@ import json
 
 import click
 import pandas as pd
-from geoseeq_api.contrib.tagging.tag import Tag
 
 from .. import Organization
 from .constants import *
@@ -19,7 +18,6 @@ dryrun_option = click.option('--dryrun/--wetrun', default=False, help='Print wha
 overwrite_option = click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing samples and data')
 module_option = lambda x: click.option('-m', '--module-name', type=click.Choice(x), default=x[0], help='Name for the module that will store the data')
 private_option = click.option('--private/--public', default=True, help='Make the reads private.')
-tag_option = click.option('-t', '--tag', multiple=True, help='Add tags to newly created samples.')
 
 org_arg = click.argument('org_name')
 lib_arg = click.argument('library_name')
@@ -29,11 +27,10 @@ lib_arg = click.argument('library_name')
 @use_common_state
 @overwrite_option
 @private_option
-@tag_option
 @module_option(['short_read::paired_end'])
-@click.option('-d', '--delim', default=None, help='Split sample name on this string')
-@click.option('-1', '--ext-1', default='.R1.fastq.gz')
-@click.option('-2', '--ext-2', default='.R2.fastq.gz')
+@click.option('-d', '--delim', default='_L', help='Split sample name on this string')
+@click.option('-1', '--ext-1', default='_R1.fastq.gz')
+@click.option('-2', '--ext-2', default='_R2.fastq.gz')
 @org_arg
 @lib_arg
 @click.argument('file_list', type=click.File('r'))
@@ -76,14 +73,14 @@ def cli_upload_pe_reads(state, overwrite, private, tag, module_name, delim,
 @overwrite_option
 @private_option
 @dryrun_option
-@tag_option
 @module_option(['short_read::single_end', 'long_read::nanopore'])
+@click.option('-d', '--delim', default='_L', help='Split sample name on this string')
 @click.option('-e', '--ext', default='.fastq.gz')
 @org_arg
 @lib_arg
 @click.argument('file_list', type=click.File('r'))
 def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
-                        ext, org_name, library_name, file_list):
+                        delim, ext, org_name, library_name, file_list):
     """Upload single ended reads to Geoseeq, including nanopore reads.
 
     This command will upload single reads to the specified
@@ -99,15 +96,12 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
     knex = state.get_knex()
     org = Organization(knex, org_name).get()
     lib = org.sample_group(library_name).get()
-    tags = [Tag(knex, tag_name).get() for tag_name in tag]
     for filepath in (l.strip() for l in file_list):
         assert ext in filepath
-        sname = filepath.split('/')[-1].split(ext)[0]
+        sname = filepath.split('/')[-1].split(ext)[0].split(delim)[0]
         if dryrun:
             click.echo(f'Sample: {sname} {filepath}')
         sample = lib.sample(sname).idem()
-        for tag in tags:
-            tag(sample)
         ar = sample.analysis_result(module_name)
         reads = upload_single_fastq(ar, module_name, filepath, private, overwrite=overwrite)
         print(sample, ar, reads, file=state.outfile)
