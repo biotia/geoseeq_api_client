@@ -59,7 +59,7 @@ class BioProject:
             out.append(BioSample(el["Id"], self))
         return out
 
-    def pangea_obj(self, org):
+    def geoseeq_obj(self, org):
         self.fetch()
         grp = org.sample_group(self.accession, metadata=self.metadata(), is_library=True)
         return grp
@@ -100,7 +100,7 @@ class BioSample:
             out.append(SRARecord(el["Id"], self))
         return out
 
-    def pangea_obj(self, grp):
+    def geoseeq_obj(self, grp):
         self.fetch()
         sample = grp.sample(self.accession, metadata=self.metadata())
         return sample
@@ -139,7 +139,7 @@ class SRARecord:
     def accession_num(self):
         return self.accession.split("PRJNA")[-1]
 
-    def pangea_obj(self, sample):
+    def geoseeq_obj(self, sample):
         self.fetch()
         ar = sample.analysis_result(
             "raw::raw_reads", replicate=self.accession, metadata=self.metadata()
