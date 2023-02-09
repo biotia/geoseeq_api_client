@@ -5,8 +5,10 @@ import logging
 import click
 from Bio import Entrez
 
-from ... import Knex, Organization
-from .api import create_pangea_group_from_bioproj
+
+from geoseeq_api.cli.utils import use_common_state
+from geoseeq_api import Knex, Organization
+from .api import create_geoseeq_group_from_bioproj
 from .bioproject import BioProject, SRARecord
 from .setup_logging import logger
 
@@ -26,28 +28,25 @@ def cli_ncbi_link():
 
 
 @cli_ncbi_link.command('bioproject')
-@click.option('-e', '--email')
-@click.option('-a', '--api-token', envvar='PANGEA_API_TOKEN')
-@click.option('--endpoint', default='https://pangea.gimmebio.com')
+@use_common_state
 @click.argument('org_name')
 @click.argument('bioproj_accession')
-def cli_ncbi_link_bioproject(email, api_token, endpoint, org_name, bioproj_accession):
-    """Create a pangea group from an NCBI BioProject.
+def cli_ncbi_link_bioproject(state, bioproj_accession):
+    """Create a geoseeq group from an NCBI BioProject.
 
-    Creates a Pangea SampleGroup corresponding to the given bioproject accession.
-     - This SampleGroup is a Pangea Library that can contain samples
-     - A PangeaSample is created in the group for each NCBI BioSample
+    Creates a GeoSeeq SampleGroup corresponding to the given bioproject accession.
+     - A GeoSeeq Sample is created in the group for each NCBI BioSample
      - raw read analysis results are created for each sample from the SRA
 
     All objects are tagged to flag they are from an NCBI database.
     """
-    logger.info(f'Creating Pangea SampleGroup from BioProject "{bioproj_accession}"')
+    logger.info(f'Creating GeoSeeq SampleGroup from BioProject "{bioproj_accession}"')
     Entrez.email = email
     knex = Knex(endpoint)
     if api_token:
         knex.add_api_token(api_token)
     org = Organization(knex, org_name).get()
-    grp = create_pangea_group_from_bioproj(org, bioproj_accession)
+    grp = create_geoseeq_group_from_bioproj(org, bioproj_accession)
     return grp
 
 

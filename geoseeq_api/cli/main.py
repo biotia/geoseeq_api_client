@@ -3,8 +3,6 @@ import logging
 
 import click
 
-from ..contrib.ncbi.cli import ncbi_main
-from ..contrib.tagging.cli import tag_main
 from .add import cli_add
 from .copy import cli_copy
 from .create import cli_create
@@ -30,8 +28,6 @@ def version():
     click.echo('0.9.24')  # remember to update setup
 
 
-main.add_command(tag_main)
-main.add_command(ncbi_main)
 
 main.add_command(cli_add)
 main.add_command(cli_create)
