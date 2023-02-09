@@ -6,26 +6,25 @@ GeoSeeq is a platform for sharing biological, climatological, and public health 
 
 This API client is a work in progress and we welcome suggestions, feedback, comments, and criticisms.
 
-## Installing and Testing the GeoSeeq API
+---
 
-### Install from source
-
-Download this directory and run `python setup.py install`
+## Installation
 
 ### Install from PyPi
 
 `pip install geoseeq-api`
 
-### Testing
+### Install from source
+
+Download this directory and run `python setup.py install`
+
+#### Testing
 
 To test you will need a local version of geoseeq-django running.
 
-Tests can be run using unittest
+Tests can be run using unittest. From the root directory of the project run `python -m unittest`
 
-```
-python -m unittest
-```
-
+---
 
 ## Using the Command Line 
 
@@ -42,6 +41,7 @@ You can find more command line examples in `docs/`
 
 Please see `geoseeq_api/cli/download.py` for examples of how to download data using the Python API directly.
 
+---
 
 ## License and Credits
 
