@@ -18,13 +18,6 @@ This API client is a work in progress and we welcome suggestions, feedback, comm
 
 Download this directory and run `python setup.py install`
 
-#### Testing
-
-To test you will need a local version of geoseeq-django running.
-
-Tests can be run using unittest. From the root directory of the project run `python -m unittest`
-
----
 
 ## Using the Command Line 
 
