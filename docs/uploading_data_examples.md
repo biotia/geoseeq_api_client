@@ -13,10 +13,8 @@ Once you have a token you will need to set it as an environment variable like so
 $ export GEOSEEQ_API_TOKEN=<your token from the geoseeq app>
 ```
 
-## Uploading Data
 
-
-### Uploading sequencing data
+## Uploading sequencing data
 
 GeoSeeq can automatically group fastq files into samples according to their 
 sample name, read number, and lane number. It supports paired end, single end,
@@ -51,7 +49,7 @@ GeoSeeq will automatically create a new sample named `Sample1` if it does not al
 
 Note: You will need to have an API token set to use this command (see above)
 
-#### Linking reads from S3, Wasabi, FTP, Azure, and other cloud storage services
+### Linking reads from S3, Wasabi, FTP, Azure, and other cloud storage services
 
 GeoSeeq allows you to link files stored on other cloud storage services without moving the files.
 
@@ -94,7 +92,7 @@ You can link files from other types of cloud storage services such as:
  - Any S3 compatible storage service (such as wasabi, amazon S3, backblaze)
 
 
-### Uploading other files
+## Uploading other files
 
 You can upload any file to GeoSeeq regardless of type.
 
