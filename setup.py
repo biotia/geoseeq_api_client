@@ -9,7 +9,7 @@ setuptools.setup(
     author="David C. Danko",
     author_email='dcdanko@biotia.io',
     packages=setuptools.find_packages(),
-    package_dir={'geoseeq_api': 'geoseeq_api'},
+    package_dir={'geoseeq': 'geoseeq'},
     install_requires=[
         'requests',
         'click',
@@ -18,7 +18,7 @@ setuptools.setup(
     ],
     entry_points={
         'console_scripts': [
-            'geoseeq-api=geoseeq_api.cli:main'
+            'geoseeq=geoseeq.cli:main'
         ]
     },
     classifiers=[

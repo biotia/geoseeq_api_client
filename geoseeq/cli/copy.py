@@ -1,5 +1,5 @@
 import click
-from geoseeq_api.knex import DEFAULT_ENDPOINT
+from geoseeq.knex import DEFAULT_ENDPOINT
 
 from .. import Knex, Organization
 

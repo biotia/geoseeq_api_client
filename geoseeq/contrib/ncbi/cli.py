@@ -6,8 +6,8 @@ import click
 from Bio import Entrez
 
 
-from geoseeq_api.cli.utils import use_common_state
-from geoseeq_api import Knex, Organization
+from geoseeq.cli.utils import use_common_state
+from geoseeq import Knex, Organization
 from .api import create_geoseeq_group_from_bioproj
 from .bioproject import BioProject, SRARecord
 from .setup_logging import logger

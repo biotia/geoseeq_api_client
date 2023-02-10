@@ -34,7 +34,7 @@ You can upload these files to GeoSeeq using the command line:
 # navigate to the directory where the fastq files are stored
 $ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
 
-$ geoseeq-api upload reads "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
+$ geoseeq upload reads "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
 sample_name: Sample1
@@ -71,7 +71,7 @@ https://s3.wasabisys.com/mybucketname/Sample1_L1_R2.fastq.gz
 https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz
 https://s3.wasabisys.com/mybucketname/Sample1_L2_R2.fastq.gz
 
-$ geoseeq-api upload reads --link-type s3 "Example GeoSeeq Org" "Example CLI Project" fastq_urls.txt
+$ geoseeq upload reads --link-type s3 "Example GeoSeeq Org" "Example CLI Project" fastq_urls.txt
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
 sample_name: Sample1
@@ -101,7 +101,7 @@ You can upload any file to GeoSeeq regardless of type.
 Imageine you are uploading an image file stored as a PNG. You would run the following command
 
 ```
-$ geoseeq-api upload file "Example GeoSeeq Org" "Example CLI Project" "My Sample" "My Images" "My Image" image.png
+$ geoseeq upload file "Example GeoSeeq Org" "Example CLI Project" "My Sample" "My Images" "My Image" image.png
 ```
 
 Note: You will need to have an API token set to use this command (see above)
@@ -113,5 +113,5 @@ The command above will upload a file to a sample. You can also upload files to a
 with a specific sample. To do so:
 
 ```
-$ geoseeq-api upload project-file "Example GeoSeeq Org" "Example CLI Project" "My Images" "My Image" image.png
+$ geoseeq upload project-file "Example GeoSeeq Org" "Example CLI Project" "My Images" "My Image" image.png
 ```

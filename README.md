@@ -12,7 +12,7 @@ This API client is a work in progress and we welcome suggestions, feedback, comm
 
 ### Install from PyPi
 
-`pip install geoseeq-api`
+`pip install geoseeq`
 
 ### Install from source
 
@@ -24,7 +24,7 @@ Download this directory and run `python setup.py install`
 Run the command line by typing `geoseeq` into a terminal prompt. See available options by adding `--help`
 
 ```
-$ geoseeq-api --help
+$ geoseeq --help
 ```
 
 You can find more command line examples in `docs/`

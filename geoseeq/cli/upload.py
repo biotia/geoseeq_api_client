@@ -4,7 +4,7 @@ import json
 import click
 import pandas as pd
 
-from geoseeq_api.knex import GeoseeqNotFoundError
+from geoseeq.knex import GeoseeqNotFoundError
 
 from .. import Organization
 from .constants import *

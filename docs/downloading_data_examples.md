@@ -16,14 +16,14 @@ $ export GEOSEEQ_API_TOKEN=<your token from the geoseeq app>
 ## Download metadata from a GeoSeeq project as a CSV 
 
 ```
-$ geoseeq-api download metadata GeoSeeq "Example CLI Project"
+$ geoseeq download metadata GeoSeeq "Example CLI Project"
 ```
 
 
 ## Download Short Read Sequencing data from one sample in a project as a set of FASTQ files
 
 ```
-$ geoseeq-api download sample-results --module-name "short_read::paired_end" GeoSeeq "Example CLI Project" "s1"
+$ geoseeq download sample-results --module-name "short_read::paired_end" GeoSeeq "Example CLI Project" "s1"
 ```
 
 
@@ -32,5 +32,5 @@ $ geoseeq-api download sample-results --module-name "short_read::paired_end" Geo
 Download all results for all smaples in the group `UW Madison Biotech 2020`
 
 ```
-$ geoseeq-api download sample-results GeoSeeq "Example CLI Project"
+$ geoseeq download sample-results GeoSeeq "Example CLI Project"
 ```
