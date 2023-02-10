@@ -70,6 +70,7 @@ class Sample(RemoteObject):
         assert self.lib.is_library
         self.lib.idem()
         data = self.get_post_data()
+        url = f"samples"
         blob = self.knex.post(url, json=data, url_options=self.inherited_url_options)
         self.load_blob(blob)
 

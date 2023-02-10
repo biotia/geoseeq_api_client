@@ -4,6 +4,8 @@ import json
 import click
 import pandas as pd
 
+from geoseeq_api.knex import GeoseeqNotFoundError
+
 from .. import Organization
 from .constants import *
 from .fastq_utils import group_paired_end_paths, upload_fastq_pair, upload_single_fastq
@@ -20,91 +22,144 @@ module_option = lambda x: click.option('-m', '--module-name', type=click.Choice(
 private_option = click.option('--private/--public', default=True, help='Make the reads private.')
 
 org_arg = click.argument('org_name')
-lib_arg = click.argument('library_name')
+project_arg = click.argument('project_name')
+sample_arg = click.argument('sample_name')
+module_arg = click.argument('module_name')
+field_name = click.argument('field_name')
 
 
 @cli_upload.command('reads')
 @use_common_state
-@overwrite_option
+@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
+@click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
 @private_option
-@module_option(['short_read::paired_end'])
-@click.option('-d', '--delim', default='_L', help='Split sample name on this string')
-@click.option('-1', '--ext-1', default='_R1.fastq.gz')
-@click.option('-2', '--ext-2', default='_R2.fastq.gz')
+@module_option(['short_read::paired_end', 'short_read::single_end', 'long_read::nanopore'])
 @org_arg
-@lib_arg
+@project_arg
 @click.argument('file_list', type=click.File('r'))
-def cli_upload_pe_reads(state, overwrite, private, tag, module_name, delim,
-                        ext_1, ext_2, org_name, library_name, file_list):
-    """Upload paired end reads to Geoseeq.
+def cli_upload_reads_wizard(state, yes, regex, private, module_name, org_name, project_name, file_list):
+    """Upload read files to GeoSeeq.
 
-    This command will upload paired end reads to the specified
-    sample library.
+    This command automatically groups files by their sample name, lane number and read number.
 
-    Sample names will be automatically generated from the names
-    of the fastq files for each pair of reads. Sample names will
-    be determined by removing extensions from each file or, if
-    a delimiter string is set by taking everything before that
-    string. Both reads in a pair must resolve to the same sample
-    name. 
+    It asks for user confirmation before creating any samples or data.
 
     `file_list` is a file with a list of fastq filepaths, one per line
-
-    TODO: support multi lane files.
     """
+    # Set up the organization and library
     knex = state.get_knex()
     org = Organization(knex, org_name).get()
-    lib = org.sample_group(library_name).get()
-    tags = [Tag(knex, tag_name).get() for tag_name in tag]
-    samples = group_paired_end_paths(file_list, ext_1, ext_2, delim=delim)
-    for sname, reads in samples.items():
-        sample = lib.sample(sname).idem()
-        for tag in tags:
-            tag(sample)
-        ar = sample.analysis_result(module_name)
-        r1, r2 = upload_fastq_pair(
-            ar, reads['read_1'], reads['read_2'], private, overwrite=overwrite
-        )
-        print(sample, ar, r1, r2, file=state.outfile)
+    try:
+        org = Organization(knex, org_name).get()
+    except GeoseeqNotFoundError:
+        if not yes:
+            click.confirm(f'Organization "{org_name}" does not exist. Create it?', abort=True)
+        org = Organization(knex, org_name).create()
+    try:
+        lib = org.sample_group(project_name).get()
+    except GeoseeqNotFoundError:
+        if not yes:
+            click.confirm(f'Project "{project_name}" does not exist. Create it?', abort=True)
+        lib = org.sample_group(project_name, is_public=not private).create()
+
+    # Find a regex that will group the files into samples and tell the user if files did not match
+    filepaths = {line.strip().split('/')[-1]: line.strip() for line in file_list if line.strip()}
+    seq_length, seq_type = module_name.split('::')[:2]
+    result = knex.post('bulk_upload/validate_filenames', json={
+        'filenames': list(filepaths.keys()),
+        'sequence_type': seq_type,
+        'sample_group_id': lib.uuid,
+    })
+    regex = result['regex_used']
+    click.echo(f'Using regex: "{regex}"', err=True)
+    if result['unmatched']:
+        click.echo(f'{len(result["unmatched"])} files could not be grouped.', err=True)
+    else:
+        click.echo('All files successfully grouped.', err=True)
+
+    # Group files into samples, show the user what will be uploaded, and confirm
+    groups = knex.post('bulk_upload/group_files', json={
+        'filenames': list(filepaths.keys()),
+        'sequence_type': seq_type,
+        'regex': regex
+    })
+    for group in groups:
+        click.echo(f'sample_name: {group["sample_name"]}', err=True)
+        click.echo(f'  module_name: {module_name}', err=True)
+        for field_name, filename in group['fields'].items():
+            path = filepaths[filename]
+            click.echo(f'    {seq_length}::{field_name}: {path}', err=True)
+    if not yes:
+        click.confirm('Do you want to upload these files?', abort=True)
+
+    # Upload the files
+    for group in groups:
+        click.echo(f'Uploading Sample: {group["sample_name"]}', err=True)
+        sample = lib.sample(group['sample_name']).idem()
+        module = sample.analysis_result(module_name).idem()
+        for field_name, path in group['fields'].items():
+            field = module.field(f'{seq_length}::{field_name}').idem()
+            field.upload_file(path)
 
 
-@cli_upload.command('single-ended-reads')
+@cli_upload.command('file')
 @use_common_state
-@overwrite_option
+@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @private_option
-@dryrun_option
-@module_option(['short_read::single_end', 'long_read::nanopore'])
-@click.option('-d', '--delim', default='_L', help='Split sample name on this string')
-@click.option('-e', '--ext', default='.fastq.gz')
 @org_arg
-@lib_arg
-@click.argument('file_list', type=click.File('r'))
-def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
-                        delim, ext, org_name, library_name, file_list):
-    """Upload single ended reads to Geoseeq, including nanopore reads.
-
-    This command will upload single reads to the specified
-    sample library.
-
-    Sample names will be automatically generated from the names
-    of the fastq files. Sample names will be determined by removing
-    extensions from each file or, if a delimiter string is set by
-    taking everything before that string.
-
-    `file_list` is a file with a list of fastq filepaths, one per line
-    """
+@project_arg
+@sample_arg
+@module_arg
+@field_name
+@click.argument('file_path', type=click.Path(exists=True))
+def cli_upload_file(state, yes, private, org_name, project_name, sample_name, module_name, field_name, file_path):
+    """Upload a single file to a sample field."""
     knex = state.get_knex()
-    org = Organization(knex, org_name).get()
-    lib = org.sample_group(library_name).get()
-    for filepath in (l.strip() for l in file_list):
-        assert ext in filepath
-        sname = filepath.split('/')[-1].split(ext)[0].split(delim)[0]
-        if dryrun:
-            click.echo(f'Sample: {sname} {filepath}')
-        sample = lib.sample(sname).idem()
-        ar = sample.analysis_result(module_name)
-        reads = upload_single_fastq(ar, module_name, filepath, private, overwrite=overwrite)
-        print(sample, ar, reads, file=state.outfile)
+    try:
+        org = Organization(knex, org_name).get()
+    except GeoseeqNotFoundError:
+        if not yes:
+            click.confirm(f'Organization "{org_name}" does not exist. Create it?', abort=True)
+        org = Organization(knex, org_name).create()
+    try:
+        lib = org.sample_group(project_name).get()
+    except GeoseeqNotFoundError:
+        if not yes:
+            click.confirm(f'Project "{project_name}" does not exist. Create it?', abort=True)
+        lib = org.sample_group(project_name, is_public=not private).create()
+    sample = lib.sample(sample_name).idem()
+    module = sample.analysis_result(module_name).idem()
+    field = module.field(field_name).idem()
+    field.upload_file(file_path)
+
+
+@cli_upload.command('project-file')
+@use_common_state
+@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
+@private_option
+@org_arg
+@project_arg
+@module_arg
+@field_name
+@click.argument('file_path', type=click.Path(exists=True))
+def cli_upload_file(state, yes, private, org_name, project_name, module_name, field_name, file_path):
+    """Upload a single file to a project field."""
+    knex = state.get_knex()
+    try:
+        org = Organization(knex, org_name).get()
+    except GeoseeqNotFoundError:
+        if not yes:
+            click.confirm(f'Organization "{org_name}" does not exist. Create it?', abort=True)
+        org = Organization(knex, org_name).create()
+    try:
+        lib = org.sample_group(project_name).get()
+    except GeoseeqNotFoundError:
+        if not yes:
+            click.confirm(f'Project "{project_name}" does not exist. Create it?', abort=True)
+        lib = org.sample_group(project_name, is_public=not private).create()
+    module = lib.analysis_result(module_name).idem()
+    field = module.field(field_name).idem()
+    field.upload_file(file_path)
 
 
 @cli_upload.command('metadata')

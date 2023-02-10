@@ -13,86 +13,68 @@ Once you have a token you will need to set it as an environment variable like so
 $ export GEOSEEQ_API_TOKEN=<your token from the geoseeq app>
 ```
 
-## Uploading Sequencing Data
+## Uploading Data
 
 
-### Uploading Data Using the Upload Wizard
+### Uploading sequencing data
 
-TODO
+GeoSeeq can automatically group fastq files into samples according to their 
+sample name, read number, and lane number. It supports paired end, single end,
+and nanopore reads.
+
+Assume you have data from a single ended sequencing run stored as fastq files: 
+ - Sample1_L1_R1.fastq.gz
+ - Sample1_L1_R2.fastq.gz
+ - Sample1_L2_R1.fastq.gz
+ - Sample1_L2_R2.fastq.gz
+
+You can upload these files to GeoSeeq using the command line:
+
+```
+# navigate to the directory where the fastq files are stored
+$ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
+$ geoseeq-api upload reads "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
+Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
+All files successfully grouped.
+sample_name: Sample1
+  module_name: short_read::paired_end
+    short_read::paired_end::read_1::lane_1: Sample1_L1_R1.fastq.gz
+    short_read::paired_end::read_2::lane_1: Sample1_L1_R2.fastq.gz
+    short_read::paired_end::read_1::lane_2: Sample1_L2_R1.fastq.gz
+    short_read::paired_end::read_2::lane_2: Sample1_L2_R2.fastq.gz
+Do you want to upload these files? [y/N]: y
+Uploading Sample: Sample1
+```
+
+GeoSeeq will automatically create a new sample named `Sample1` if it does not already exist.
+
+Note: You will need to have an API token set to use this command (see above)
 
 #### Linking files from S3, Wasabi, FTP, Azure, and other cloud storage services
 
-TODO
+GeoSeeq allows you to link files stored on other cloud storage services without moving the files.
 
-### Uploading Sequencing Data Manually
+Directions coming soon.
 
-#### Upload single end short read sequencing data to a new sample in a project
 
-Assume you have data from a single ended sequencing run stored as two fastq files: `mysamplename_L001.fastq.gz` and `mysamplename_L002.fastq.gz`
+### Uploading other files
 
-You can upload these files to GeoSeeq using the command line:
+You can upload any file to GeoSeeq regardless of type.
+
+Imageine you are uploading an image file stored as a PNG. You would run the following command
 
 ```
-# navigate to the directory where the fastq files are stored
-$ ls *.fastq.gz  # check that files are present
-mysamplename_L001.fastq.gz mysamplename_L002.fastq.gz
-$ echo "mysamplename_L001.fastq.gz\nmysamplename_L002.fastq.gz" > fastq_files.txt
-$ geoseeq-api upload single-ended-reads GeoSeeq "Example CLI Project" fastq_files.txt
+$ geoseeq-api upload file "Example GeoSeeq Org" "Example CLI Project" "My Sample" "My Images" "My Image" image.png
 ```
-
-GeoSeeq will automatically create a new sample named `mysamplename` if it does not already exist.
 
 Note: You will need to have an API token set to use this command (see above)
 
-#### Upload nanopore sequencing data to a new sample in a project
 
-Assume you have data from a nanopore sequening run stored as a single fastq file: `mysamplename.fastq.gz`
+#### Uploading files to a project
 
-You can upload this file to GeoSeeq using the command line:
-
-```
-# navigate to the directory where the fastq file is stored
-$ ls *.fastq.gz  # check that files are present
-mysamplename.fastq.gz
-$ echo "mysamplename.fastq.gz" > fastq_files.txt
-$ geoseeq-api upload single-ended-reads --module-name "long_read::nanopore" GeoSeeq "Example CLI Project" fastq_files.txt
-```
-
-GeoSeeq will automatically create a new sample named `mysamplename` if it does not already exist.
-
-Note: You will need to have an API token set to use this command (see above)
-
-#### Upload paired end short read sequencing data to multiple new samples in a project
-
-Assume you have paired ended sequencing data from two samples stored as eight fastq files:
- - `sample1_L001_R1.fastq.gz`
- - `sample1_L001_R2.fastq.gz`
- - `sample1_L002_R1.fastq.gz`
- - `sample1_L002_R2.fastq.gz`
- - `sample2_L001_R1.fastq.gz`
- - `sample2_L001_R2.fastq.gz`
- - `sample2_L002_R1.fastq.gz`
- - `sample2_L002_R2.fastq.gz`
-
-You can upload these files to GeoSeeq using the command line:
+The command above will upload a file to a sample. You can also upload files to a project that aren't grouped
+with a specific sample. To do so:
 
 ```
-# navigate to the directory where the fastq files are stored
-
-$ ls -1 sample[1,2]_*.fastq.gz > fastq_files.txt
-$ geoseeq-api upload reads GeoSeeq "Example CLI Project" fastq_files.txt
+$ geoseeq-api upload project-file "Example GeoSeeq Org" "Example CLI Project" "My Images" "My Image" image.png
 ```
-
-GeoSeeq will automatically create two new samples named `sample1` and `sample2` if they do not already exist.
-
-Note: You will need to have an API token set to use this command (see above)
-
-## Uploading Other Data
-
-### Upload a File to a Project
-
-TODO
-
-### Upload a File to a Sample
-
-TODO
