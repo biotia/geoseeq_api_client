@@ -6,6 +6,7 @@ from .utils import use_common_state
 
 @click.group('add')
 def cli_add():
+    """Add samples to projects."""
     pass
 
 

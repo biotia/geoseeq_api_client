@@ -8,6 +8,7 @@ from .utils import use_common_state
 
 @click.group('create')
 def cli_create():
+    """Create objects on Geoseeq."""
     pass
 
 

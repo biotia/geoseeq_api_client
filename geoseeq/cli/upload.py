@@ -14,6 +14,7 @@ from .utils import use_common_state
 
 @click.group('upload')
 def cli_upload():
+    """Upload files to GeoSeeq."""
     pass
 
 dryrun_option = click.option('--dryrun/--wetrun', default=False, help='Print what will be created without actually creating it')
@@ -22,7 +23,7 @@ module_option = lambda x: click.option('-m', '--module-name', type=click.Choice(
 private_option = click.option('--private/--public', default=True, help='Make the reads private.')
 link_option = click.option(
     '--link-type',
-    default='upload'
+    default='upload',
     type=click.Choice(['upload', 's3', 'ftp', 'azure', 'sra']),
     help='Link the files from a cloud storage service instead of copying them'
 )
@@ -188,16 +189,16 @@ def cli_upload_file(state, yes, private, link_type, org_name, project_name, modu
 @click.option('--index-col', default=0)
 @click.option('--encoding', default='utf_8')
 @org_arg
-@lib_arg
+@project_arg
 @click.argument('table', type=click.File('rb'))
 def cli_metadata(state, overwrite,
                  create, update, index_col, encoding,
-                 org_name, library_name, table):
+                 org_name, project_name, table):
     knex = state.get_knex()
     tbl = pd.read_csv(table, index_col=index_col, encoding=encoding)
     tbl.index = tbl.index.to_series().map(str)
     org = Organization(knex, org_name).get()
-    lib = org.sample_group(library_name).get()
+    lib = org.sample_group(project_name).get()
     for sample_name, row in tbl.iterrows():
         sample = lib.sample(sample_name)
         if create:

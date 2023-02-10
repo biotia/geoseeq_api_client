@@ -1,8 +1,8 @@
 import logging
 import click
 from os.path import isfile
-from geoseeq_api.cli.utils import use_common_state
-from geoseeq_api.blob_constructors import resolve_brn
+from geoseeq.cli.utils import use_common_state
+from geoseeq.blob_constructors import resolve_brn
 from .vc_dir import VCDir
 from .clone import (
     clone_project,
@@ -14,6 +14,7 @@ logger = logging.getLogger('geoseeq_api')
 
 @click.group('vc')
 def cli_vc():
+    """Experimental version control features."""
     pass
 
 

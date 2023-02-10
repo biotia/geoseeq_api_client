@@ -1,6 +1,6 @@
 
 import json
-from geoseeq_api.blob_constructors import resolve_brn
+from geoseeq.blob_constructors import resolve_brn
 from os.path import join, dirname
 from .checksum import Checksum
 from os import environ, symlink, makedirs

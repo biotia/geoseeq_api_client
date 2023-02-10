@@ -1,4 +1,4 @@
-from geoseeq_api.utils import md5_checksum
+from geoseeq.utils import md5_checksum
 
 class Checksum:
 

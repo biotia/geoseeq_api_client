@@ -4,7 +4,7 @@ from glob import glob
 from string import Template
 from os.path import join
 
-from geoseeq_api.blob_constructors import resolve_brn
+from geoseeq.blob_constructors import resolve_brn
 from .vc_stub import VCStub
 
 

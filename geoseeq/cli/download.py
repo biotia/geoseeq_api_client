@@ -11,6 +11,7 @@ from .utils import use_common_state
 
 @click.group("download")
 def cli_download():
+    """Download objects from GeoSeeq."""
     pass
 
 

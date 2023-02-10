@@ -7,6 +7,7 @@ from .utils import use_common_state
 
 @click.group('user')
 def cli_user():
+    """Manage users on GeoSeeq."""
     pass
 
 

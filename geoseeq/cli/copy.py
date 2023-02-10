@@ -6,6 +6,7 @@ from .. import Knex, Organization
 
 @click.group('copy')
 def cli_copy():
+    """Copy samples and analysis results from one geoseeq instance to another."""
     pass
 
 

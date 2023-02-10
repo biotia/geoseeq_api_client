@@ -6,6 +6,7 @@ from .utils import use_common_state
 
 @click.group('list')
 def cli_list():
+    """List objects on GeoSeeq."""
     pass
 
 

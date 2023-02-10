@@ -5,9 +5,10 @@ import setuptools
 
 setuptools.setup(
     name='geoseeq',
-    version='0.1.0',  # remember to update version string in CLI as well
+    version='0.1.3',  # remember to update version string in CLI as well
     author="David C. Danko",
     author_email='dcdanko@biotia.io',
+    description=open('README.md').read(),
     packages=setuptools.find_packages(),
     package_dir={'geoseeq': 'geoseeq'},
     install_requires=[

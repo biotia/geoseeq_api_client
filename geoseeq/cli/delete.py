@@ -10,6 +10,7 @@ logger = logging.getLogger('geoseeq_api')
 
 @click.group('delete')
 def cli_delete():
+    """Delete objects from GeoSeeq."""
     pass
 
 
