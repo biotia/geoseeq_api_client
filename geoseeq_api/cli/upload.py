@@ -20,7 +20,12 @@ dryrun_option = click.option('--dryrun/--wetrun', default=False, help='Print wha
 overwrite_option = click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing samples and data')
 module_option = lambda x: click.option('-m', '--module-name', type=click.Choice(x), default=x[0], help='Name for the module that will store the data')
 private_option = click.option('--private/--public', default=True, help='Make the reads private.')
-
+link_option = click.option(
+    '--link-type',
+    default='upload'
+    type=click.Choice(['upload', 's3', 'ftp', 'azure', 'sra']),
+    help='Link the files from a cloud storage service instead of copying them'
+)
 org_arg = click.argument('org_name')
 project_arg = click.argument('project_name')
 sample_arg = click.argument('sample_name')
@@ -33,11 +38,12 @@ field_name = click.argument('field_name')
 @click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
 @private_option
+@link_option
 @module_option(['short_read::paired_end', 'short_read::single_end', 'long_read::nanopore'])
 @org_arg
 @project_arg
 @click.argument('file_list', type=click.File('r'))
-def cli_upload_reads_wizard(state, yes, regex, private, module_name, org_name, project_name, file_list):
+def cli_upload_reads_wizard(state, yes, regex, private, link_type, module_name, org_name, project_name, file_list):
     """Upload read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number and read number.
@@ -99,20 +105,25 @@ def cli_upload_reads_wizard(state, yes, regex, private, module_name, org_name, p
         module = sample.analysis_result(module_name).idem()
         for field_name, path in group['fields'].items():
             field = module.field(f'{seq_length}::{field_name}').idem()
-            field.upload_file(path)
+            if link_type == 'upload':
+                field.upload_file(path)
+            else:
+                field.link_file(link_type, path)
+
 
 
 @cli_upload.command('file')
 @use_common_state
 @click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @private_option
+@link_option
 @org_arg
 @project_arg
 @sample_arg
 @module_arg
 @field_name
 @click.argument('file_path', type=click.Path(exists=True))
-def cli_upload_file(state, yes, private, org_name, project_name, sample_name, module_name, field_name, file_path):
+def cli_upload_file(state, yes, private, link_type, org_name, project_name, sample_name, module_name, field_name, file_path):
     """Upload a single file to a sample field."""
     knex = state.get_knex()
     try:
@@ -130,19 +141,23 @@ def cli_upload_file(state, yes, private, org_name, project_name, sample_name, mo
     sample = lib.sample(sample_name).idem()
     module = sample.analysis_result(module_name).idem()
     field = module.field(field_name).idem()
-    field.upload_file(file_path)
+    if link_type == 'upload':
+        field.upload_file(path)
+    else:
+        field.link_file(link_type, path)
 
 
 @cli_upload.command('project-file')
 @use_common_state
 @click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @private_option
+@link_option
 @org_arg
 @project_arg
 @module_arg
 @field_name
 @click.argument('file_path', type=click.Path(exists=True))
-def cli_upload_file(state, yes, private, org_name, project_name, module_name, field_name, file_path):
+def cli_upload_file(state, yes, private, link_type, org_name, project_name, module_name, field_name, file_path):
     """Upload a single file to a project field."""
     knex = state.get_knex()
     try:
@@ -159,7 +174,10 @@ def cli_upload_file(state, yes, private, org_name, project_name, module_name, fi
         lib = org.sample_group(project_name, is_public=not private).create()
     module = lib.analysis_result(module_name).idem()
     field = module.field(field_name).idem()
-    field.upload_file(file_path)
+    if link_type == 'upload':
+        field.upload_file(path)
+    else:
+        field.link_file(link_type, path)
 
 
 @cli_upload.command('metadata')

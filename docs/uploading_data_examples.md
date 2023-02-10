@@ -33,6 +33,7 @@ You can upload these files to GeoSeeq using the command line:
 ```
 # navigate to the directory where the fastq files are stored
 $ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
+
 $ geoseeq-api upload reads "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
@@ -50,11 +51,47 @@ GeoSeeq will automatically create a new sample named `Sample1` if it does not al
 
 Note: You will need to have an API token set to use this command (see above)
 
-#### Linking files from S3, Wasabi, FTP, Azure, and other cloud storage services
+#### Linking reads from S3, Wasabi, FTP, Azure, and other cloud storage services
 
 GeoSeeq allows you to link files stored on other cloud storage services without moving the files.
 
-Directions coming soon.
+Assume you have data from a single ended sequencing run stored as fastq files on an s3 bucket: 
+ - `https://s3.wasabisys.com/mybucketname/Sample1_L1_R1.fastq.gz`
+ - `https://s3.wasabisys.com/mybucketname/Sample1_L1_R2.fastq.gz`
+ - `https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz`
+ - `https://s3.wasabisys.com/mybucketname/Sample1_L2_R2.fastq.gz`
+
+You can upload these files to GeoSeeq using the command line:
+
+```
+# Create a file that contains S3 URIs you want to link called fastq_urls.txt
+$ cat fastq_urls.txt
+https://s3.wasabisys.com/mybucketname/Sample1_L1_R1.fastq.gz
+https://s3.wasabisys.com/mybucketname/Sample1_L1_R2.fastq.gz
+https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz
+https://s3.wasabisys.com/mybucketname/Sample1_L2_R2.fastq.gz
+
+$ geoseeq-api upload reads --link-type s3 "Example GeoSeeq Org" "Example CLI Project" fastq_urls.txt
+Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
+All files successfully grouped.
+sample_name: Sample1
+  module_name: short_read::paired_end
+    short_read::paired_end::read_1::lane_1: https://s3.wasabisys.com/mybucketname/Sample1_L1_R1.fastq.gz
+    short_read::paired_end::read_2::lane_1: https://s3.wasabisys.com/mybucketname/Sample1_L1_R2.fastq.gz
+    short_read::paired_end::read_1::lane_2: https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz
+    short_read::paired_end::read_2::lane_2: https://s3.wasabisys.com/mybucketname/Sample1_L2_R2.fastq.gz
+Do you want to upload these files? [y/N]: y
+Uploading Sample: Sample1
+```
+
+This will create a new sample that links to your data without re-uploading any data. This is the fastest way
+to link files which are already stored in the cloud.
+
+You can link files from other types of cloud storage services such as:
+ - FTP Servers
+ - Azure Storage Accounts
+ - The NCBI SRA
+ - Any S3 compatible storage service (such as wasabi, amazon S3, backblaze)
 
 
 ### Uploading other files

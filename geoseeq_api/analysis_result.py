@@ -333,6 +333,73 @@ class AnalysisResultField(RemoteObject):
         }
         return data
 
+    def link_generic(self, link_type, *args, **kwargs):
+        if link_type == "s3":
+            return self.link_s3(*args, **kwargs)
+        elif link_type == "ftp":
+            return self.link_ftp(*args, **kwargs)
+        elif link_type == "sra":
+            return self.link_sra(*args, **kwargs)
+        elif link_type == "azure":
+            return self.link_azure(*args, **kwargs)
+
+    def link_s3(self, url, endpoint_url=None):
+        """Link this field to an S3 object.
+
+        Args:
+            url (str): The URL of the S3 object.
+            endpoint_url (str): The URL of the S3 endpoint.
+        """
+        if endpoint_url is None:
+            if not url.startswith("https://"):
+                raise ValueError("endpoint_url must be specified for non-HTTPS URLs.")
+            endpoint_url = "https://" + url.split("https://")[1].split("/")[0]
+            url = "s3://" + url.split(endpoint_url)[1][1:]
+        self.stored_data = {
+            "__type__": "s3",
+            "uri": url,
+            "endpoint_url": endpoint_url,
+        }
+        return self.save()
+    
+    def link_ftp(self, url):
+        """Link this field to an FTP object.
+
+        Args:
+            url (str): The URL of the FTP object.
+        """
+        self.stored_data = {
+            "__type__": "ftp",
+            "uri": url,
+        }
+        return self.save()
+
+    def link_sra(self, url):
+        """Link this field to an SRA object.
+
+        Args:
+            url (str): The URL of the SRA object.
+        """
+        self.stored_data = {
+            "__type__": "sra",
+            "uri": url,
+        }
+        return self.save()
+
+    def link_azure(self, url):
+        """Link this field to an Azure object.
+
+        Args:
+            url (str): The URL of the Azure object.
+        """
+        endpoint_url = "https://" + url.split("https://")[1].split("/")[0]
+        self.stored_data = {
+            "__type__": "azure",
+            "uri": url,
+            "endpoint_url": endpoint_url,
+        }
+        return self.save()
+
     def _create(self):
         check_json_serialization(self.stored_data)
         self.parent.idem()
