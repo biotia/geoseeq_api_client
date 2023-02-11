@@ -1,4 +1,3 @@
-
 from .analysis_result import (
     SampleAnalysisResult,
     SampleAnalysisResultField,
@@ -10,12 +9,13 @@ from .knex import (
     GeoseeqGeneralError,
     GeoseeqInternalError,
     GeoseeqNotFoundError,
-    GeoseeqTimeoutError,
     GeoseeqOtherError,
+    GeoseeqTimeoutError,
     Knex,
 )
 from .organization import Organization
 from .pipeline import Pipeline, PipelineModule
+from .pipeline_run import PipelineRun
 from .remote_object import RemoteObjectError, RemoteObjectOverwriteError
 from .sample import Sample
 from .sample_group import SampleGroup

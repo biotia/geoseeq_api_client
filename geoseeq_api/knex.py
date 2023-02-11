@@ -1,6 +1,8 @@
 import logging
-import requests
 from os import environ
+
+import requests
+
 from .file_system_cache import FileSystemCache
 
 DEFAULT_ENDPOINT = "https://backend.geoseeq.com"
@@ -47,15 +49,16 @@ class GeoseeqForbiddenError(GeoseeqGeneralError):
 class GeoseeqInternalError(GeoseeqGeneralError):
     pass
 
+
 class GeoseeqTimeoutError(GeoseeqGeneralError):
     pass
+
 
 class GeoseeqOtherError(GeoseeqGeneralError):
     pass
 
 
 class Knex:
-
     def __init__(self, endpoint_url=DEFAULT_ENDPOINT):
         self.endpoint_url = endpoint_url
         self.endpoint_url += "/api"
@@ -75,7 +78,7 @@ class Knex:
         self.sess.close()
 
     def _new_session(self):
-        if hasattr(self, 'sess') and self.sess:
+        if hasattr(self, "sess") and self.sess:
             self.sess.close()
         sess = requests.Session()
         sess.headers = self.headers
@@ -85,15 +88,14 @@ class Knex:
 
     def _set_verify(self):
         try:
-            val = environ['GEOSEEQ_NO_SSL_VERIFICATION']
-            if val.lower() == 'true':
+            val = environ["GEOSEEQ_NO_SSL_VERIFICATION"]
+            if val.lower() == "true":
                 return False
-            if val.lower() == 'false':
+            if val.lower() == "false":
                 return True
             return val
         except KeyError:
             return True
-
 
     def _logging_info(self, **kwargs):
         base = {"endpoint_url": self.endpoint_url, "headers": self.headers}
@@ -153,10 +155,8 @@ class Knex:
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
         logger.debug(f"Sending POST request. {d}")
-        response = self.sess.post(
-            f"{self.endpoint_url}/{url}",
-            json=json
-        )
+        response = self.sess.post(f"{self.endpoint_url}/{url}", json=json)
+        print(response.text)
         return self._handle_response(response, **kwargs)
 
     def put(self, url, json={}, url_options={}, **kwargs):

@@ -145,7 +145,7 @@ class SampleAnalysisResult(AnalysisResult):
         d = {"data": data, "url": url, "sample_ar": self}
         logger.debug(f"Saving SampleAnalysisResult. {d}")
         self.knex.put(url, json=data, url_options=self.inherited_url_options)
-    
+
     def get_post_data(self):
         """Return a dict that can be used to POST this result to the server."""
         data = {
@@ -179,8 +179,8 @@ class SampleAnalysisResult(AnalysisResult):
             for field in self._get_field_cache:
                 yield field
             return
-        #url = f"sample_ar_fields?analysis_result_id={self.uuid}"
-        url = self.nested_url() + f"/fields"
+        url = f"sample_ar_fields?analysis_result_id={self.uuid}&replicate={self.replicate}"
+        # url = self.nested_url() + f"/fields"
         logger.debug(f"Fetching SampleAnalysisResultFields. {self}")
         result = self.knex.get(url)
         for result_blob in result["results"]:
@@ -270,8 +270,8 @@ class AnalysisResultField(RemoteObject):
 
     @property
     def brn(self):
-        obj_type = 'sample' if self.canon_url() == 'sample_ar_fields' else 'project'
-        brn = f'brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}'
+        obj_type = "sample" if self.canon_url() == "sample_ar_fields" else "project"
+        brn = f"brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}"
 
     def nested_url(self):
         return self.parent.nested_url() + f"/fields/{self.name}"
@@ -454,7 +454,7 @@ class AnalysisResultField(RemoteObject):
         parts = [*range(1, n_parts + 1)]
         data = {
             "parts": parts,
-            "stance": 'upload-multipart',
+            "stance": "upload-multipart",
             "upload_id": upload_id,
         }
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
@@ -476,7 +476,9 @@ class AnalysisResultField(RemoteObject):
                         if attempts == max_retries:
                             raise
                         time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
-                complete_parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
+                complete_parts.append(
+                    {"ETag": http_response.headers["ETag"], "PartNumber": num + 1}
+                )
                 logger(f'[INFO] Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
             f"/ar_fields/{self.uuid}/complete_upload_s3",
@@ -509,10 +511,10 @@ class AnalysisResultField(RemoteObject):
 
     def checksum(self):
         """Return a checksum for this field as a blob.
-        
+
         TODO
         """
-        return {'value': '', 'method': 'none'}
+        return {"value": "", "method": "none"}
 
 
 class SampleAnalysisResultField(AnalysisResultField):
