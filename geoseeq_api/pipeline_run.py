@@ -6,7 +6,6 @@ class PipelineRun(RemoteObject):
         "uuid",
         "created_at",
         "updated_at",
-        "name",
         "sample_group",
         "sample",
         "pipeline",
@@ -16,7 +15,8 @@ class PipelineRun(RemoteObject):
         "status",
         "phase",
         "error_message",
-        "inputs",
+        "input_fields",
+        "input_parameters",
     ]
     parent_field = None
 
@@ -28,12 +28,12 @@ class PipelineRun(RemoteObject):
         pipeline_version,
         user=None,
         sample=None,
-        name=None,
         finished_at=None,
         status=None,
         phase=None,
         error_message=None,
-        inputs={},
+        input_fields=None,
+        input_parameters=None,
     ):
         super().__init__(self)
         self.knex = knex
@@ -42,12 +42,12 @@ class PipelineRun(RemoteObject):
         self.pipeline_version = pipeline_version
         self.sample = sample
         self.user = user
-        self.name = name
         self.finished_at = finished_at
         self.status = status
         self.phase = phase
         self.error_message = error_message
-        self.inputs = inputs
+        self.input_fields = input_fields
+        self.input_parameters = input_parameters
 
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
@@ -71,12 +71,12 @@ class PipelineRun(RemoteObject):
             "pipeline_version": self.pipeline_version,
             "sample": self.sample,
             "user": self.user,
-            "name": self.name,
             "finished_at": self.finished_at,
             "status": self.status,
             "phase": self.phase,
             "error_message": self.error_message,
-            "inputs": self.inputs,
+            "input_fields": self.input_fields,
+            "input_parameters": self.input_parameters,
         }
         url = f"app_runs"
         blob = self.knex.post(url, json=data)
