@@ -88,15 +88,12 @@ def cli_upload_pe_reads(state, overwrite, private, tag, module_name, delim,
 def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
                         ext, org_name, library_name, file_list):
     """Upload single ended reads to Geoseeq, including nanopore reads.
-
     This command will upload single reads to the specified
     sample library.
-
     Sample names will be automatically generated from the names
     of the fastq files. Sample names will be determined by removing
     extensions from each file or, if a delimiter string is set by
     taking everything before that string.
-
     `file_list` is a file with a list of fastq filepaths, one per line
     """
     knex = state.get_knex()
@@ -104,19 +101,17 @@ def cli_upload_se_reads(state, overwrite, private, dryrun, tag, module_name,
     lib = org.sample_group(library_name).get()
     tags = [Tag(knex, tag_name).get() for tag_name in tag]
     for filepath in (l.strip() for l in file_list):
-        print(filepath)
         assert ext in filepath
         sname = filepath.split('/')[-1].split(ext)[0]
-        print(sname)
         if dryrun:
             click.echo(f'Sample: {sname} {filepath}')
         sample = lib.sample(sname).idem()
         for tag in tags:
             tag(sample)
         ar = sample.analysis_result(module_name)
-        print("Wol")
         reads = upload_single_fastq(ar, module_name, filepath, private, overwrite=overwrite)
         print(sample, ar, reads, file=state.outfile)
+
 
 @cli_upload.command('single-ended-reads-ftp')
 @use_common_state
@@ -176,6 +171,68 @@ def cli_upload_se_reads_ftp(state, overwrite, private, dryrun, tag, module_name,
         os.remove(filepath) 
     ftp_server.quit()
 
+@cli_upload.command('paired-end-reads-ftp')
+@use_common_state
+@overwrite_option
+@private_option
+@dryrun_option
+@tag_option
+@module_option(['short_read::paired_end'])
+@click.option('-e', '--ext', default='.fastq.gz')
+@click.option('-h', '--hostname', default=None)
+@click.option('-u', '--username', default=None)
+@click.option('-p', '--password', default=None)
+@click.option('-l', '--folder', default=None)
+@click.option('-d', '--delim', default=",", help='Split sample name on this string')
+@click.option('-1', '--ext-1', default='.R1.fastq.gz')
+@click.option('-2', '--ext-2', default='.R2.fastq.gz')
+@org_arg
+@lib_arg
+@click.argument('file_list')
+def cli_upload_se_reads_ftp(state, overwrite, private, dryrun, tag, module_name,
+                        ext, org_name, library_name, file_list, hostname, username, password, folder, delim, ext_1,ext_2):
+    """Upload single ended reads to Geoseeq, including nanopore reads.
+
+    This command will upload single reads to the specified
+    sample library.
+
+    Sample names will be automatically generated from the names
+    of the fastq files. Sample names will be determined by removing
+    extensions from each file or, if a delimiter string is set by
+    taking everything before that string.
+
+    `file_list` is a file with a list of fastq filepaths, one per line
+    """
+    knex = state.get_knex()
+    org = Organization(knex, org_name).get()
+    try:
+        lib = org.sample_group(library_name).get()
+    except:
+        grp = SampleGroup(knex, org, library_name).create()
+        lib = org.sample_group(library_name).get()
+    tags = [Tag(knex, tag_name).get() for tag_name in tag]
+    ftp_server = ftplib.FTP(hostname, username, password)
+    ftp_server.encoding = "utf-8"
+    ftp_server.cwd(folder)
+    for filepath in (l.strip() for l in file_list.split(",")):
+        with open(filepath, "wb") as file:
+            ftp_server.retrbinary(f"RETR {filepath}", file.write)
+    samples = group_paired_end_paths(file_list, ext_1, ext_2, delim=delim)
+    for sname, reads in samples.items():
+        sample = lib.sample(sname).idem()
+        for tag in tags:
+            tag(sample)
+        ar = sample.analysis_result(module_name)
+        r1, r2 = upload_fastq_pair(
+            ar, reads['read_1'], reads['read_2'], private, overwrite=overwrite
+        )
+        print(sample, ar, r1, r2, file=state.outfile)
+    for filepath in (l.strip() for l in file_list.split(",")):
+        os.remove(filepath)
+    ftp_server.quit()
+
+    
+
 
 @cli_upload.command('metadata')
 @use_common_state
@@ -199,6 +256,7 @@ def cli_metadata(state, overwrite,
     lib = org.sample_group(library_name).get()
     for sample_name, row in tbl.iterrows():
         sample = lib.sample(sample_name)
+        print(sample)
         if create:
             sample = sample.idem()
         else:
