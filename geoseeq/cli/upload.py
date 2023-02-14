@@ -5,6 +5,7 @@ import click
 import pandas as pd
 
 from geoseeq.knex import GeoseeqNotFoundError
+from multiprocessing import Pool
 
 from .. import Organization
 from .constants import *
@@ -34,8 +35,23 @@ module_arg = click.argument('module_name')
 field_name = click.argument('field_name')
 
 
+def _upload_one_sample(args):
+    group, module_name, link_type, lib, filepaths, seq_length = args
+    sample = lib.sample(group['sample_name']).idem()
+    module = sample.analysis_result(module_name).idem()
+    for field_name, path in group['fields'].items():
+        field = module.field(f'{seq_length}::{field_name}').idem()
+        path = filepaths[path]
+        if link_type == 'upload':
+            field.upload_file(path)
+        else:
+            field.link_file(link_type, path)
+    return sample
+
+
 @cli_upload.command('reads')
 @use_common_state
+@click.option('--cores', default=1, help='Number of uploads to run in parallel')
 @click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
 @private_option
@@ -44,7 +60,7 @@ field_name = click.argument('field_name')
 @org_arg
 @project_arg
 @click.argument('file_list', type=click.File('r'))
-def cli_upload_reads_wizard(state, yes, regex, private, link_type, module_name, org_name, project_name, file_list):
+def cli_upload_reads_wizard(state, cores, yes, regex, private, link_type, module_name, org_name, project_name, file_list):
     """Upload read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number and read number.
@@ -100,17 +116,10 @@ def cli_upload_reads_wizard(state, yes, regex, private, link_type, module_name, 
         click.confirm('Do you want to upload these files?', abort=True)
 
     # Upload the files
-    for group in groups:
-        click.echo(f'Uploading Sample: {group["sample_name"]}', err=True)
-        sample = lib.sample(group['sample_name']).idem()
-        module = sample.analysis_result(module_name).idem()
-        for field_name, path in group['fields'].items():
-            field = module.field(f'{seq_length}::{field_name}').idem()
-            if link_type == 'upload':
-                field.upload_file(path)
-            else:
-                field.link_file(link_type, path)
-
+    args = [(group, module_name, link_type, lib, filepaths, seq_length) for group in groups]
+    with Pool(cores) as p:
+        for sample in p.imap_unordered(_upload_one_sample, args):
+            click.echo(f'Uploaded Sample: {sample.name}', err=True)
 
 
 @cli_upload.command('file')
