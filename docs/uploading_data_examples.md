@@ -26,13 +26,13 @@ Assume you have data from a single ended sequencing run stored as fastq files:
  - Sample1_L2_R1.fastq.gz
  - Sample1_L2_R2.fastq.gz
 
-You can upload these files to GeoSeeq using the command line:
+You can upload these files to GeoSeeq using the command line. This example will upload 32 files in  parallel:
 
 ```
 # navigate to the directory where the fastq files are stored
 $ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
 
-$ geoseeq upload reads "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
+$ geoseeq upload reads --cores 32 "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
 sample_name: Sample1
