@@ -107,9 +107,6 @@ class AnalysisResult(RemoteObject):
         key += self.replicate if self.replicate else ""
         return key
 
-    def __str__(self):
-        return f"<Geoseeq::Sample {self.module_name} {self.replicate} {self.uuid} />"
-
     def copy(self, new_parent, save=True):
         copied = new_parent.analysis_result(
             self.module_name, replicate=self.replicate, metadata=self.metadata
@@ -179,8 +176,8 @@ class SampleAnalysisResult(AnalysisResult):
             for field in self._get_field_cache:
                 yield field
             return
-        #url = f"sample_ar_fields?analysis_result_id={self.uuid}"
-        url = self.nested_url() + f"/fields"
+        url = f"sample_ar_fields?analysis_result_id={self.uuid}"
+        #url = self.nested_url() + f"/fields"
         logger.debug(f"Fetching SampleAnalysisResultFields. {self}")
         result = self.knex.get(url)
         for result_blob in result["results"]:
@@ -197,6 +194,9 @@ class SampleAnalysisResult(AnalysisResult):
         if cache:
             for field in self._get_field_cache:
                 yield field
+
+    def __str__(self):
+        return f"<Geoseeq::SampleResult {self.module_name} {self.replicate} {self.uuid} />"
 
 
 class SampleGroupAnalysisResult(AnalysisResult):
@@ -247,6 +247,9 @@ class SampleGroupAnalysisResult(AnalysisResult):
             result._already_fetched = True
             result._modified = False
             yield result
+
+    def __str__(self):
+        return f"<Geoseeq::SampleGroupResult {self.module_name} {self.replicate} {self.uuid} />"
 
 
 class AnalysisResultField(RemoteObject):
@@ -333,7 +336,7 @@ class AnalysisResultField(RemoteObject):
         }
         return data
 
-    def link_generic(self, link_type, *args, **kwargs):
+    def link_file(self, link_type, *args, **kwargs):
         if link_type == "s3":
             return self.link_s3(*args, **kwargs)
         elif link_type == "ftp":
@@ -583,10 +586,17 @@ class AnalysisResultField(RemoteObject):
 
 
 class SampleAnalysisResultField(AnalysisResultField):
+    
     def canon_url(self):
         return "sample_ar_fields"
 
+    def __str__(self):
+        return f"<Geoseeq::SampleResultField {self.name} {self.uuid} />"
 
 class SampleGroupAnalysisResultField(AnalysisResultField):
+
     def canon_url(self):
         return "sample_group_ar_fields"
+
+    def __str__(self):
+        return f"<Geoseeq::SampleGroupResultField {self.name} {self.uuid} />"

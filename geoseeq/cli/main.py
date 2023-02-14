@@ -11,6 +11,7 @@ from .download import cli_download
 from .list import cli_list
 from .upload import cli_upload
 from .user import cli_user
+from .view import cli_view
 from geoseeq.vc.cli import cli_vc
 
 logger = logging.getLogger('geoseeq_api')
@@ -25,7 +26,7 @@ def main():
 @main.command()
 def version():
     """Print the version of the Geoseeq API being used."""
-    click.echo('0.1.3')  # remember to update setup
+    click.echo('0.1.4')  # remember to update setup
 
 
 
@@ -38,3 +39,4 @@ main.add_command(cli_user)
 main.add_command(cli_delete)
 main.add_command(cli_copy)
 main.add_command(cli_vc)
+main.add_command(cli_view)
