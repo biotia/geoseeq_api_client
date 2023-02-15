@@ -36,22 +36,29 @@ field_name = click.argument('field_name')
 
 
 def _upload_one_sample(args):
-    group, module_name, link_type, lib, filepaths, seq_length = args
+    group, module_name, link_type, lib, filepaths, seq_length, overwrite = args
     sample = lib.sample(group['sample_name']).idem()
     module = sample.analysis_result(module_name).idem()
     for field_name, path in group['fields'].items():
-        field = module.field(f'{seq_length}::{field_name}').idem()
+        field = module.field(f'{seq_length}::{field_name}')
+        if field.exists() and not overwrite:  # TODO: check checksums to see if the file is the same
+            continue
+        field = field.idem()
         path = filepaths[path]
-        if link_type == 'upload':
-            field.upload_file(path)
-        else:
-            field.link_file(link_type, path)
-    return sample
+        try:
+            if link_type == 'upload':
+                field.upload_file(path)
+            else:
+                field.link_file(link_type, path)
+        except Exception as e:
+            return sample, False, e
+    return sample, True, None
 
 
 @cli_upload.command('reads')
 @use_common_state
 @click.option('--cores', default=1, help='Number of uploads to run in parallel')
+@click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing files')
 @click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
 @private_option
@@ -60,7 +67,7 @@ def _upload_one_sample(args):
 @org_arg
 @project_arg
 @click.argument('file_list', type=click.File('r'))
-def cli_upload_reads_wizard(state, cores, yes, regex, private, link_type, module_name, org_name, project_name, file_list):
+def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, module_name, org_name, project_name, file_list):
     """Upload read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number and read number.
@@ -120,10 +127,14 @@ def cli_upload_reads_wizard(state, cores, yes, regex, private, link_type, module
         click.confirm('Do you want to upload these files?', abort=True)
 
     # Upload the files
-    args = [(group, module_name, link_type, lib, filepaths, seq_length) for group in groups]
+    args = [(group, module_name, link_type, lib, filepaths, seq_length, overwrite) for group in groups]
     with Pool(cores) as p:
-        for sample in p.imap_unordered(_upload_one_sample, args):
-            click.echo(f'Uploaded Sample: {sample.name}', err=True)
+        for sample, success, error in p.imap_unordered(_upload_one_sample, args):
+            if success:
+                click.echo(f'Uploaded Sample: {sample.name}', err=True)
+            else:
+                click.echo(f'Failed to upload Sample: {sample.name}', err=True)
+                click.echo(f'Error:\n{error}', err=True)
 
 
 @cli_upload.command('file')
