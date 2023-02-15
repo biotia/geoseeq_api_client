@@ -86,13 +86,17 @@ def cli_upload_reads_wizard(state, cores, yes, regex, private, link_type, module
         lib = org.sample_group(project_name, is_public=not private).create()
 
     # Find a regex that will group the files into samples and tell the user if files did not match
+    
     filepaths = {line.strip().split('/')[-1]: line.strip() for line in file_list if line.strip()}
     seq_length, seq_type = module_name.split('::')[:2]
-    result = knex.post('bulk_upload/validate_filenames', json={
+    args = {
         'filenames': list(filepaths.keys()),
         'sequence_type': seq_type,
         'sample_group_id': lib.uuid,
-    })
+    }
+    if regex:
+        args['custom_regex'] = regex
+    result = knex.post('bulk_upload/validate_filenames', json=args)
     regex = result['regex_used']
     click.echo(f'Using regex: "{regex}"', err=True)
     if result['unmatched']:
