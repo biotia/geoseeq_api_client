@@ -142,7 +142,7 @@ class SampleAnalysisResult(AnalysisResult):
         d = {"data": data, "url": url, "sample_ar": self}
         logger.debug(f"Saving SampleAnalysisResult. {d}")
         self.knex.put(url, json=data, url_options=self.inherited_url_options)
-    
+
     def get_post_data(self):
         """Return a dict that can be used to POST this result to the server."""
         data = {
@@ -165,10 +165,17 @@ class SampleAnalysisResult(AnalysisResult):
         )
         self.load_blob(blob)
 
-    def field(self, field_name, data={}):
-        d = {"data": data, "field_name": field_name, "sample_ar": self}
+    def field(self, field_name, pipeline_run=None, data={}):
+        d = {
+            "data": data,
+            "pipeline_run": pipeline_run,
+            "field_name": field_name,
+            "sample_ar": self,
+        }
         logger.debug(f"Creating SampleAnalysisResultField for SampleAnalysisResult. {d}")
-        return SampleAnalysisResultField(self.knex, self, field_name, data=data)
+        return SampleAnalysisResultField(
+            self.knex, self, field_name, pipeline_run=pipeline_run, data=data
+        )
 
     def get_fields(self, cache=True):
         """Return a list of ar-fields fetched from the server."""
@@ -177,7 +184,7 @@ class SampleAnalysisResult(AnalysisResult):
                 yield field
             return
         url = f"sample_ar_fields?analysis_result_id={self.uuid}"
-        #url = self.nested_url() + f"/fields"
+        # url = self.nested_url() + f"/fields"
         logger.debug(f"Fetching SampleAnalysisResultFields. {self}")
         result = self.knex.get(url)
         for result_blob in result["results"]:
@@ -259,22 +266,24 @@ class AnalysisResultField(RemoteObject):
         "updated_at",
         "name",
         "stored_data",
+        "pipeline_run",
     ]
     parent_field = "parent"
 
-    def __init__(self, knex, parent, field_name, data={}):
+    def __init__(self, knex, parent, field_name, pipeline_run=None, data={}):
         super().__init__(self)
         self.knex = knex
         self.parent = parent
         self.name = field_name
         self.stored_data = data
+        self.pipeline_run = pipeline_run
         self._cached_filename = None  # Used if the field points to S3, FTP, etc
         self._temp_filename = False
 
     @property
     def brn(self):
-        obj_type = 'sample' if self.canon_url() == 'sample_ar_fields' else 'project'
-        brn = f'brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}'
+        obj_type = "sample" if self.canon_url() == "sample_ar_fields" else "project"
+        brn = f"brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}"
 
     def nested_url(self):
         return self.parent.nested_url() + f"/fields/{self.name}"
@@ -333,6 +342,7 @@ class AnalysisResultField(RemoteObject):
             "analysis_result": self.parent.uuid,
             "name": self.name,
             "stored_data": self.stored_data,
+            "pipeline_run": self.pipeline_run,
         }
         return data
 
@@ -364,7 +374,7 @@ class AnalysisResultField(RemoteObject):
             "endpoint_url": endpoint_url,
         }
         return self.save()
-    
+
     def link_ftp(self, url):
         """Link this field to an FTP object.
 
@@ -503,12 +513,14 @@ class AnalysisResultField(RemoteObject):
         self,
         filepath,
         file_size,
+        is_sample_result,
         optional_fields={},
         chunk_size=FIVE_MB,
         max_retries=3,
         logger=lambda x: x,
     ):
         n_parts = int(file_size / chunk_size) + 1
+        result_type = "sample" if is_sample_result else "group"
         optional_fields.update(
             {
                 "md5_checksum": md5_checksum(filepath),
@@ -518,14 +530,16 @@ class AnalysisResultField(RemoteObject):
         data = {
             "filename": basename(filepath),
             "optional_fields": optional_fields,
+            "result_type": result_type,
         }
-        response = self.knex.post(f"/ar_fields/{self.uuid}/create_s3_upload", json=data)
+        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload", json=data)
         upload_id = response["upload_id"]
         parts = [*range(1, n_parts + 1)]
         data = {
             "parts": parts,
-            "stance": 'upload-multipart',
+            "stance": "upload-multipart",
             "upload_id": upload_id,
+            "result_type": result_type,
         }
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
         urls = response
@@ -546,13 +560,16 @@ class AnalysisResultField(RemoteObject):
                         if attempts == max_retries:
                             raise
                         time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
-                complete_parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
+                complete_parts.append(
+                    {"ETag": http_response.headers["ETag"], "PartNumber": num + 1}
+                )
                 logger(f'[INFO] Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
-            f"/ar_fields/{self.uuid}/complete_upload_s3",
+            f"/ar_fields/{self.uuid}/complete_upload",
             json={
                 "parts": complete_parts,
                 "upload_id": upload_id,
+                "result_type": result_type,
             },
             json_response=False,
         )
@@ -562,7 +579,8 @@ class AnalysisResultField(RemoteObject):
     def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
         resolved_path = Path(filepath).resolve()
         file_size = getsize(resolved_path)
-        return self.multipart_upload_file(filepath, file_size, **kwargs)
+        is_sample_result = isinstance(self, SampleAnalysisResultField)
+        return self.multipart_upload_file(filepath, file_size, is_sample_result, **kwargs)
 
     def __del__(self):
         if self._temp_filename and self._cached_filename:
@@ -579,22 +597,21 @@ class AnalysisResultField(RemoteObject):
 
     def checksum(self):
         """Return a checksum for this field as a blob.
-        
+
         TODO
         """
-        return {'value': '', 'method': 'none'}
+        return {"value": "", "method": "none"}
 
 
 class SampleAnalysisResultField(AnalysisResultField):
-    
     def canon_url(self):
         return "sample_ar_fields"
 
     def __str__(self):
         return f"<Geoseeq::SampleResultField {self.name} {self.uuid} />"
 
-class SampleGroupAnalysisResultField(AnalysisResultField):
 
+class SampleGroupAnalysisResultField(AnalysisResultField):
     def canon_url(self):
         return "sample_group_ar_fields"
 
