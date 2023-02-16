@@ -4,12 +4,13 @@
 import setuptools
 
 setuptools.setup(
-    name='geoseeq_api',
-    version='0.9.24',  # remember to update version string in CLI as well
+    name='geoseeq',
+    version='0.1.6',  # remember to update version string in CLI as well
     author="David C. Danko",
-    author_email='dcdanko@gmail.com',
+    author_email='dcdanko@biotia.io',
+    description=open('README.md').read(),
     packages=setuptools.find_packages(),
-    package_dir={'geoseeq_api': 'geoseeq_api'},
+    package_dir={'geoseeq': 'geoseeq'},
     install_requires=[
         'requests',
         'click',
@@ -18,7 +19,7 @@ setuptools.setup(
     ],
     entry_points={
         'console_scripts': [
-            'geoseeq-api=geoseeq_api.cli:main'
+            'geoseeq=geoseeq.cli:main'
         ]
     },
     classifiers=[
