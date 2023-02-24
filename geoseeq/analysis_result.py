@@ -506,8 +506,10 @@ class AnalysisResultField(RemoteObject):
         optional_fields={},
         chunk_size=FIVE_MB,
         max_retries=3,
-        logger=lambda x: x,
+        session=None,
     ):
+        """Upload a file to S3 using the multipart upload process."""
+        logger.info(f"Uploading {filepath} to S3 using multipart upload.")
         n_parts = int(file_size / chunk_size) + 1
         optional_fields.update(
             {
@@ -530,24 +532,28 @@ class AnalysisResultField(RemoteObject):
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
         urls = response
         complete_parts = []
-        logger(f'[INFO] Starting upload for "{filepath}"')
+        logger.info(f'Starting upload for "{filepath}"')
         with open(filepath, "rb") as f:
             for num, url in enumerate(list(urls.values())):
                 file_data = f.read(chunk_size)
                 attempts = 0
                 while attempts < max_retries:
                     try:
-                        http_response = requests.put(url, data=file_data)
+                        if session:
+                            http_response = session.put(url, data=file_data)
+                        else:
+                            http_response = request.put(url, data=file_data)
                         http_response.raise_for_status()
+                        logger.debug(f"Upload for part {num + 1} succeeded.")
                         break
                     except requests.exceptions.HTTPError:
-                        logger(f"[WARN] Upload for part {num + 1} failed. Attempt {attempts + 1}")
+                        logger.warn(f"Upload for part {num + 1} failed. Attempt {attempts + 1} of {max_retries}.")
                         attempts += 1
                         if attempts == max_retries:
                             raise
                         time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
                 complete_parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
-                logger(f'[INFO] Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
+                logger.info(f'Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
             f"/ar_fields/{self.uuid}/complete_upload_s3",
             json={
@@ -556,7 +562,7 @@ class AnalysisResultField(RemoteObject):
             },
             json_response=False,
         )
-        logger(f'[INFO] Finished Upload for "{filepath}"')
+        logger.info(f'Finished Upload for "{filepath}"')
         return self
 
     def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
