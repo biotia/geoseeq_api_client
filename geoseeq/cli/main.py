@@ -28,7 +28,7 @@ def main():
 @main.command()
 def version():
     """Print the version of the Geoseeq API being used."""
-    click.echo('0.1.7')  # remember to update setup
+    click.echo('0.1.8')  # remember to update setup
 
 
 
