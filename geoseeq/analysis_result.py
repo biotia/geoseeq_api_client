@@ -503,6 +503,7 @@ class AnalysisResultField(RemoteObject):
         self,
         filepath,
         file_size,
+        is_sample_result,
         optional_fields={},
         chunk_size=FIVE_MB,
         max_retries=3,
@@ -520,14 +521,16 @@ class AnalysisResultField(RemoteObject):
         data = {
             "filename": basename(filepath),
             "optional_fields": optional_fields,
+            "result_type": "sample" if is_sample_result else "group" 
         }
-        response = self.knex.post(f"/ar_fields/{self.uuid}/create_s3_upload", json=data)
+        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload", json=data)
         upload_id = response["upload_id"]
         parts = [*range(1, n_parts + 1)]
-        data = {
+        data = {    
             "parts": parts,
             "stance": 'upload-multipart',
             "upload_id": upload_id,
+            "result_type": "sample" if is_sample_result else "group" 
         }
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
         urls = response
@@ -555,10 +558,11 @@ class AnalysisResultField(RemoteObject):
                 complete_parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
                 logger.info(f'Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
-            f"/ar_fields/{self.uuid}/complete_upload_s3",
+            f"/ar_fields/{self.uuid}/complete_upload",
             json={
                 "parts": complete_parts,
                 "upload_id": upload_id,
+                "result_type": "sample" if is_sample_result else "group" 
             },
             json_response=False,
         )
@@ -568,7 +572,8 @@ class AnalysisResultField(RemoteObject):
     def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
         resolved_path = Path(filepath).resolve()
         file_size = getsize(resolved_path)
-        return self.multipart_upload_file(filepath, file_size, **kwargs)
+        is_sample_result = isinstance(self, SampleAnalysisResultField)
+        return self.multipart_upload_file(filepath, file_size, is_sample_result, **kwargs)
 
     def __del__(self):
         if self._temp_filename and self._cached_filename:
