@@ -142,7 +142,7 @@ class SampleAnalysisResult(AnalysisResult):
         d = {"data": data, "url": url, "sample_ar": self}
         logger.debug(f"Saving SampleAnalysisResult. {d}")
         self.knex.put(url, json=data, url_options=self.inherited_url_options)
-    
+
     def get_post_data(self):
         """Return a dict that can be used to POST this result to the server."""
         data = {
@@ -177,7 +177,7 @@ class SampleAnalysisResult(AnalysisResult):
                 yield field
             return
         url = f"sample_ar_fields?analysis_result_id={self.uuid}"
-        #url = self.nested_url() + f"/fields"
+        # url = self.nested_url() + f"/fields"
         logger.debug(f"Fetching SampleAnalysisResultFields. {self}")
         result = self.knex.get(url)
         for result_blob in result["results"]:
@@ -273,8 +273,8 @@ class AnalysisResultField(RemoteObject):
 
     @property
     def brn(self):
-        obj_type = 'sample' if self.canon_url() == 'sample_ar_fields' else 'project'
-        brn = f'brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}'
+        obj_type = "sample" if self.canon_url() == "sample_ar_fields" else "project"
+        brn = f"brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}"
 
     def nested_url(self):
         return self.parent.nested_url() + f"/fields/{self.name}"
@@ -364,7 +364,7 @@ class AnalysisResultField(RemoteObject):
             "endpoint_url": endpoint_url,
         }
         return self.save()
-    
+
     def link_ftp(self, url):
         """Link this field to an FTP object.
 
@@ -521,16 +521,16 @@ class AnalysisResultField(RemoteObject):
         data = {
             "filename": basename(filepath),
             "optional_fields": optional_fields,
-            "result_type": "sample" if is_sample_result else "group" 
+            "result_type": "sample" if is_sample_result else "group",
         }
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload", json=data)
         upload_id = response["upload_id"]
         parts = [*range(1, n_parts + 1)]
-        data = {    
+        data = {
             "parts": parts,
-            "stance": 'upload-multipart',
+            "stance": "upload-multipart",
             "upload_id": upload_id,
-            "result_type": "sample" if is_sample_result else "group" 
+            "result_type": "sample" if is_sample_result else "group",
         }
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
         urls = response
@@ -545,24 +545,28 @@ class AnalysisResultField(RemoteObject):
                         if session:
                             http_response = session.put(url, data=file_data)
                         else:
-                            http_response = request.put(url, data=file_data)
+                            http_response = requests.put(url, data=file_data)
                         http_response.raise_for_status()
                         logger.debug(f"Upload for part {num + 1} succeeded.")
                         break
                     except requests.exceptions.HTTPError:
-                        logger.warn(f"Upload for part {num + 1} failed. Attempt {attempts + 1} of {max_retries}.")
+                        logger.warn(
+                            f"Upload for part {num + 1} failed. Attempt {attempts + 1} of {max_retries}."
+                        )
                         attempts += 1
                         if attempts == max_retries:
                             raise
                         time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
-                complete_parts.append({"ETag": http_response.headers["ETag"], "PartNumber": num + 1})
+                complete_parts.append(
+                    {"ETag": http_response.headers["ETag"], "PartNumber": num + 1}
+                )
                 logger.info(f'Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
             f"/ar_fields/{self.uuid}/complete_upload",
             json={
                 "parts": complete_parts,
                 "upload_id": upload_id,
-                "result_type": "sample" if is_sample_result else "group" 
+                "result_type": "sample" if is_sample_result else "group",
             },
             json_response=False,
         )
@@ -590,22 +594,21 @@ class AnalysisResultField(RemoteObject):
 
     def checksum(self):
         """Return a checksum for this field as a blob.
-        
+
         TODO
         """
-        return {'value': '', 'method': 'none'}
+        return {"value": "", "method": "none"}
 
 
 class SampleAnalysisResultField(AnalysisResultField):
-    
     def canon_url(self):
         return "sample_ar_fields"
 
     def __str__(self):
         return f"<Geoseeq::SampleResultField {self.name} {self.uuid} />"
 
-class SampleGroupAnalysisResultField(AnalysisResultField):
 
+class SampleGroupAnalysisResultField(AnalysisResultField):
     def canon_url(self):
         return "sample_group_ar_fields"
 
