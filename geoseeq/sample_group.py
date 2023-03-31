@@ -2,7 +2,7 @@ from .analysis_result import SampleGroupAnalysisResult
 from .remote_object import RemoteObject
 from .sample import Sample
 from .utils import paginated_iterator
-
+import json
 
 class SampleGroup(RemoteObject):
     remote_fields = [
@@ -12,11 +12,15 @@ class SampleGroup(RemoteObject):
         "name",
         "is_library",
         "is_public",
+        "privacy_level",
         "metadata",
         "long_description",
         "description",
         "bucket",
         "storage_provider_name",
+    ]
+    optional_remote_fields = [
+        "privacy_level",
     ]
     parent_field = "org"
 
@@ -29,6 +33,7 @@ class SampleGroup(RemoteObject):
         is_library=True,
         is_public=False,
         storage_provider="default",
+        privacy_level=None,
     ):
         super().__init__(self)
         self.knex = knex
@@ -42,6 +47,7 @@ class SampleGroup(RemoteObject):
         self._get_result_cache = []
         self.metadata = metadata
         self.storage_provider = storage_provider
+        self.privacy_level = privacy_level
 
     def nested_url(self):
         return self.org.nested_url() + f"/sample_groups/{self.name}"
@@ -55,9 +61,8 @@ class SampleGroup(RemoteObject):
 
     def _save_sample_list(self):
         sample_uuids = []
-        for sample in self._sample_cache:
-            sample.idem()
-            sample_uuids.append(sample.uuid)
+        for sample_uuid in self._sample_cache:
+            sample_uuids.append(sample_uuid)
         if sample_uuids:
             url = f"sample_groups/{self.uuid}/samples"
             self.knex.post(url, json={"sample_uuids": sample_uuids})
@@ -65,9 +70,8 @@ class SampleGroup(RemoteObject):
 
     def _delete_sample_list(self):
         sample_uuids = []
-        for sample in self._deleted_sample_cache:
-            sample.idem()
-            sample_uuids.append(sample.uuid)
+        for sample_uuid in self._deleted_sample_cache:
+            sample_uuids.append(sample_uuid)
         if sample_uuids:
             url = f"sample_groups/{self.uuid}/samples"
             self.knex.delete(url, json={"sample_uuids": sample_uuids})
@@ -89,27 +93,43 @@ class SampleGroup(RemoteObject):
         else:
             self.load_blob(blob)
 
+        
+
     def _create(self):
         self.org.idem()
+        post_data = {
+            "uuid": self.uuid,
+            "organization": self.org.uuid,
+            "name": self.name,
+            "is_library": self.is_library,
+            "is_public": self.is_public,
+            "privacy_level": self.privacy_level if self.privacy_level else "private",
+            "metadata": self.metadata,
+            "storage_provider_name": self.storage_provider,
+        }
+        if post_data['uuid'] is None:
+            post_data.pop('uuid')
         blob = self.knex.post(
             f"sample_groups?format=json",
-            json={
-                "organization": self.org.uuid,
-                "name": self.name,
-                "is_library": self.is_library,
-                "is_public": self.is_public,
-                "metadata": self.metadata,
-                "storage_provider_name": self.storage_provider,
-            },
+            json=post_data,
         )
         self.load_blob(blob)
+    
+    def add_sample_uuid(self, sample_uuid):
+        """Return this group and add a sample to this group.
+
+        Do not contact server until `.save()` is called on this group.
+        """
+        self._sample_cache.append(sample_uuid)
+        self._modified = True
+        return self
 
     def add_sample(self, sample):
         """Return this group and add a sample to this group.
 
         Do not contact server until `.save()` is called on this group.
         """
-        self._sample_cache.append(sample)
+        self._sample_cache.append(sample.uuid)
         self._modified = True
         return self
 
@@ -118,7 +138,7 @@ class SampleGroup(RemoteObject):
 
         Do not contact server until `.save()` is called on this group.
         """
-        self._deleted_sample_cache.append(sample)
+        self._deleted_sample_cache.append(sample.uuid)
         self._modified = True
         return self
 

@@ -87,11 +87,12 @@ class Sample(RemoteObject):
 
     def get_analysis_results(self, cache=True):
         """Yield sample analysis results fetched from the server."""
+        self.get()
         if cache and self._get_result_cache:
             for ar in self._get_result_cache:
                 yield ar
             return
-        url = self.nested_url() + f"/analysis_results" # f"sample_ars?sample_id={self.uuid}"
+        url =  f"sample_ars?sample_id={self.uuid}"
         result = self.knex.get(url)
         for result_blob in result["results"]:
             result = self.analysis_result(result_blob["module_name"])

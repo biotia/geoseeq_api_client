@@ -229,6 +229,8 @@ class SampleGroupAnalysisResult(AnalysisResult):
         }
         if self.replicate:
             data["replicate"] = self.replicate
+        if self.uuid:
+            data["uuid"] = self.uuid
         blob = self.knex.post(f"sample_group_ars?format=json", json=data)
         self.load_blob(blob)
 
