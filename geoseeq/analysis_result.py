@@ -81,10 +81,8 @@ class AnalysisResult(RemoteObject):
         "updated_at",
         "module_name",
         "replicate",
-        "metadata",
         "description",
         "is_private",
-        "pipeline_module",
     ]
 
     def _get(self):
@@ -432,8 +430,6 @@ class AnalysisResultField(RemoteObject):
     def download_file(self, filename=None, cache=True):
         """Return a local filepath to the file this result points to."""
         blob_type = self.stored_data.get("__type__", "").lower()
-        if blob_type not in ["s3", "sra", "ftp"]:
-            raise TypeError("Cannot fetch a file for a BLOB type result field.")
         if cache and self._cached_filename:
             return self._cached_filename
         if blob_type == "s3":
@@ -442,6 +438,10 @@ class AnalysisResultField(RemoteObject):
             return self._download_sra(filename, cache)
         elif blob_type == "ftp":
             return self._download_ftp(filename, cache)
+        elif blob_type == "azure":
+            return self._download_azure(filename, cache)
+        else:
+            raise TypeError("Cannot fetch a file for a BLOB type result field.")
 
     def _download_s3(self, filename, cache):
         try:
@@ -450,6 +450,21 @@ class AnalysisResultField(RemoteObject):
             url = self.stored_data["uri"]
         if url.startswith("s3://"):
             url = self.stored_data["endpoint_url"] + "/" + url[5:]
+        if not filename:
+            self._temp_filename = True
+            myfile = NamedTemporaryFile(delete=False)
+            myfile.close()
+            filename = myfile.name
+        urlretrieve(url, filename)
+        if cache:
+            self._cached_filename = filename
+        return filename
+
+    def _download_azure(self, filename, cache):
+        try:
+            url = self.stored_data["presigned_url"]
+        except KeyError:
+            url = self.stored_data["uri"]
         if not filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
