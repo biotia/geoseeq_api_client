@@ -4,6 +4,7 @@ from .blob_constructors import (
     sample_ar_from_blob,
     sample_ar_field_from_blob,
 )
+import json
 
 
 def bulk_create_samples(knex, samples):
@@ -12,10 +13,9 @@ def bulk_create_samples(knex, samples):
     Only returns samples which were newly created.
     If a sample already exists on the server, it will not be returned.
     """
-    result = knex.post(
-        "bulk_samples",
-        json={"samples": [sample.get_post_data() for sample in samples]},
-    )
+    data = {"samples": [sample.get_post_data() for sample in samples]}
+    # print(json.dumps(data, indent=4))
+    result = knex.post("bulk_samples", json=data)
     created_samples = [
         sample_from_blob(knex, result_blob) for result_blob in result['samples'] if result_blob
     ]
@@ -28,9 +28,10 @@ def bulk_create_sample_results(knex, sample_results):
     Only returns sample results which were newly created.
     If a sample result already exists on the server, it will not be returned.
     """
+    data = {"sample_results": [sample_result.get_post_data() for sample_result in sample_results]}
     result = knex.post(
         "bulk_sample_results",
-        json={"sample_results": [sample_result.get_post_data() for sample_result in sample_results]},
+        json=data,
     )
     created_sample_results = [
         sample_ar_from_blob(knex, result_blob) for result_blob in result['sample_results'] if result_blob

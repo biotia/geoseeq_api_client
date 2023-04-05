@@ -123,14 +123,14 @@ class Knex:
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
             if response.status_code == 403:
-                raise GeoseeqForbiddenError(e)
+                raise GeoseeqForbiddenError(e, response.content)
             if response.status_code == 404:
-                raise GeoseeqNotFoundError(e)
+                raise GeoseeqNotFoundError(e, response.content)
             if response.status_code == 500:
-                raise GeoseeqInternalError(e)
+                raise GeoseeqInternalError(e, response.content)
             if response.status_code == 504:
-                raise GeoseeqTimeoutError(e)
-            raise GeoseeqOtherError(e)
+                raise GeoseeqTimeoutError(e, response.content)
+            raise GeoseeqOtherError(e, response.content)
         except Exception:
             logger.debug(f"Request failed. {response}\n{response.content}")
             raise
