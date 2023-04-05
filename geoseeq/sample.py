@@ -35,13 +35,7 @@ class Sample(RemoteObject):
         self._modified = True
 
     def _save(self):
-        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
-        data["library"] = self.lib.uuid
-        if self.new_lib:
-            if isinstance(self.new_lib, RemoteObject):
-                data["library"] = self.new_lib.uuid
-            else:
-                data["library"] = self.new_lib
+        data = self.get_post_data()
         url = f"samples/{self.uuid}"
         self.knex.put(url, json=data, url_options=self.inherited_url_options)
         if self.new_lib:
@@ -62,6 +56,11 @@ class Sample(RemoteObject):
     def get_post_data(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
         data["library"] = self.lib.uuid
+        if self.new_lib:
+            if isinstance(self.new_lib, RemoteObject):
+                data["library"] = self.new_lib.uuid
+            else:
+                data["library"] = self.new_lib
         if data['uuid'] is None:
             data.pop('uuid')
         return data
