@@ -81,13 +81,11 @@ class AnalysisResult(RemoteObject):
         "updated_at",
         "module_name",
         "replicate",
-        "metadata",
         "description",
         "is_private",
-        "pipeline_module",
     ]
 
-    def _get(self):
+    def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.parent.idem()
         logger.debug(f"Getting AnalysisResult.")
@@ -97,7 +95,7 @@ class AnalysisResult(RemoteObject):
             if self.replicate:
                 url += f"?replicate={self.replicate}"
             blob = self.knex.get(url, url_options=self.inherited_url_options)
-            self.load_blob(blob)
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
             self.cache_blob(blob)
         else:
             self.load_blob(blob)
@@ -234,6 +232,8 @@ class SampleGroupAnalysisResult(AnalysisResult):
         }
         if self.replicate:
             data["replicate"] = self.replicate
+        if self.uuid:
+            data["uuid"] = self.uuid
         blob = self.knex.post(f"sample_group_ars?format=json", json=data)
         self.load_blob(blob)
 
@@ -328,11 +328,11 @@ class AnalysisResultField(RemoteObject):
         url = f"{self.canon_url()}/{self.uuid}"
         self.knex.put(url, json=data)
 
-    def _get(self):
+    def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.parent.idem()
         blob = self.knex.get(self.nested_url())
-        self.load_blob(blob)
+        self.load_blob(blob, allow_overwrite=allow_overwrite)
 
     def get_post_data(self):
         """Return a dict that can be used to POST this field to the server."""
@@ -435,27 +435,44 @@ class AnalysisResultField(RemoteObject):
             url = self.stored_data["url"]
             return url
 
-    def download_file(self, filename=None, cache=True):
+    def download_file(self, filename=None, cache=True, head=None):
         """Return a local filepath to the file this result points to."""
         blob_type = self.stored_data.get("__type__", "").lower()
-        if blob_type not in ["s3", "sra", "ftp"]:
-            raise TypeError("Cannot fetch a file for a BLOB type result field.")
         if cache and self._cached_filename:
             return self._cached_filename
         if blob_type == "s3":
-            return self._download_s3(filename, cache)
+            return self._download_s3(filename, cache, head=head)
         elif blob_type == "sra":
             return self._download_sra(filename, cache)
         elif blob_type == "ftp":
             return self._download_ftp(filename, cache)
+        elif blob_type == "azure":
+            return self._download_azure(filename, cache, head=head)
+        else:
+            raise TypeError("Cannot fetch a file for a BLOB type result field.")
 
-    def _download_s3(self, filename, cache):
+    def _download_s3(self, filename, cache, head=None):
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
             url = self.stored_data["uri"]
         if url.startswith("s3://"):
             url = self.stored_data["endpoint_url"] + "/" + url[5:]
+        if not filename:
+            self._temp_filename = True
+            myfile = NamedTemporaryFile(delete=False)
+            myfile.close()
+            filename = myfile.name
+        urlretrieve(url, filename)
+        if cache:
+            self._cached_filename = filename
+        return filename
+
+    def _download_azure(self, filename, cache, head=None):
+        try:
+            url = self.stored_data["presigned_url"]
+        except KeyError:
+            url = self.stored_data["uri"]
         if not filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
@@ -511,11 +528,14 @@ class AnalysisResultField(RemoteObject):
         self,
         filepath,
         file_size,
+        is_sample_result,
         optional_fields={},
         chunk_size=FIVE_MB,
         max_retries=3,
-        logger=lambda x: x,
+        session=None,
     ):
+        """Upload a file to S3 using the multipart upload process."""
+        logger.info(f"Uploading {filepath} to S3 using multipart upload.")
         n_parts = int(file_size / chunk_size) + 1
         optional_fields.update(
             {
@@ -526,30 +546,38 @@ class AnalysisResultField(RemoteObject):
         data = {
             "filename": basename(filepath),
             "optional_fields": optional_fields,
+            "result_type": "sample" if is_sample_result else "group",
         }
-        response = self.knex.post(f"/ar_fields/{self.uuid}/create_s3_upload", json=data)
+        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload", json=data)
         upload_id = response["upload_id"]
         parts = [*range(1, n_parts + 1)]
         data = {
             "parts": parts,
             "stance": "upload-multipart",
             "upload_id": upload_id,
+            "result_type": "sample" if is_sample_result else "group",
         }
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
         urls = response
         complete_parts = []
-        logger(f'[INFO] Starting upload for "{filepath}"')
+        logger.info(f'Starting upload for "{filepath}"')
         with open(filepath, "rb") as f:
             for num, url in enumerate(list(urls.values())):
                 file_data = f.read(chunk_size)
                 attempts = 0
                 while attempts < max_retries:
                     try:
-                        http_response = requests.put(url, data=file_data)
+                        if session:
+                            http_response = session.put(url, data=file_data)
+                        else:
+                            http_response = requests.put(url, data=file_data)
                         http_response.raise_for_status()
+                        logger.debug(f"Upload for part {num + 1} succeeded.")
                         break
                     except requests.exceptions.HTTPError:
-                        logger(f"[WARN] Upload for part {num + 1} failed. Attempt {attempts + 1}")
+                        logger.warn(
+                            f"Upload for part {num + 1} failed. Attempt {attempts + 1} of {max_retries}."
+                        )
                         attempts += 1
                         if attempts == max_retries:
                             raise
@@ -557,22 +585,25 @@ class AnalysisResultField(RemoteObject):
                 complete_parts.append(
                     {"ETag": http_response.headers["ETag"], "PartNumber": num + 1}
                 )
-                logger(f'[INFO] Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
+
+                logger.info(f'Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
-            f"/ar_fields/{self.uuid}/complete_upload_s3",
+            f"/ar_fields/{self.uuid}/complete_upload",
             json={
                 "parts": complete_parts,
                 "upload_id": upload_id,
+                "result_type": "sample" if is_sample_result else "group",
             },
             json_response=False,
         )
-        logger(f'[INFO] Finished Upload for "{filepath}"')
+        logger.info(f'Finished Upload for "{filepath}"')
         return self
 
     def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
         resolved_path = Path(filepath).resolve()
         file_size = getsize(resolved_path)
-        return self.multipart_upload_file(filepath, file_size, **kwargs)
+        is_sample_result = isinstance(self, SampleAnalysisResultField)
+        return self.multipart_upload_file(filepath, file_size, is_sample_result, **kwargs)
 
     def __del__(self):
         if self._temp_filename and self._cached_filename:

@@ -35,6 +35,25 @@ class Sample(RemoteObject):
         self._modified = True
 
     def _save(self):
+        data = self.get_post_data()
+        url = f"samples/{self.uuid}"
+        self.knex.put(url, json=data, url_options=self.inherited_url_options)
+        if self.new_lib:
+            self.lib = self.new_lib
+            self.new_lib = None
+
+    def _get(self, allow_overwrite=False):
+        """Fetch the result from the server."""
+        self.lib.get()
+        blob = self.get_cached_blob()
+        if not blob:
+            blob = self.knex.get(f"samples/{self.uuid}", url_options=self.inherited_url_options)
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
+            self.cache_blob(blob)
+        else:
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
+
+    def get_post_data(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
         data["library"] = self.lib.uuid
         if self.new_lib:
@@ -42,26 +61,6 @@ class Sample(RemoteObject):
                 data["library"] = self.new_lib.uuid
             else:
                 data["library"] = self.new_lib
-        url = f"samples/{self.uuid}"
-        self.knex.put(url, json=data, url_options=self.inherited_url_options)
-        if self.new_lib:
-            self.lib = self.new_lib
-            self.new_lib = None
-
-    def _get(self):
-        """Fetch the result from the server."""
-        self.lib.get()
-        blob = self.get_cached_blob()
-        if not blob:
-            blob = self.knex.get(self.nested_url(), url_options=self.inherited_url_options)
-            self.load_blob(blob)
-            self.cache_blob(blob)
-        else:
-            self.load_blob(blob)
-
-    def get_post_data(self):
-        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
-        data["library"] = self.lib.uuid
         if data['uuid'] is None:
             data.pop('uuid')
         return data
@@ -87,11 +86,12 @@ class Sample(RemoteObject):
 
     def get_analysis_results(self, cache=True):
         """Yield sample analysis results fetched from the server."""
+        self.get()
         if cache and self._get_result_cache:
             for ar in self._get_result_cache:
                 yield ar
             return
-        url = self.nested_url() + f"/analysis_results" # f"sample_ars?sample_id={self.uuid}"
+        url =  f"sample_ars?sample_id={self.uuid}"
         result = self.knex.get(url)
         for result_blob in result["results"]:
             result = self.analysis_result(result_blob["module_name"])

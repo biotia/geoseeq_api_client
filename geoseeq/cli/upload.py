@@ -1,16 +1,18 @@
-
+import logging
 import json
 
 import click
 import pandas as pd
-
+import requests
 from geoseeq.knex import GeoseeqNotFoundError
-from multiprocessing import Pool
+from multiprocessing import Pool, current_process
 
 from .. import Organization
 from .constants import *
 from .fastq_utils import group_paired_end_paths, upload_fastq_pair, upload_single_fastq
 from .utils import use_common_state
+
+logger = logging.getLogger('geoseeq_api')
 
 
 @click.group('upload')
@@ -36,7 +38,12 @@ field_name = click.argument('field_name')
 
 
 def _upload_one_sample(args):
-    group, module_name, link_type, lib, filepaths, seq_length, overwrite = args
+    group, module_name, link_type, lib, filepaths, seq_length, overwrite, session, log_level = args
+    logger = logging.getLogger('geoseeq_api')
+    logger.setLevel(log_level)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s :: ' + current_process().name + ' :: %(message)s'))
+    logger.addHandler(handler)
     sample = lib.sample(group['sample_name']).idem()
     module = sample.analysis_result(module_name).idem()
     for field_name, path in group['fields'].items():
@@ -47,7 +54,7 @@ def _upload_one_sample(args):
         path = filepaths[path]
         try:
             if link_type == 'upload':
-                field.upload_file(path)
+                field.upload_file(path, session=session)
             else:
                 field.link_file(link_type, path)
         except Exception as e:
@@ -93,7 +100,6 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
         lib = org.sample_group(project_name, is_public=not private).create()
 
     # Find a regex that will group the files into samples and tell the user if files did not match
-    
     filepaths = {line.strip().split('/')[-1]: line.strip() for line in file_list if line.strip()}
     seq_length, seq_type = module_name.split('::')[:2]
     args = {
@@ -127,14 +133,15 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
         click.confirm('Do you want to upload these files?', abort=True)
 
     # Upload the files
-    args = [(group, module_name, link_type, lib, filepaths, seq_length, overwrite) for group in groups]
-    with Pool(cores) as p:
-        for sample, success, error in p.imap_unordered(_upload_one_sample, args):
-            if success:
-                click.echo(f'Uploaded Sample: {sample.name}', err=True)
-            else:
-                click.echo(f'Failed to upload Sample: {sample.name}', err=True)
-                click.echo(f'Error:\n{error}', err=True)
+    with requests.Session() as session:
+        args = [(group, module_name, link_type, lib, filepaths, seq_length, overwrite, session, state.log_level) for group in groups]
+        with Pool(cores) as p:
+            for sample, success, error in p.imap_unordered(_upload_one_sample, args):
+                if success:
+                    click.echo(f'Uploaded Sample: {sample.name}', err=True)
+                else:
+                    click.echo(f'Failed to upload Sample: {sample.name}', err=True)
+                    click.echo(f'Error:\n{error}', err=True)
 
 
 @cli_upload.command('file')

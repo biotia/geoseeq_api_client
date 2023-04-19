@@ -30,11 +30,11 @@ pass_state = click.make_pass_decorator(State, ensure=True)
 def log_level_option(f):
     def callback(ctx, param, value):
         state = ctx.ensure_object(State)
-        state.log_level = int(value)
+        state.log_level = value
         return value
     return click.option('-l', '--log-level',
-                        type=int,
-                        default=20,
+                        type=click.Choice(['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG']),
+                        default='WARNING',
                         envvar='GEOSEEQ_CLI_LOG_LEVEL',
                         expose_value=False,
                         callback=callback)(f)

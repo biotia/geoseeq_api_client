@@ -2,7 +2,7 @@ from .analysis_result import SampleGroupAnalysisResult
 from .remote_object import RemoteObject
 from .sample import Sample
 from .utils import paginated_iterator
-
+import json
 
 class SampleGroup(RemoteObject):
     remote_fields = [
@@ -12,11 +12,15 @@ class SampleGroup(RemoteObject):
         "name",
         "is_library",
         "is_public",
+        "privacy_level",
         "metadata",
         "long_description",
         "description",
         "bucket",
         "storage_provider_name",
+    ]
+    optional_remote_fields = [
+        "privacy_level",
     ]
     parent_field = "org"
 
@@ -29,10 +33,12 @@ class SampleGroup(RemoteObject):
         is_library=True,
         is_public=False,
         storage_provider="default",
+        privacy_level=None,
     ):
         super().__init__(self)
         self.knex = knex
         self.org = org
+        self.new_org = None
         self.name = name
         self.is_library = is_library
         self.is_public = is_public
@@ -42,22 +48,39 @@ class SampleGroup(RemoteObject):
         self._get_result_cache = []
         self.metadata = metadata
         self.storage_provider = storage_provider
+        self.privacy_level = privacy_level
+
+    def change_org(self, org):
+        self.new_org = org
+        self._modified = True
+
+    def get_post_data(self):
+        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
+        data["organization"] = self.org.uuid
+        data['description'] = self.description if hasattr(self, 'description') and self.description else self.name
+        data['privacy_level'] = self.privacy_level if hasattr(self, 'privacy_level') and self.privacy_level else 'private'
+        data['storage_provider_name'] = self.storage_provider
+        if self.new_org:
+            if isinstance(self.new_org, RemoteObject):
+                data["organization"] = self.new_org.uuid
+            else:
+                data["organization"] = self.new_org
+        if data["uuid"] is None:
+            data.pop("uuid")
+        return data
 
     def nested_url(self):
         return self.org.nested_url() + f"/sample_groups/{self.name}"
 
     def _save_group_obj(self):
-        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
-        data["organization"] = self.org.uuid
-        data["description"] = self.description if self.description else self.name
+        data = self.get_post_data()
         url = f"sample_groups/{self.uuid}"
         self.knex.put(url, json=data)
 
     def _save_sample_list(self):
         sample_uuids = []
-        for sample in self._sample_cache:
-            sample.idem()
-            sample_uuids.append(sample.uuid)
+        for sample_uuid in self._sample_cache:
+            sample_uuids.append(sample_uuid)
         if sample_uuids:
             url = f"sample_groups/{self.uuid}/samples"
             self.knex.post(url, json={"sample_uuids": sample_uuids})
@@ -65,9 +88,8 @@ class SampleGroup(RemoteObject):
 
     def _delete_sample_list(self):
         sample_uuids = []
-        for sample in self._deleted_sample_cache:
-            sample.idem()
-            sample_uuids.append(sample.uuid)
+        for sample_uuid in self._deleted_sample_cache:
+            sample_uuids.append(sample_uuid)
         if sample_uuids:
             url = f"sample_groups/{self.uuid}/samples"
             self.knex.delete(url, json={"sample_uuids": sample_uuids})
@@ -78,38 +100,42 @@ class SampleGroup(RemoteObject):
         self._save_sample_list()
         self._delete_sample_list()
 
-    def _get(self):
+    def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.org.idem()
         blob = self.get_cached_blob()
         if not blob:
             blob = self.knex.get(self.nested_url())
-            self.load_blob(blob)
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
             self.cache_blob(blob)
         else:
             self.load_blob(blob)
 
     def _create(self):
         self.org.idem()
+        post_data = self.get_post_data()
         blob = self.knex.post(
             f"sample_groups?format=json",
-            json={
-                "organization": self.org.uuid,
-                "name": self.name,
-                "is_library": self.is_library,
-                "is_public": self.is_public,
-                "metadata": self.metadata,
-                "storage_provider_name": self.storage_provider,
-            },
+            json=post_data,
         )
         self.load_blob(blob)
+    
+    def add_sample_uuids(self, sample_uuids):
+        """Return this group and add a sample to this group.
+
+        Do not contact server until `.save()` is called on this group.
+        """
+        for sample_uuid in sample_uuids:
+            self._sample_cache.append(sample_uuid)
+        self._modified = True
+        return self
 
     def add_sample(self, sample):
         """Return this group and add a sample to this group.
 
         Do not contact server until `.save()` is called on this group.
         """
-        self._sample_cache.append(sample)
+        self._sample_cache.append(sample.uuid)
         self._modified = True
         return self
 
@@ -118,7 +144,7 @@ class SampleGroup(RemoteObject):
 
         Do not contact server until `.save()` is called on this group.
         """
-        self._deleted_sample_cache.append(sample)
+        self._deleted_sample_cache.append(sample.uuid)
         self._modified = True
         return self
 

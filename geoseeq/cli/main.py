@@ -15,7 +15,9 @@ from .view import cli_view
 from geoseeq.vc.cli import cli_vc
 
 logger = logging.getLogger('geoseeq_api')
-logger.addHandler(logging.StreamHandler())
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s :: %(message)s'))
+logger.addHandler(handler)
 
 
 @click.group()
@@ -26,7 +28,7 @@ def main():
 @main.command()
 def version():
     """Print the version of the Geoseeq API being used."""
-    click.echo('0.1.6')  # remember to update setup
+    click.echo('0.1.13')  # remember to update setup
 
 
 
