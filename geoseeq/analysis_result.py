@@ -85,7 +85,7 @@ class AnalysisResult(RemoteObject):
         "is_private",
     ]
 
-    def _get(self):
+    def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.parent.idem()
         logger.debug(f"Getting AnalysisResult.")
@@ -95,7 +95,7 @@ class AnalysisResult(RemoteObject):
             if self.replicate:
                 url += f"?replicate={self.replicate}"
             blob = self.knex.get(url, url_options=self.inherited_url_options)
-            self.load_blob(blob)
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
             self.cache_blob(blob)
         else:
             self.load_blob(blob)
@@ -321,11 +321,11 @@ class AnalysisResultField(RemoteObject):
         url = f"{self.canon_url()}/{self.uuid}"
         self.knex.put(url, json=data)
 
-    def _get(self):
+    def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.parent.idem()
         blob = self.knex.get(self.nested_url())
-        self.load_blob(blob)
+        self.load_blob(blob, allow_overwrite=allow_overwrite)
 
     def get_post_data(self):
         """Return a dict that can be used to POST this field to the server."""
@@ -427,23 +427,23 @@ class AnalysisResultField(RemoteObject):
             url = self.stored_data["url"]
             return url
 
-    def download_file(self, filename=None, cache=True):
+    def download_file(self, filename=None, cache=True, head=None):
         """Return a local filepath to the file this result points to."""
         blob_type = self.stored_data.get("__type__", "").lower()
         if cache and self._cached_filename:
             return self._cached_filename
         if blob_type == "s3":
-            return self._download_s3(filename, cache)
+            return self._download_s3(filename, cache, head=head)
         elif blob_type == "sra":
             return self._download_sra(filename, cache)
         elif blob_type == "ftp":
             return self._download_ftp(filename, cache)
         elif blob_type == "azure":
-            return self._download_azure(filename, cache)
+            return self._download_azure(filename, cache, head=head)
         else:
             raise TypeError("Cannot fetch a file for a BLOB type result field.")
 
-    def _download_s3(self, filename, cache):
+    def _download_s3(self, filename, cache, head=None):
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
@@ -460,7 +460,7 @@ class AnalysisResultField(RemoteObject):
             self._cached_filename = filename
         return filename
 
-    def _download_azure(self, filename, cache):
+    def _download_azure(self, filename, cache, head=None):
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:

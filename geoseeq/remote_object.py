@@ -54,7 +54,7 @@ class RemoteObject:
     def cache_blob(self, blob):
         return self.cache.cache_blob(self, blob)
 
-    def load_blob(self, blob):
+    def load_blob(self, blob, allow_overwrite=False):
         logger.debug(f"Loading blob. {blob}")
         if self._deleted:
             logger.error(f"Cannot load blob, RemoteObject has been deleted. {self}")
@@ -71,7 +71,7 @@ class RemoteObject:
                              in blob: {blob}"
                     )
                 new = None
-            if current and current != new:
+            if not allow_overwrite and current and current != new:
                 is_overwrite = True
                 if isinstance(current, dict) and isinstance(new, dict):
                     append_only = True
@@ -92,21 +92,21 @@ class RemoteObject:
                     )
             setattr(self, field, new)
 
-    def exists(self):
+    def exists(self, allow_overwrite=False):
         try:
-            self.get()
+            self.get(allow_overwrite=allow_overwrite)
             return True
         except HTTPError:
             return False
 
-    def get(self):
+    def get(self, allow_overwrite=False):
         """Fetch the object from the server."""
         if self._deleted:
             logger.error(f"Cannot GET blob, RemoteObject has been deleted. {self}")
             raise RemoteObjectError("This object has been deleted.")
         if not self._already_fetched:
             logger.debug(f"Fetching RemoteBlob. {self}")
-            self._get()
+            self._get(allow_overwrite=allow_overwrite)
             self._already_fetched = True
             self._modified = False
         else:

@@ -100,13 +100,13 @@ class SampleGroup(RemoteObject):
         self._save_sample_list()
         self._delete_sample_list()
 
-    def _get(self):
+    def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.org.idem()
         blob = self.get_cached_blob()
         if not blob:
             blob = self.knex.get(self.nested_url())
-            self.load_blob(blob)
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
             self.cache_blob(blob)
         else:
             self.load_blob(blob)

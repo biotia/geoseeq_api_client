@@ -42,16 +42,16 @@ class Sample(RemoteObject):
             self.lib = self.new_lib
             self.new_lib = None
 
-    def _get(self):
+    def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.lib.get()
         blob = self.get_cached_blob()
         if not blob:
-            blob = self.knex.get(self.nested_url(), url_options=self.inherited_url_options)
-            self.load_blob(blob)
+            blob = self.knex.get(f"samples/{self.uuid}", url_options=self.inherited_url_options)
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
             self.cache_blob(blob)
         else:
-            self.load_blob(blob)
+            self.load_blob(blob, allow_overwrite=allow_overwrite)
 
     def get_post_data(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
