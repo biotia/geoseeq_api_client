@@ -5,7 +5,7 @@ import time
 from os.path import basename, getsize, join
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from urllib.request import urlretrieve
+import urllib.request
 
 import requests
 
@@ -16,6 +16,13 @@ from .utils import md5_checksum
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 
+
+def _download_head(url, filename, head=None):
+    if head and head > 0:
+        opener = urllib.request.build_opener()
+        opener.addheaders = [('Range', f'bytes=0-{head}')]
+        urllib.request.install_opener(opener)
+    urllib.request.urlretrieve(url, filename)
 
 def diff_dicts(blob1, blob2):
     for problem in _diff_dicts("original", "$", blob1, blob2):
@@ -455,7 +462,7 @@ class AnalysisResultField(RemoteObject):
             myfile = NamedTemporaryFile(delete=False)
             myfile.close()
             filename = myfile.name
-        urlretrieve(url, filename)
+        _download_head(url, filename, head=head) 
         if cache:
             self._cached_filename = filename
         return filename
@@ -470,7 +477,7 @@ class AnalysisResultField(RemoteObject):
             myfile = NamedTemporaryFile(delete=False)
             myfile.close()
             filename = myfile.name
-        urlretrieve(url, filename)
+        _download_head(url, filename, head=head)
         if cache:
             self._cached_filename = filename
         return filename
@@ -488,7 +495,7 @@ class AnalysisResultField(RemoteObject):
             myfile = NamedTemporaryFile(delete=False)
             myfile.close()
             filename = myfile.name
-        urlretrieve(url, filename)
+        urllib.request.urlretrieve(url, filename)
         if cache:
             self._cached_filename = filename
         return filename
