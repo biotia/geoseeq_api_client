@@ -170,10 +170,15 @@ class SampleAnalysisResult(AnalysisResult):
         )
         self.load_blob(blob)
 
-    def field(self, field_name, data={}):
-        d = {"data": data, "field_name": field_name, "sample_ar": self}
+    def field(self, field_name, pipeline_run=None, data={}):
+        d = {
+            "data": data,
+            "field_name": field_name,
+            "pipeline_run": pipeline_run,
+            "sample_ar": self,
+        }
         logger.debug(f"Creating SampleAnalysisResultField for SampleAnalysisResult. {d}")
-        return SampleAnalysisResultField(self.knex, self, field_name, data=data)
+        return SampleAnalysisResultField(self.knex, self, field_name, pipeline_run=None, data=data)
 
     def get_fields(self, cache=True):
         """Return a list of ar-fields fetched from the server."""
@@ -266,15 +271,17 @@ class AnalysisResultField(RemoteObject):
         "updated_at",
         "name",
         "stored_data",
+        "pipeline_run",
     ]
     parent_field = "parent"
 
-    def __init__(self, knex, parent, field_name, data={}):
+    def __init__(self, knex, parent, field_name, pipeline_run=None, data={}):
         super().__init__(self)
         self.knex = knex
         self.parent = parent
         self.name = field_name
         self.stored_data = data
+        self.pipeline_run = pipeline_run
         self._cached_filename = None  # Used if the field points to S3, FTP, etc
         self._temp_filename = False
 
@@ -340,6 +347,7 @@ class AnalysisResultField(RemoteObject):
             "analysis_result": self.parent.uuid,
             "name": self.name,
             "stored_data": self.stored_data,
+            "pipeline_run": self.pipeline_run,
         }
         return data
 
@@ -584,6 +592,7 @@ class AnalysisResultField(RemoteObject):
                 complete_parts.append(
                     {"ETag": http_response.headers["ETag"], "PartNumber": num + 1}
                 )
+
                 logger.info(f'Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
         response = self.knex.post(
             f"/ar_fields/{self.uuid}/complete_upload",
