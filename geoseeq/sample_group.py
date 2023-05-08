@@ -179,6 +179,16 @@ class SampleGroup(RemoteObject):
             for sample in self._get_sample_cache:
                 yield sample
 
+    def get_sample_uuids(self, cache=True, error_handler=None):
+        """Yield samples uuids fetched from the server."""
+        if cache and self._get_sample_cache:
+            for sample in self._get_sample_cache:
+                yield sample.uuid
+            return
+        url = f"sample_groups/{self.uuid}/samples"
+        for sample_blob in paginated_iterator(self.knex, url, error_handler=error_handler):
+            yield sample_blob['uuid']
+
     def get_analysis_results(self, cache=True):
         """Yield group analysis results fetched from the server."""
         if cache and self._get_result_cache:

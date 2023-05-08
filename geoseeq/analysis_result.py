@@ -273,6 +273,9 @@ class AnalysisResultField(RemoteObject):
         "stored_data",
         "pipeline_run",
     ]
+    optional_remote_fields = [
+        "pipeline_run",
+    ]
     parent_field = "parent"
 
     def __init__(self, knex, parent, field_name, pipeline_run=None, data={}):
