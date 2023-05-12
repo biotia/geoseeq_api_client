@@ -11,7 +11,7 @@ import requests
 
 from .constants import FIVE_MB
 from .remote_object import RemoteObject, RemoteObjectError
-from .utils import md5_checksum
+from .utils import md5_checksum, download_ftp
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
@@ -465,7 +465,8 @@ class AnalysisResultField(RemoteObject):
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
-            url = self.stored_data["uri"]
+            key = 'uri' if 'uri' in self.stored_data else 'url'
+            url = self.stored_data[key]
         if url.startswith("s3://"):
             url = self.stored_data["endpoint_url"] + "/" + url[5:]
         if not filename:
@@ -482,7 +483,8 @@ class AnalysisResultField(RemoteObject):
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
-            url = self.stored_data["uri"]
+            key = 'uri' if 'uri' in self.stored_data else 'url'
+            url = self.stored_data[key]
         if not filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
@@ -496,11 +498,14 @@ class AnalysisResultField(RemoteObject):
     def _download_sra(self, filename, cache):
         return self._download_generic_url(filename, cache)
 
-    def _download_ftp(self, filename, cache):
-        return self._download_generic_url(filename, cache)
+    def _download_ftp(self, filename, cache, head=None):
+        key = 'url' if 'url' in self.stored_data else 'uri'
+        download_ftp(self.stored_data[key], filename, head=head)
+        return filename
 
     def _download_generic_url(self, filename, cache):
-        url = self.stored_data["url"]
+        key = 'url' if 'url' in self.stored_data else 'uri'
+        url = self.stored_data[key]
         if not filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
