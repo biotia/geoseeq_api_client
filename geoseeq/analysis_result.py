@@ -447,6 +447,11 @@ class AnalysisResultField(RemoteObject):
 
     def download_file(self, filename=None, cache=True, head=None):
         """Return a local filepath to the file this result points to."""
+        if not filename:
+            self._temp_filename = True
+            myfile = NamedTemporaryFile(delete=False)
+            myfile.close()
+            filename = myfile.name
         blob_type = self.stored_data.get("__type__", "").lower()
         if cache and self._cached_filename:
             return self._cached_filename
@@ -469,11 +474,6 @@ class AnalysisResultField(RemoteObject):
             url = self.stored_data[key]
         if url.startswith("s3://"):
             url = self.stored_data["endpoint_url"] + "/" + url[5:]
-        if not filename:
-            self._temp_filename = True
-            myfile = NamedTemporaryFile(delete=False)
-            myfile.close()
-            filename = myfile.name
         _download_head(url, filename, head=head) 
         if cache:
             self._cached_filename = filename
@@ -485,11 +485,6 @@ class AnalysisResultField(RemoteObject):
         except KeyError:
             key = 'uri' if 'uri' in self.stored_data else 'url'
             url = self.stored_data[key]
-        if not filename:
-            self._temp_filename = True
-            myfile = NamedTemporaryFile(delete=False)
-            myfile.close()
-            filename = myfile.name
         _download_head(url, filename, head=head)
         if cache:
             self._cached_filename = filename
@@ -506,11 +501,6 @@ class AnalysisResultField(RemoteObject):
     def _download_generic_url(self, filename, cache):
         key = 'url' if 'url' in self.stored_data else 'uri'
         url = self.stored_data[key]
-        if not filename:
-            self._temp_filename = True
-            myfile = NamedTemporaryFile(delete=False)
-            myfile.close()
-            filename = myfile.name
         urllib.request.urlretrieve(url, filename)
         if cache:
             self._cached_filename = filename
