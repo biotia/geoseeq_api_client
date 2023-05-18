@@ -23,6 +23,7 @@ class SampleGroup(RemoteObject):
         "privacy_level",
     ]
     parent_field = "org"
+    url_prefix = "sample_groups"
 
     def __init__(
         self,

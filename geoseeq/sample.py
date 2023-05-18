@@ -13,6 +13,7 @@ class Sample(RemoteObject):
         "description",
     ]
     parent_field = "lib"
+    url_prefix = "samples"
 
     def __init__(self, knex, lib, name, metadata={}):
         super().__init__(self)

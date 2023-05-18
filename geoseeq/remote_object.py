@@ -164,3 +164,12 @@ class RemoteObject:
         self.knex.delete(self.nested_url())
         self._already_fetched = False
         self._deleted = True
+
+    @classmethod
+    def all_uuids(self, knex):
+        """Return a list of all objects of this type."""
+        results = knex.get(self.url_prefix)['results']
+        return [result['uuid'] for result in results]
+
+
+

@@ -11,6 +11,7 @@ class Organization(RemoteObject):
         'name',
     ]
     parent_field = None
+    url_prefix = 'organizations'
 
     def __init__(self, knex, name):
         super().__init__(self)
@@ -25,7 +26,7 @@ class Organization(RemoteObject):
             field: getattr(self, field)
             for field in self.remote_fields if hasattr(self, field)
         }
-        url = f'organizations/{self.uuid}'
+        url = f'{self.url_prefix}/{self.uuid}'
         self.knex.put(url, json=data)
 
     def _get(self, allow_overwrite=False):
@@ -39,7 +40,7 @@ class Organization(RemoteObject):
             self.load_blob(blob)
 
     def _create(self):
-        blob = self.knex.post(f'organizations', json={'name': self.name})
+        blob = self.knex.post(self.url_prefix, json={'name': self.name})
         self.load_blob(blob)
 
     def sample_group(self, group_name, metadata={}, is_library=True, is_public=False):
