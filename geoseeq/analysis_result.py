@@ -20,9 +20,18 @@ logger.addHandler(logging.NullHandler())  # No output unless configured by calli
 def _download_head(url, filename, head=None):
     if head and head > 0:
         opener = urllib.request.build_opener()
-        opener.addheaders = [('Range', f'bytes=0-{head}')]
+        if head:
+            opener.addheaders = [('Range', f'bytes=0-{head}')]
         urllib.request.install_opener(opener)
-    urllib.request.urlretrieve(url, filename)
+    try:
+        urllib.request.urlretrieve(url, filename)  # can throw 416 error if head is too large
+    except urllib.error.HTTPError as e:
+        if e.code == 416:
+            logger.warning(f"HEAD request failed, trying again without HEAD.")
+            _download_head(url, filename, head=None)
+        else:
+            raise e
+    
 
 def diff_dicts(blob1, blob2):
     for problem in _diff_dicts("original", "$", blob1, blob2):
