@@ -1,6 +1,6 @@
 import click
 
-from .. import Organization, SampleGroup, Sample
+from .. import Organization, Project, Sample
 from .utils import use_common_state
 
 
@@ -37,5 +37,5 @@ def cli_list_organizations(state):
 def cli_list_projects(state):
     """Print a list of projects in the specified organization."""
     knex = state.get_knex()
-    for uuid in SampleGroup.all_uuids(knex):
+    for uuid in Project.all_uuids(knex):
         print(uuid, file=state.outfile)

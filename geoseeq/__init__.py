@@ -1,4 +1,8 @@
-from .analysis_result import (
+from .result import (
+    SampleResultFolder,
+    SampleResultFile,
+    ProjectResultFolder,
+    ProjectResultFile,
     SampleAnalysisResult,
     SampleAnalysisResultField,
     SampleGroupAnalysisResult,

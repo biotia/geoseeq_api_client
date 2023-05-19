@@ -90,7 +90,7 @@ def check_json_serialization(blob):
     raise RemoteObjectError(f"JSON Serialization modifies object\nIssues:\n{issues}")
 
 
-class AnalysisResult(RemoteObject):
+class ResultFolder(RemoteObject):
     remote_fields = [
         "uuid",
         "created_at",
@@ -131,8 +131,10 @@ class AnalysisResult(RemoteObject):
             copied.idem()
         return copied
 
+AnalysisResult = ResultFolder # for backwards compatibility
 
-class SampleAnalysisResult(AnalysisResult):
+
+class SampleResultFolder(ResultFolder):
     parent_field = "sample"
 
     def __init__(self, knex, sample, module_name, replicate=None, metadata={}, is_private=False):
@@ -179,7 +181,7 @@ class SampleAnalysisResult(AnalysisResult):
         )
         self.load_blob(blob)
 
-    def field(self, field_name, pipeline_run=None, data={}):
+    def result_file(self, field_name, pipeline_run=None, data={}):
         d = {
             "data": data,
             "field_name": field_name,
@@ -187,9 +189,12 @@ class SampleAnalysisResult(AnalysisResult):
             "sample_ar": self,
         }
         logger.debug(f"Creating SampleAnalysisResultField for SampleAnalysisResult. {d}")
-        return SampleAnalysisResultField(self.knex, self, field_name, pipeline_run=None, data=data)
+        return SampleResultFile(self.knex, self, field_name, pipeline_run=None, data=data)
 
-    def get_fields(self, cache=True):
+    def field(self, *args, **kwargs):
+        return self.result_file(*args, **kwargs)
+
+    def get_result_files(self, cache=True):
         """Return a list of ar-fields fetched from the server."""
         if cache and self._get_field_cache:
             for field in self._get_field_cache:
@@ -214,11 +219,16 @@ class SampleAnalysisResult(AnalysisResult):
             for field in self._get_field_cache:
                 yield field
 
+    def get_fields(self, *args, **kwargs):
+        return self.get_files(*args, **kwargs)
+
     def __str__(self):
-        return f"<Geoseeq::SampleResult {self.module_name} {self.replicate} {self.uuid} />"
+        return f"<Geoseeq::SampleResultFolder {self.module_name} {self.replicate} {self.uuid} />"
+
+SampleAnalysisResult = SampleResultFolder # for backwards compatibility
 
 
-class SampleGroupAnalysisResult(AnalysisResult):
+class ProjectResultFolder(ResultFolder):
     parent_field = "grp"
 
     def __init__(self, knex, grp, module_name, replicate=None, metadata={}, is_private=False):
@@ -253,10 +263,13 @@ class SampleGroupAnalysisResult(AnalysisResult):
         blob = self.knex.post(f"sample_group_ars?format=json", json=data)
         self.load_blob(blob)
 
-    def field(self, field_name, data={}):
-        return SampleGroupAnalysisResultField(self.knex, self, field_name, data=data)
+    def result_file(self, field_name, data={}):
+        return ProjectResultFile(self.knex, self, field_name, data=data)
 
-    def get_fields(self):
+    def field(self, *args, **kwargs):
+        return self.result_file(*args, **kwargs)
+
+    def get_result_files(self):
         """Return a list of ar-fields fetched from the server."""
         url = f"sample_group_ar_fields?analysis_result_id={self.uuid}"
         result = self.knex.get(url)
@@ -269,11 +282,16 @@ class SampleGroupAnalysisResult(AnalysisResult):
             result._modified = False
             yield result
 
+    def get_fields(self, *args, **kwargs):
+        return self.get_result_files(*args, **kwargs)
+
     def __str__(self):
-        return f"<Geoseeq::SampleGroupResult {self.module_name} {self.replicate} {self.uuid} />"
+        return f"<Geoseeq::ProjectResultFolder {self.module_name} {self.replicate} {self.uuid} />"
+
+SampleGroupAnalysisResult = ProjectResultFolder # for backwards compatibility
 
 
-class AnalysisResultField(RemoteObject):
+class ResultFile(RemoteObject):
     remote_fields = [
         "uuid",
         "created_at",
@@ -639,18 +657,23 @@ class AnalysisResultField(RemoteObject):
         """
         return {"value": "", "method": "none"}
 
+AnalysisResultField = ResultFile
 
-class SampleAnalysisResultField(AnalysisResultField):
+class SampleResultFile(ResultFile):
     def canon_url(self):
         return "sample_ar_fields"
 
     def __str__(self):
-        return f"<Geoseeq::SampleResultField {self.name} {self.uuid} />"
+        return f"<Geoseeq::SampleResultFile {self.name} {self.uuid} />"
+
+SampleAnalysisResultField = SampleResultFile
 
 
-class SampleGroupAnalysisResultField(AnalysisResultField):
+class ProjectResultFile(ResultFile):
     def canon_url(self):
         return "sample_group_ar_fields"
 
     def __str__(self):
-        return f"<Geoseeq::SampleGroupResultField {self.name} {self.uuid} />"
+        return f"<Geoseeq::ProjectResultFile {self.name} {self.uuid} />"
+
+SampleGroupAnalysisResultField = ProjectResultFile

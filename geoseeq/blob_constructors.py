@@ -1,8 +1,8 @@
 from .analysis_result import (
-    SampleAnalysisResult,
-    SampleGroupAnalysisResult,
-    SampleAnalysisResultField,
-    SampleGroupAnalysisResultField,
+    SampleResultFolder,
+    SampleResultFile,
+    ProjectResultFolder,
+    ProjectResultFile,
 )
 from .organization import Organization
 from .sample import Sample
@@ -28,9 +28,7 @@ def project_from_blob(knex, blob, already_fetched=True, modified=False):
     grp._modified = modified
     return grp
 
-
-def sample_group_from_blob(*args, **kwargs):
-    return project_from_blob(*args, **kwargs)
+sample_group_from_blob = project_from_blob  # Alias
 
 
 def sample_from_blob(knex, blob, already_fetched=True, modified=False):
@@ -44,11 +42,11 @@ def sample_from_blob(knex, blob, already_fetched=True, modified=False):
     return sample
 
 
-def sample_group_ar_from_blob(knex, blob, already_fetched=True, modified=False):
-    group = sample_group_from_blob(
+def project_result_folder_from_blob(knex, blob, already_fetched=True, modified=False):
+    group = project_from_blob(
         knex, blob["sample_group_obj"], already_fetched=already_fetched, modified=modified
     )
-    ar = SampleGroupAnalysisResult(
+    ar = ProjectResultFolder(
         knex, sample, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
     )
     ar.load_blob(blob)
@@ -56,12 +54,14 @@ def sample_group_ar_from_blob(knex, blob, already_fetched=True, modified=False):
     ar._modified = modified
     return ar
 
+sample_group_ar_from_blob = project_result_folder_from_blob  # Alias
 
-def sample_ar_from_blob(knex, blob, already_fetched=True, modified=False):
+
+def sample_result_folder_from_blob(knex, blob, already_fetched=True, modified=False):
     sample = sample_from_blob(
         knex, blob["sample_obj"], already_fetched=already_fetched, modified=modified
     )
-    ar = SampleAnalysisResult(
+    ar = SampleResultFolder(
         knex, sample, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
     )
     ar.load_blob(blob)
@@ -69,25 +69,14 @@ def sample_ar_from_blob(knex, blob, already_fetched=True, modified=False):
     ar._modified = modified
     return ar
 
-
-def sample_group_ar_from_blob(knex, blob, already_fetched=True, modified=False):
-    group = sample_group_from_blob(
-        knex, blob["sample_group_obj"], already_fetched=already_fetched, modified=modified
-    )
-    ar = SampleGroupAnalysisResult(
-        knex, sample, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
-    )
-    ar.load_blob(blob)
-    ar._already_fetched = already_fetched
-    ar._modified = modified
-    return ar
+sample_ar_from_blob = sample_result_folder_from_blob  # Alias
 
 
-def sample_ar_field_from_blob(knex, blob, already_fetched=True, modified=False):
-    ar = sample_ar_from_blob(
+def sample_result_file_from_blob(knex, blob, already_fetched=True, modified=False):
+    ar = sample_result_folder_from_blob(
         knex, blob["analysis_result_obj"], already_fetched=already_fetched, modified=modified
     )
-    arf = SampleAnalysisResultField(
+    arf = SampleResultFile(
         knex, ar, blob["name"], data=blob["stored_data"]
     )
     arf.load_blob(blob)
@@ -95,18 +84,22 @@ def sample_ar_field_from_blob(knex, blob, already_fetched=True, modified=False):
     ar._modified = modified
     return arf
 
+sample_ar_field_from_blob = sample_result_file_from_blob  # Alias
 
-def sample_group_ar_field_from_blob(knex, blob, already_fetched=True, modified=False):
-    ar = sample_group_ar_from_blob(
+
+def project_result_file_from_blob(knex, blob, already_fetched=True, modified=False):
+    ar = project_result_folder_from_blob(
         knex, blob["analysis_result_obj"], already_fetched=already_fetched, modified=modified
     )
-    arf = SampleGroupAnalysisResultField(
+    arf = ProjectResultFile(
         knex, ar, blob["name"], data=blob["stored_data"]
     )
     arf.load_blob(blob)
     ar._already_fetched = already_fetched
     ar._modified = modified
     return arf
+
+sample_group_ar_field_from_blob = project_result_file_from_blob  # Alias
 
 
 def project_from_uuid(knex, uuid):
@@ -115,13 +108,7 @@ def project_from_uuid(knex, uuid):
     project = project_from_blob(knex, blob)
     return project
 
-
-def sample_group_from_uuid(knex, uuid):
-    """Return the project object which the uuid points to.
-
-    This is an alias for project_from_uuid.
-    """
-    return project_from_uuid(knex, uuid)
+sample_group_from_uuid = project_from_uuid  # Alias
 
 
 def sample_from_uuid(knex, uuid):
@@ -130,28 +117,36 @@ def sample_from_uuid(knex, uuid):
     return sample
 
 
-def sample_ar_from_uuid(knex, uuid):
+def sample_result_folder_from_uuid(knex, uuid):
     blob = knex.get(f"sample_ars/{uuid}")
-    ar = sample_ar_from_blob(knex, blob)
+    ar = sample_result_folder_from_blob(knex, blob)
     return ar
 
+sample_ar_from_uuid = sample_result_folder_from_uuid  # Alias
 
-def sample_group_ar_from_uuid(knex, uuid):
+
+def project_result_folder_from_uuid(knex, uuid):
     blob = knex.get(f"sample_group_ars/{uuid}")
-    ar = sample_group_ar_from_blob(knex, blob)
+    ar = project_result_folder_from_blob(knex, blob)
     return ar
 
+sample_group_ar_from_uuid = project_result_folder_from_uuid  # Alias
 
-def sample_ar_field_from_uuid(knex, uuid):
+
+def sample_result_file_from_uuid(knex, uuid):
     blob = knex.get(f"sample_ar_fields/{uuid}")
-    ar = sample_ar_field_from_blob(knex, blob)
+    ar = sample_result_file_from_blob(knex, blob)
     return ar
 
+sample_ar_field_from_uuid = sample_result_file_from_uuid  # Alias
 
-def sample_group_ar_field_from_uuid(knex, uuid):
+
+def project_result_file_from_uuid(knex, uuid):
     blob = knex.get(f"sample_group_ar_fields/{uuid}")
-    ar = sample_group_ar_field_from_blob(knex, blob)
+    ar = project_result_file_from_blob(knex, blob)
     return ar
+
+sample_group_ar_field_from_uuid = project_result_file_from_uuid  # Alias
 
 
 def resolve_brn(knex, brn):

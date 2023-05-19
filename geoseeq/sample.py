@@ -1,4 +1,4 @@
-from .analysis_result import SampleAnalysisResult
+from .result import SampleResultFolder
 from .remote_object import RemoteObject
 
 
@@ -80,10 +80,17 @@ class Sample(RemoteObject):
         self._already_fetched = False
         self._deleted = True
 
-    def analysis_result(self, module_name, replicate=None, metadata=None):
-        return SampleAnalysisResult(
+    def result_folder(self, module_name, replicate=None, metadata=None):
+        """Return a SampleResultFolder for this sample."""
+        return SampleResultFolder(
             self.knex, self, module_name, replicate=replicate, metadata=metadata
         )
+
+    def analysis_result(self, *args, **kwargs):
+        """Return a SampleResultFolder for this sample.
+        
+        This is an alias for result_folder."""
+        return self.result_folder(*args, **kwargs)
 
     def get_analysis_results(self, cache=True):
         """Yield sample analysis results fetched from the server."""
