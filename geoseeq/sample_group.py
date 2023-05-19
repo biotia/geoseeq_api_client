@@ -4,6 +4,7 @@ from .sample import Sample
 from .utils import paginated_iterator
 import json
 
+
 class SampleGroup(RemoteObject):
     remote_fields = [
         "uuid",
@@ -222,6 +223,12 @@ class SampleGroup(RemoteObject):
         """Return a dictionary with module counts for samples in this group."""
         url = f"sample_groups/{self.uuid}/module_counts"
         return self.knex.get(url)
+
+    def get_sample_metadata(self):
+        """Return a pandas dataframe with sample metadata."""
+        url = f"sample_groups/{self.uuid}/metadata"
+        blob = self.knex.get(url)
+        return pd.DataFrame.from_dict(blob["metadata"], orient="index")
 
     def __str__(self):
         return f"<Geoseeq::SampleGroup {self.name} {self.uuid} />"
