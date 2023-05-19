@@ -6,7 +6,7 @@ from .analysis_result import (
 )
 from .organization import Organization
 from .sample import Sample
-from .sample_group import SampleGroup
+from .project import Project 
 from .knex import GeoseeqNotFoundError
 
 
@@ -18,15 +18,19 @@ def org_from_blob(knex, blob, already_fetched=True, modified=False):
     return org
 
 
-def sample_group_from_blob(knex, blob, already_fetched=True, modified=False):
+def project_from_blob(knex, blob, already_fetched=True, modified=False):
     org = org_from_blob(
         knex, blob["organization_obj"], already_fetched=already_fetched, modified=modified
     )
-    grp = SampleGroup(knex, org, blob["name"], is_library=blob["is_library"])
+    grp = Project(knex, org, blob["name"], is_library=blob["is_library"])
     grp.load_blob(blob)
     grp._already_fetched = already_fetched
     grp._modified = modified
     return grp
+
+
+def sample_group_from_blob(*args, **kwargs):
+    return project_from_blob(*args, **kwargs)
 
 
 def sample_from_blob(knex, blob, already_fetched=True, modified=False):
@@ -105,10 +109,19 @@ def sample_group_ar_field_from_blob(knex, blob, already_fetched=True, modified=F
     return arf
 
 
-def sample_group_from_uuid(knex, uuid):
+def project_from_uuid(knex, uuid):
+    """Return the project object which the uuid points to."""
     blob = knex.get(f"sample_groups/{uuid}")
-    sample = sample_group_from_blob(knex, blob)
-    return sample
+    project = project_from_blob(knex, blob)
+    return project
+
+
+def sample_group_from_uuid(knex, uuid):
+    """Return the project object which the uuid points to.
+
+    This is an alias for project_from_uuid.
+    """
+    return project_from_uuid(knex, uuid)
 
 
 def sample_from_uuid(knex, uuid):

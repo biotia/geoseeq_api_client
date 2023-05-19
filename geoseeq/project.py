@@ -5,7 +5,8 @@ from .utils import paginated_iterator
 import json
 
 
-class SampleGroup(RemoteObject):
+
+class Project(RemoteObject):
     remote_fields = [
         "uuid",
         "created_at",
@@ -231,10 +232,12 @@ class SampleGroup(RemoteObject):
         return pd.DataFrame.from_dict(blob["metadata"], orient="index")
 
     def __str__(self):
-        return f"<Geoseeq::SampleGroup {self.name} {self.uuid} />"
+        return f"<Geoseeq::Project {self.name} {self.uuid} />"
 
     def __repr__(self):
-        return f"<Geoseeq::SampleGroup {self.name} {self.uuid} />"
+        return f"<Geoseeq::Project {self.name} {self.uuid} />"
 
     def pre_hash(self):
-        return "SG" + self.name + self.org.pre_hash()
+        return "PROJ" + self.name + self.org.pre_hash()
+
+SampleGroup = Project  # alias for backwards compatibility
