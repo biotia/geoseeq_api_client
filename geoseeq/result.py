@@ -220,7 +220,7 @@ class SampleResultFolder(ResultFolder):
                 yield field
 
     def get_fields(self, *args, **kwargs):
-        return self.get_files(*args, **kwargs)
+        return self.get_result_files(*args, **kwargs)
 
     def __str__(self):
         return f"<Geoseeq::SampleResultFolder {self.module_name} {self.replicate} {self.uuid} />"

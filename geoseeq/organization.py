@@ -52,7 +52,7 @@ class Organization(RemoteObject):
 
     def project(self, project_name, metadata={}, is_public=False):
         """Create a new project in this organization."""
-        return Project(self.knex, self, group_name, is_public=is_public, metadata=metadata)
+        return Project(self.knex, self, project_name, is_public=is_public, metadata=metadata)
 
     def get_projects(self):
         """Yield projects in this org fetched from the server."""
