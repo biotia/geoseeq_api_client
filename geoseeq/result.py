@@ -494,6 +494,7 @@ class ResultFile(RemoteObject):
             raise TypeError("Cannot fetch a file for a BLOB type result field.")
 
     def _download_s3(self, filename, cache, head=None):
+        logger.debug(f"Downloading S3 file to {filename}")
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
@@ -507,6 +508,7 @@ class ResultFile(RemoteObject):
         return filename
 
     def _download_azure(self, filename, cache, head=None):
+        logger.debug(f"Downloading Azure file to {filename}")
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
@@ -521,11 +523,13 @@ class ResultFile(RemoteObject):
         return self._download_generic_url(filename, cache)
 
     def _download_ftp(self, filename, cache, head=None):
+        logger.debug(f"Downloading FTP file to {filename}")
         key = 'url' if 'url' in self.stored_data else 'uri'
         download_ftp(self.stored_data[key], filename, head=head)
         return filename
 
     def _download_generic_url(self, filename, cache):
+        logger.debug(f"Downloading generic URL file to {filename}")
         key = 'url' if 'url' in self.stored_data else 'uri'
         url = self.stored_data[key]
         urllib.request.urlretrieve(url, filename)
