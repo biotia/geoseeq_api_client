@@ -47,8 +47,8 @@ def cli_download_metadata(state, sample_manifest, org_name, grp_name, sample_nam
 
 @cli_download.command("sample-results")
 @use_common_state
-@click.option("--module-name")
-@click.option("--field-name")
+@click.option("--folder-name", multiple=True, help='Name of folder on GeoSeeq to download from')
+@click.option("--file-name", help="Name of file on GeoSeeq to download from")
 @click.option("--target-dir", default=".")
 @click.option(
     "--sample-manifest",
@@ -62,8 +62,8 @@ def cli_download_metadata(state, sample_manifest, org_name, grp_name, sample_nam
 @click.argument("sample_names", nargs=-1)
 def cli_download_sample_results(
     state,
-    module_name,
-    field_name,
+    folder_name,
+    file_name,
     target_dir,
     sample_manifest,
     download,
@@ -73,14 +73,18 @@ def cli_download_sample_results(
 ):
     """Download Sample Analysis Results for a set of samples."""
     grp, sample_names = _setup_download(state, sample_manifest, org_name, grp_name, sample_names)
-    for sample in grp.get_samples(cache=False):
-        if sample_names and sample.name not in sample_names:
-            continue
-        for ar in sample.get_analysis_results(cache=False):
-            if module_name and ar.module_name != module_name:
-                continue
+    if sample_names:
+        samples = [grp.sample(name).get() for name in sample_names]
+    else:
+        samples = grp.get_samples(cache=False)
+    for sample in samples:
+        if folder_name:
+            result_folders = [sample.result_folder(name).get() for name in folder_name]
+        else:
+            result_folders = sample.get_result_folders()
+        for ar in result_folders:
             for field in ar.get_fields(cache=False):
-                if field_name and field.name != field_name:
+                if file_name and field.name != file_name:
                     continue
                 if not download:  # download urls to a file, not actual files.
                     try:

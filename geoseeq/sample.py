@@ -48,7 +48,8 @@ class Sample(RemoteObject):
         self.lib.get()
         blob = self.get_cached_blob()
         if not blob:
-            blob = self.knex.get(f"samples/{self.uuid}", url_options=self.inherited_url_options)
+            url = self.nested_url()
+            blob = self.knex.get(url, url_options=self.inherited_url_options)
             self.load_blob(blob, allow_overwrite=allow_overwrite)
             self.cache_blob(blob)
         else:
