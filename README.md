@@ -18,6 +18,7 @@ This API client is a work in progress and we welcome suggestions, feedback, comm
 
 Download this directory and run `python setup.py install`
 
+---
 
 ## Using the Command Line 
 
@@ -43,6 +44,8 @@ You can find more command line examples in `docs/`
 
 #### Download Short Read Sequencing data from one sample in a project as a set of FASTQ files
 
+This command will download data [from this project.](https://portal.geoseeq.com/sample-groups/ed59b913-91ec-489b-a1b9-4ea137a6e5cf/samples)
+
 ```
 $ geoseeq download sample-results --module-name "short_read::paired_end" GeoSeeq "Example CLI Project" "s1"
 ```
@@ -65,7 +68,7 @@ You can upload these files to GeoSeeq using the command line. This example will 
 # navigate to the directory where the fastq files are stored
 $ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
 
-$ geoseeq upload reads --cores 32 "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
+$ geoseeq upload reads --cores 32 "GeoSeeq" "Example CLI Project" fastq_files.txt
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
 sample_name: Sample1
@@ -80,11 +83,15 @@ Uploading Sample: Sample1
 
 GeoSeeq will automatically create a new sample named `Sample1` if it does not already exist.
 
+This command would upload data [to this project.](https://portal.geoseeq.com/sample-groups/ed59b913-91ec-489b-a1b9-4ea137a6e5cf/samples). Since only organization members can upload data, you will need to replace `GeoSeeq` with your organization name.
+
 Note: You will need to have an API token set to use this command (see above)
 
 ## Using the Python API in a program
 
 Please see `geoseeq_api/cli/download.py` for examples of how to download data using the Python API directly.
+
+---
 
 ## Notes
 
