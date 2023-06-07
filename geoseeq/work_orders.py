@@ -1,5 +1,5 @@
 
-from .blob_constructors import sample_from_uuid, sample_group_from_uuid
+from .blob_constructors import sample_from_uuid, project_from_uuid
 from .remote_object import RemoteObject
 
 

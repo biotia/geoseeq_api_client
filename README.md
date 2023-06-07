@@ -27,13 +27,77 @@ Run the command line by typing `geoseeq` into a terminal prompt. See available o
 $ geoseeq --help
 ```
 
+### Using an API token
+
+For many tasks you will need an API token to interact with GeoSeeq. You can get this token by logging into the [GeoSeeq Portal](https://portal.geoseeq.com/) going to your user profile and clicking the "Tokens" tab.
+
+Once you have a token you will need to set it as an environment variable like so:
+
+```
+$ export GEOSEEQ_API_TOKEN=<your token from the geoseeq app>
+```
+
+### Example Commands
+
 You can find more command line examples in `docs/`
 
+#### Download Short Read Sequencing data from one sample in a project as a set of FASTQ files
+
+```
+$ geoseeq download sample-results --module-name "short_read::paired_end" GeoSeeq "Example CLI Project" "s1"
+```
+
+#### Uploading sequencing data
+
+GeoSeeq can automatically group fastq files into samples according to their 
+sample name, read number, and lane number. It supports paired end, single end,
+and nanopore reads.
+
+Assume you have data from a single ended sequencing run stored as fastq files: 
+ - Sample1_L1_R1.fastq.gz
+ - Sample1_L1_R2.fastq.gz
+ - Sample1_L2_R1.fastq.gz
+ - Sample1_L2_R2.fastq.gz
+
+You can upload these files to GeoSeeq using the command line. This example will upload 32 files in  parallel:
+
+```
+# navigate to the directory where the fastq files are stored
+$ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
+
+$ geoseeq upload reads --cores 32 "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
+Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
+All files successfully grouped.
+sample_name: Sample1
+  module_name: short_read::paired_end
+    short_read::paired_end::read_1::lane_1: Sample1_L1_R1.fastq.gz
+    short_read::paired_end::read_2::lane_1: Sample1_L1_R2.fastq.gz
+    short_read::paired_end::read_1::lane_2: Sample1_L2_R1.fastq.gz
+    short_read::paired_end::read_2::lane_2: Sample1_L2_R2.fastq.gz
+Do you want to upload these files? [y/N]: y
+Uploading Sample: Sample1
+```
+
+GeoSeeq will automatically create a new sample named `Sample1` if it does not already exist.
+
+Note: You will need to have an API token set to use this command (see above)
 
 ## Using the Python API in a program
 
 Please see `geoseeq_api/cli/download.py` for examples of how to download data using the Python API directly.
 
+## Notes
+
+### Terminology
+
+Some terms have changed in GeoSeeq since this package was written. The command line tool and code may contain references to old names.
+
+| Old Name  | New Name  |
+|---|---|
+| Sample Group  | Project  |
+| Library  | _defunct_  |
+| Analysis Result  | ResultFolder  |
+| Analysis Result Field | ResultFile |
 ---
 
 ## License and Credits

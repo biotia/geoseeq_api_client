@@ -1,8 +1,8 @@
 
 from .blob_constructors import (
     sample_from_blob,
-    sample_ar_from_blob,
-    sample_ar_field_from_blob,
+    sample_result_folder_from_blob,
+    sample_result_file_from_blob,
 )
 import json
 
@@ -22,7 +22,7 @@ def bulk_create_samples(knex, samples):
     return created_samples
 
 
-def bulk_create_sample_results(knex, sample_results):
+def bulk_create_sample_result_folders(knex, sample_results):
     """Create multiple sample results at once. Returns a list of created sample results.
     
     Only returns sample results which were newly created.
@@ -33,13 +33,13 @@ def bulk_create_sample_results(knex, sample_results):
         "bulk_sample_results",
         json=data,
     )
-    created_sample_results = [
-        sample_ar_from_blob(knex, result_blob) for result_blob in result['sample_results'] if result_blob
+    created_sample_result_folders = [
+        sample_result_folder_from_blob(knex, result_blob) for result_blob in result['sample_results'] if result_blob
     ]
-    return created_sample_results
+    return created_sample_result_folders
 
 
-def bulk_create_sample_result_fields(knex, sample_result_fields):
+def bulk_create_sample_result_files(knex, sample_result_fields):
     """Create multiple sample result fields at once. Returns a list of created sample result fields.
     
     Only returns sample result fields which were newly created.
@@ -49,7 +49,7 @@ def bulk_create_sample_result_fields(knex, sample_result_fields):
         "bulk_sample_result_fields",
         json={"sample_result_fields": [sample_result_field.get_post_data() for sample_result_field in sample_result_fields]},
     )
-    created_sample_result_fields = [
-        sample_ar_field_from_blob(knex, result_blob) for result_blob in result['sample_result_fields'] if result_blob
+    created_sample_result_files = [
+        sample_result_file_from_blob(knex, result_blob) for result_blob in result['sample_result_fields'] if result_blob
     ]
-    return created_sample_result_fields
+    return created_sample_result_files

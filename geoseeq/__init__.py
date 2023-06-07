@@ -1,4 +1,8 @@
-from .analysis_result import (
+from .result import (
+    SampleResultFolder,
+    SampleResultFile,
+    ProjectResultFolder,
+    ProjectResultFile,
     SampleAnalysisResult,
     SampleAnalysisResultField,
     SampleGroupAnalysisResult,
@@ -17,7 +21,7 @@ from .organization import Organization
 from .pipeline import Pipeline, PipelineModule, PipelineRun
 from .remote_object import RemoteObjectError, RemoteObjectOverwriteError
 from .sample import Sample
-from .sample_group import SampleGroup
+from .project import Project, SampleGroup
 from .user import User
 from .work_orders import (
     GroupWorkOrder,

@@ -1,6 +1,6 @@
 
 from .remote_object import RemoteObject
-from .sample_group import SampleGroup
+from .project import Project
 
 
 class Organization(RemoteObject):
@@ -43,13 +43,19 @@ class Organization(RemoteObject):
         blob = self.knex.post(self.url_prefix, json={'name': self.name})
         self.load_blob(blob)
 
-    def sample_group(self, group_name, metadata={}, is_library=True, is_public=False):
-        return SampleGroup(self.knex, self, group_name,
-                           is_library=is_library, is_public=is_public,
-                           metadata=metadata)
+    def sample_group(self, *args, **kwargs):
+        """Create a new project in this organization.
+        
+        This is an alias for project() for backwards compatibility.
+        """
+        return self.project(*args, **kwargs)
 
-    def get_sample_groups(self):
-        """Yield samplegroups fetched from the server."""
+    def project(self, project_name, metadata={}, is_public=False):
+        """Create a new project in this organization."""
+        return Project(self.knex, self, project_name, is_public=is_public, metadata=metadata)
+
+    def get_projects(self):
+        """Yield projects in this org fetched from the server."""
         url = f'sample_groups?organization_id={self.uuid}'
         result = self.knex.get(url)
         for result_blob in result['results']:
@@ -60,6 +66,14 @@ class Organization(RemoteObject):
             result._already_fetched = True
             result._modified = False
             yield result
+
+    def get_sample_groups(self):
+        """Yield projects in this org fetched from the server.
+
+        This is an alias for get_projects() for backwards compatibility.
+        """
+        return self.get_projects()
+
 
     def pre_hash(self):
         return 'ORG' + self.name

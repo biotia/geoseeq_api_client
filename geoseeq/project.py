@@ -1,11 +1,12 @@
-from .analysis_result import SampleGroupAnalysisResult
+from .result import ProjectResultFolder
 from .remote_object import RemoteObject
 from .sample import Sample
 from .utils import paginated_iterator
 import json
 
 
-class SampleGroup(RemoteObject):
+
+class Project(RemoteObject):
     remote_fields = [
         "uuid",
         "created_at",
@@ -153,10 +154,17 @@ class SampleGroup(RemoteObject):
     def sample(self, sample_name, metadata={}):
         return Sample(self.knex, self, sample_name, metadata=metadata)
 
-    def analysis_result(self, module_name, replicate=None, metadata={}):
-        return SampleGroupAnalysisResult(
+    def result_folder(self, module_name, replicate=None, metadata={}):
+        """Return a ProjectResultFolder object for this project."""
+        return ProjectResultFolder(
             self.knex, self, module_name, replicate=replicate, metadata=metadata
         )
+
+    def analysis_result(self, *args, **kwargs):
+        """Return a ProjectResultFolder object for this project.
+        
+        Alias for result_folder."""
+        return self.result_folder(*args, **kwargs)
 
     def get_samples(self, cache=True, error_handler=None):
         """Yield samples fetched from the server."""
@@ -231,10 +239,12 @@ class SampleGroup(RemoteObject):
         return pd.DataFrame.from_dict(blob["metadata"], orient="index")
 
     def __str__(self):
-        return f"<Geoseeq::SampleGroup {self.name} {self.uuid} />"
+        return f"<Geoseeq::Project {self.name} {self.uuid} />"
 
     def __repr__(self):
-        return f"<Geoseeq::SampleGroup {self.name} {self.uuid} />"
+        return f"<Geoseeq::Project {self.name} {self.uuid} />"
 
     def pre_hash(self):
-        return "SG" + self.name + self.org.pre_hash()
+        return "PROJ" + self.name + self.org.pre_hash()
+
+SampleGroup = Project  # alias for backwards compatibility
