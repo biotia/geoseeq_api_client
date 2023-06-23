@@ -29,7 +29,7 @@ $ geoseeq download sample-results --module-name "short_read::paired_end" GeoSeeq
 
 ## Download all data from all sample in a project
 
-Download all results for all smaples in the group `UW Madison Biotech 2020`
+Download all results for all samples in the group `Example CLI Project`
 
 ```
 $ geoseeq download sample-results GeoSeeq "Example CLI Project"
