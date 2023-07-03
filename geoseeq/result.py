@@ -2,16 +2,16 @@ import json
 import logging
 import os
 import time
+import urllib.request
 from os.path import basename, getsize, join
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-import urllib.request
 
 import requests
 
 from .constants import FIVE_MB
 from .remote_object import RemoteObject, RemoteObjectError
-from .utils import md5_checksum, download_ftp
+from .utils import download_ftp, md5_checksum
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
@@ -335,7 +335,7 @@ class ResultFile(RemoteObject):
     def get_referenced_filename_ext(self):
         try:
             key = [k for k in ["filename", "uri", "url"] if k in self.stored_data][0]
-        except KeyError:
+        except IndexError:
             raise TypeError("Cannot make a reference filename for a BLOB type result field.")
         ext = self.stored_data[key].split(".")[-1]
         if ext in ["gz"]:
