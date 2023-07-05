@@ -133,15 +133,26 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
         click.confirm('Do you want to upload these files?', abort=True)
 
     # Upload the files
+    def handle_upload(sample, success, error):
+        if success:
+            click.echo(f'Uploaded Sample: {sample.name}', err=True)
+        else:
+            click.echo(f'Failed to upload Sample: {sample.name}', err=True)
+            click.echo(f'Error:\n{error}', err=True)
+
     with requests.Session() as session:
-        args = [(group, module_name, link_type, lib, filepaths, seq_length, overwrite, session, state.log_level) for group in groups]
-        with Pool(cores) as p:
-            for sample, success, error in p.imap_unordered(_upload_one_sample, args):
-                if success:
-                    click.echo(f'Uploaded Sample: {sample.name}', err=True)
-                else:
-                    click.echo(f'Failed to upload Sample: {sample.name}', err=True)
-                    click.echo(f'Error:\n{error}', err=True)
+        args = [
+            (group, module_name, link_type, lib, filepaths, seq_length, overwrite, session, state.log_level)
+            for group in groups
+        ]
+        if cores == 1:  # Don't use multiprocessing if we only have one core, makes debugging easier
+            for arg in args:
+                sample, success, error = _upload_one_sample(arg)
+                handle_upload(sample, success, error)
+        else:
+            with Pool(cores) as p:
+                for sample, success, error in p.imap_unordered(_upload_one_sample, args):
+                    handle_upload(sample, success, error)
 
 
 @cli_upload.command('file')
