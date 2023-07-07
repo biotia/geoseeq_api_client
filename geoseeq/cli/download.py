@@ -5,6 +5,9 @@ from os.path import dirname, join
 import click
 import pandas as pd
 
+from geoseeq.result import _download_head
+from geoseeq.utils import download_ftp
+
 from .. import Organization
 from .utils import use_common_state
 
@@ -110,3 +113,74 @@ def cli_download_sample_results(
                 except TypeError:
                     pass
                 click.echo("done.", err=True)
+
+@cli_download.command("files")
+@use_common_state
+@click.argument("org_name")
+@click.argument("grp_name")
+@click.argument("sample_names", nargs=-1)
+@click.option(
+    "--sample-manifest",
+    default=None,
+    type=click.File("r"),
+    help="List of sample names to download from",
+)
+@click.option("--target-dir", default=".")
+@click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@click.option("--folder-type", type=click.Choice(['all', 'sample', 'project'], case_sensitive=False), default="sample", help='Name of folder on GeoSeeq to download from')
+@click.option("--folder-name", multiple=True, help='Name of folder on GeoSeeq to download from')
+@click.option("--sample-name-includes", multiple=True, help='A string which the sample name should include')
+@click.option("--file-name", multiple=True, help="Name of file on GeoSeeq to download from")
+@click.option("--extension", multiple=True, help="Extension of file to download from GeoSeeq")
+@click.option("--with-versions/--without-versions", default=False, help="Download also versions not just the current file")
+def cli_download_files(
+    state,
+    org_name,
+    grp_name,
+    sample_names,
+    sample_manifest,
+    sample_name_includes,
+    target_dir,
+    folder_type,
+    folder_name,
+    file_name,
+    extension,
+    with_versions,
+    download,
+  
+):
+    grp, sample_names = _setup_download(state, sample_manifest, org_name, grp_name, sample_names)
+    sample_uuids = []
+    if sample_names:
+        samples = [grp.sample(name).get() for name in sample_names]
+        sample_uuids = [sample.uuid for sample in samples]
+    data = {
+        "sample_uuids": sample_uuids,
+        "sample_names": sample_name_includes,
+        "folder_type": folder_type,
+        "folder_names": folder_name,
+        "file_names": file_name,
+        "extensions": extension,
+        "with_versions": with_versions
+    }
+    knex = state.get_knex()
+    url = f"sample_groups/{grp.uuid}/download"
+    response = knex.post(url, data)
+
+    if not download:
+        file_path = join(target_dir, "links.json")
+        makedirs(dirname(file_path), exist_ok=True)
+        data = json.dumps(response["links"])
+        with open(file_path, "w") as f:
+            f.write(data)
+
+    else:
+        print(f"Found {len(response['links'])} files to download")
+        for fname, url in response["links"].items():
+            print(f"Downloading file {fname}")
+            file_path = join(target_dir, fname)
+            makedirs(dirname(file_path), exist_ok=True)
+            if url.startswith("ftp"):
+                download_ftp(url, file_path)
+            else:
+                _download_head(url, file_path)
