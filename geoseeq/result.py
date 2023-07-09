@@ -21,7 +21,7 @@ def _download_head(url, filename, head=None):
     if head and head > 0:
         opener = urllib.request.build_opener()
         if head:
-            opener.addheaders = [('Range', f'bytes=0-{head}')]
+            opener.addheaders = [("Range", f"bytes=0-{head}")]
         urllib.request.install_opener(opener)
     try:
         urllib.request.urlretrieve(url, filename)  # can throw 416 error if head is too large
@@ -31,7 +31,7 @@ def _download_head(url, filename, head=None):
             _download_head(url, filename, head=None)
         else:
             raise e
-    
+
 
 def diff_dicts(blob1, blob2):
     for problem in _diff_dicts("original", "$", blob1, blob2):
@@ -131,7 +131,8 @@ class ResultFolder(RemoteObject):
             copied.idem()
         return copied
 
-AnalysisResult = ResultFolder # for backwards compatibility
+
+AnalysisResult = ResultFolder  # for backwards compatibility
 
 
 class SampleResultFolder(ResultFolder):
@@ -189,7 +190,7 @@ class SampleResultFolder(ResultFolder):
             "sample_ar": self,
         }
         logger.debug(f"Creating SampleAnalysisResultField for SampleAnalysisResult. {d}")
-        return SampleResultFile(self.knex, self, field_name, pipeline_run=None, data=data)
+        return SampleResultFile(self.knex, self, field_name, pipeline_run=pipeline_run, data=data)
 
     def field(self, *args, **kwargs):
         return self.result_file(*args, **kwargs)
@@ -225,7 +226,8 @@ class SampleResultFolder(ResultFolder):
     def __str__(self):
         return f"<Geoseeq::SampleResultFolder {self.module_name} {self.replicate} {self.uuid} />"
 
-SampleAnalysisResult = SampleResultFolder # for backwards compatibility
+
+SampleAnalysisResult = SampleResultFolder  # for backwards compatibility
 
 
 class ProjectResultFolder(ResultFolder):
@@ -288,7 +290,8 @@ class ProjectResultFolder(ResultFolder):
     def __str__(self):
         return f"<Geoseeq::ProjectResultFolder {self.module_name} {self.replicate} {self.uuid} />"
 
-SampleGroupAnalysisResult = ProjectResultFolder # for backwards compatibility
+
+SampleGroupAnalysisResult = ProjectResultFolder  # for backwards compatibility
 
 
 class ResultFile(RemoteObject):
@@ -498,11 +501,11 @@ class ResultFile(RemoteObject):
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
-            key = 'uri' if 'uri' in self.stored_data else 'url'
+            key = "uri" if "uri" in self.stored_data else "url"
             url = self.stored_data[key]
         if url.startswith("s3://"):
             url = self.stored_data["endpoint_url"] + "/" + url[5:]
-        _download_head(url, filename, head=head) 
+        _download_head(url, filename, head=head)
         if cache:
             self._cached_filename = filename
         return filename
@@ -512,7 +515,7 @@ class ResultFile(RemoteObject):
         try:
             url = self.stored_data["presigned_url"]
         except KeyError:
-            key = 'uri' if 'uri' in self.stored_data else 'url'
+            key = "uri" if "uri" in self.stored_data else "url"
             url = self.stored_data[key]
         _download_head(url, filename, head=head)
         if cache:
@@ -524,13 +527,13 @@ class ResultFile(RemoteObject):
 
     def _download_ftp(self, filename, cache, head=None):
         logger.info(f"Downloading FTP file to {filename}")
-        key = 'url' if 'url' in self.stored_data else 'uri'
+        key = "url" if "url" in self.stored_data else "uri"
         download_ftp(self.stored_data[key], filename, head=head)
         return filename
 
     def _download_generic_url(self, filename, cache):
         logger.info(f"Downloading generic URL file to {filename}")
-        key = 'url' if 'url' in self.stored_data else 'uri'
+        key = "url" if "url" in self.stored_data else "uri"
         url = self.stored_data[key]
         urllib.request.urlretrieve(url, filename)
         if cache:
@@ -661,7 +664,9 @@ class ResultFile(RemoteObject):
         """
         return {"value": "", "method": "none"}
 
+
 AnalysisResultField = ResultFile
+
 
 class SampleResultFile(ResultFile):
     def canon_url(self):
@@ -669,6 +674,7 @@ class SampleResultFile(ResultFile):
 
     def __str__(self):
         return f"<Geoseeq::SampleResultFile {self.name} {self.uuid} />"
+
 
 SampleAnalysisResultField = SampleResultFile
 
@@ -679,5 +685,6 @@ class ProjectResultFile(ResultFile):
 
     def __str__(self):
         return f"<Geoseeq::ProjectResultFile {self.name} {self.uuid} />"
+
 
 SampleGroupAnalysisResultField = ProjectResultFile
