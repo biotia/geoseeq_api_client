@@ -265,8 +265,8 @@ class ProjectResultFolder(ResultFolder):
         blob = self.knex.post(f"sample_group_ars?format=json", json=data)
         self.load_blob(blob)
 
-    def result_file(self, field_name, data={}):
-        return ProjectResultFile(self.knex, self, field_name, data=data)
+    def result_file(self, field_name, pipeline_run=None, data={}):
+        return ProjectResultFile(self.knex, self, field_name, pipeline_run=pipeline_run data=data)
 
     def field(self, *args, **kwargs):
         return self.result_file(*args, **kwargs)
