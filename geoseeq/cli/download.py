@@ -9,7 +9,7 @@ from geoseeq.result import _download_head
 from geoseeq.utils import download_ftp
 
 from .. import Organization
-from .utils import use_common_state
+from .utils import convert_size, use_common_state
 
 
 @click.group("download")
@@ -126,6 +126,7 @@ def cli_download_sample_results(
     help="List of sample names to download from",
 )
 @click.option("--target-dir", default=".")
+@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @click.option("--folder-type", type=click.Choice(['all', 'sample', 'project'], case_sensitive=False), default="sample", help='Name of folder on GeoSeeq to download from')
 @click.option("--folder-name", multiple=True, help='Name of folder on GeoSeeq to download from')
@@ -141,6 +142,7 @@ def cli_download_files(
     sample_manifest,
     sample_name_includes,
     target_dir,
+    yes,
     folder_type,
     folder_name,
     file_name,
@@ -175,9 +177,17 @@ def cli_download_files(
             f.write(data)
 
     else:
-        print(f"Found {len(response['links'])} files to download")
+        files_size = convert_size(response['file_size_bytes'])
+        no_size_info = f"No size info was found for {response['no_size_info_count']} file{'s' if 1 < response['no_size_info_count'] else ''}." if response['no_size_info_count'] else ""
+        click.echo(f"Found {len(response['links'])} files to download with total size of {files_size}. {no_size_info}\n")
         for fname, url in response["links"].items():
-            print(f"Downloading file {fname}")
+            click.echo(f'File name: {fname}', err=True)
+            click.echo(f'Url: {url}\n', err=True)
+        click.echo(f'Targer directory: "{target_dir}"\n', err=True)
+        if not yes:
+            click.confirm('Do you want to download these files?', abort=True)
+        for fname, url in response["links"].items():
+            click.echo(f"Downloading file {fname}")
             file_path = join(target_dir, fname)
             makedirs(dirname(file_path), exist_ok=True)
             if url.startswith("ftp"):
