@@ -14,9 +14,11 @@ from geoseeq.remote_object import RemoteObject, RemoteObjectError
 from geoseeq.utils import download_ftp, md5_checksum
 
 from .utils import *
+from .file_upload import ResultFileUpload
+from .file_download import ResultFileDownload
 
 
-class ResultFile(RemoteObject):
+class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
     remote_fields = [
         "uuid",
         "created_at",
@@ -39,6 +41,10 @@ class ResultFile(RemoteObject):
         self.pipeline_run = pipeline_run
         self._cached_filename = None  # Used if the field points to S3, FTP, etc
         self._temp_filename = False
+
+    @property
+    def is_sample_result(self):
+        return isinstance(self, SampleAnalysisResultField)
 
     @property
     def brn(self):
@@ -179,192 +185,6 @@ class ResultFile(RemoteObject):
         data = self.get_post_data()
         blob = self.knex.post(f"{self.canon_url()}?format=json", json=data)
         self.load_blob(blob)
-
-    def get_download_url(self):
-        """Return a URL that can be used to download the file for this result."""
-        blob_type = self.stored_data.get("__type__", "").lower()
-        if blob_type not in ["s3", "sra"]:
-            raise TypeError("Cannot fetch a file for a BLOB type result field.")
-        if blob_type == "s3":
-            try:
-                url = self.stored_data["presigned_url"]
-            except KeyError:
-                url = self.stored_data["uri"]
-            if url.startswith("s3://"):
-                url = self.stored_data["endpoint_url"] + "/" + url[5:]
-            return url
-        elif blob_type == "sra":
-            url = self.stored_data["url"]
-            return url
-
-    def download_file(self, filename=None, cache=True, head=None):
-        """Return a local filepath to the file this result points to."""
-        if not filename:
-            self._temp_filename = True
-            myfile = NamedTemporaryFile(delete=False)
-            myfile.close()
-            filename = myfile.name
-        blob_type = self.stored_data.get("__type__", "").lower()
-        if cache and self._cached_filename:
-            return self._cached_filename
-        if blob_type == "s3":
-            return self._download_s3(filename, cache, head=head)
-        elif blob_type == "sra":
-            return self._download_sra(filename, cache)
-        elif blob_type == "ftp":
-            return self._download_ftp(filename, cache)
-        elif blob_type == "azure":
-            return self._download_azure(filename, cache, head=head)
-        else:
-            raise TypeError("Cannot fetch a file for a BLOB type result field.")
-
-    def _download_s3(self, filename, cache, head=None):
-        logger.info(f"Downloading S3 file to {filename}")
-        try:
-            url = self.stored_data["presigned_url"]
-        except KeyError:
-            key = 'uri' if 'uri' in self.stored_data else 'url'
-            url = self.stored_data[key]
-        if url.startswith("s3://"):
-            url = self.stored_data["endpoint_url"] + "/" + url[5:]
-        _download_head(url, filename, head=head) 
-        if cache:
-            self._cached_filename = filename
-        return filename
-
-    def _download_azure(self, filename, cache, head=None):
-        logger.info(f"Downloading Azure file to {filename}")
-        try:
-            url = self.stored_data["presigned_url"]
-        except KeyError:
-            key = 'uri' if 'uri' in self.stored_data else 'url'
-            url = self.stored_data[key]
-        _download_head(url, filename, head=head)
-        if cache:
-            self._cached_filename = filename
-        return filename
-
-    def _download_sra(self, filename, cache):
-        return self._download_generic_url(filename, cache)
-
-    def _download_ftp(self, filename, cache, head=None):
-        logger.info(f"Downloading FTP file to {filename}")
-        key = 'url' if 'url' in self.stored_data else 'uri'
-        download_ftp(self.stored_data[key], filename, head=head)
-        return filename
-
-    def _download_generic_url(self, filename, cache):
-        logger.info(f"Downloading generic URL file to {filename}")
-        key = 'url' if 'url' in self.stored_data else 'uri'
-        url = self.stored_data[key]
-        urllib.request.urlretrieve(url, filename)
-        if cache:
-            self._cached_filename = filename
-        return filename
-
-    # DEV: to simplify the uplaod process we will use only the multipart upload. It works well for small files also.
-    # This function is currently unused.
-    def upload_small_file(self, filepath, optional_fields={}):
-        url = f"/{self.canon_url()}/{self.uuid}/upload_s3"
-        filename = basename(filepath)
-        optional_fields.update(
-            {
-                "md5_checksum": md5_checksum(filepath),
-                "file_size_bytes": getsize(filepath),
-            }
-        )
-        data = {
-            "filename": filename,
-            "optional_fields": optional_fields,
-        }
-        response = self.knex.post(url, json=data)
-        with open(filepath, "rb") as f:
-            files = {"file": (filename, f)}
-            requests.post(  # Not a call to geoseeq so we do not use knex
-                response["url"], data=response["fields"], files=files
-            )
-        return self
-
-    def multipart_upload_file(
-        self,
-        filepath,
-        file_size,
-        is_sample_result,
-        optional_fields={},
-        chunk_size=FIVE_MB,
-        max_retries=3,
-        session=None,
-    ):
-        """Upload a file to S3 using the multipart upload process."""
-        logger.info(f"Uploading {filepath} to S3 using multipart upload.")
-        n_parts = int(file_size / chunk_size) + 1
-        optional_fields.update(
-            {
-                "md5_checksum": md5_checksum(filepath),
-                "file_size_bytes": getsize(filepath),
-            }
-        )
-        data = {
-            "filename": basename(filepath),
-            "optional_fields": optional_fields,
-            "result_type": "sample" if is_sample_result else "group",
-        }
-        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload", json=data)
-        upload_id = response["upload_id"]
-        parts = [*range(1, n_parts + 1)]
-        data = {
-            "parts": parts,
-            "stance": "upload-multipart",
-            "upload_id": upload_id,
-            "result_type": "sample" if is_sample_result else "group",
-        }
-        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
-        urls = response
-        complete_parts = []
-        logger.info(f'Starting upload for "{filepath}"')
-        with open(filepath, "rb") as f:
-            for num, url in enumerate(list(urls.values())):
-                file_data = f.read(chunk_size)
-                attempts = 0
-                while attempts < max_retries:
-                    try:
-                        if session:
-                            http_response = session.put(url, data=file_data)
-                        else:
-                            http_response = requests.put(url, data=file_data)
-                        http_response.raise_for_status()
-                        logger.debug(f"Upload for part {num + 1} succeeded.")
-                        break
-                    except requests.exceptions.HTTPError:
-                        logger.warn(
-                            f"Upload for part {num + 1} failed. Attempt {attempts + 1} of {max_retries}."
-                        )
-                        attempts += 1
-                        if attempts == max_retries:
-                            raise
-                        time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
-                complete_parts.append(
-                    {"ETag": http_response.headers["ETag"], "PartNumber": num + 1}
-                )
-
-                logger.info(f'Uploaded part {num + 1} of {len(urls)} for "{filepath}"')
-        response = self.knex.post(
-            f"/ar_fields/{self.uuid}/complete_upload",
-            json={
-                "parts": complete_parts,
-                "upload_id": upload_id,
-                "result_type": "sample" if is_sample_result else "group",
-            },
-            json_response=False,
-        )
-        logger.info(f'Finished Upload for "{filepath}"')
-        return self
-
-    def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
-        resolved_path = Path(filepath).resolve()
-        file_size = getsize(resolved_path)
-        is_sample_result = isinstance(self, SampleAnalysisResultField)
-        return self.multipart_upload_file(filepath, file_size, is_sample_result, **kwargs)
 
     def __del__(self):
         if self._temp_filename and self._cached_filename:

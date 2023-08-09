@@ -14,7 +14,8 @@ from geoseeq.remote_object import RemoteObject, RemoteObjectError
 from geoseeq.utils import download_ftp, md5_checksum
 
 from .utils import *
-
+from .bioinfo import SampleBioInfoFolder
+from .result_file import SampleResultFile, ProjectResultFile
 
 class ResultFolder(RemoteObject):
     remote_fields = [
@@ -60,7 +61,7 @@ class ResultFolder(RemoteObject):
 AnalysisResult = ResultFolder # for backwards compatibility
 
 
-class SampleResultFolder(ResultFolder):
+class SampleResultFolder(ResultFolder, SampleBioInfoFolder):
     parent_field = "sample"
 
     def __init__(self, knex, sample, module_name, replicate=None, metadata={}, is_private=False):

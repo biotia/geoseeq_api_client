@@ -7,7 +7,6 @@ from geoseeq.knex import GeoseeqNotFoundError
 
 def _get_org_and_proj(knex, org_name, project_name, yes, private):
     """Return an organization and project, creating them if necessary and desired."""
-    org = Organization(knex, org_name).get()
     try:
         org = Organization(knex, org_name).get()
     except GeoseeqNotFoundError:
