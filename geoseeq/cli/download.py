@@ -174,8 +174,7 @@ def cli_download_files(
 
     if not download:
         data = json.dumps(response["links"])
-        with open(state.outfile, "w") as f:
-            f.write(data)
+        print(data, file=state.outfile)
 
     else:
         files_size = convert_size(response['file_size_bytes'])
@@ -239,12 +238,17 @@ def cli_download_ids(state, target_dir, yes, download, ids):
         except GeoseeqNotFoundError:
             result_file = project_result_file_from_uuid(knex, result_uuid)
         result_files.append(result_file)
+
+    if not download:
+        for result_file in result_files:
+            print(result_file.get_download_url(), file=state.outfile)
+        return
     
     for result_file in result_files:
         click.echo(f"{result_file} -> {target_dir}/{result_file.get_referenced_filename()}")
     if not yes:
         click.confirm('Do you want to download these files?', abort=True)
-    
+
     for result_file in result_files:
         click.echo(f"Downloading file {result_file.get_referenced_filename()}")
         file_path = join(target_dir, result_file.get_referenced_filename())
