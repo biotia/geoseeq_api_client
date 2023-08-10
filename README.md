@@ -47,7 +47,7 @@ You can find more command line examples in `docs/`
 This command will download data [from this project.](https://portal.geoseeq.com/sample-groups/ed59b913-91ec-489b-a1b9-4ea137a6e5cf/samples)
 
 ```
-$ geoseeq download sample-results --module-name "short_read::paired_end" GeoSeeq "Example CLI Project" "s1"
+$ geoseeq download files --extension fastq.gz "GeoSeeq/Example CLI Project"
 ```
 
 #### Uploading sequencing data
@@ -68,7 +68,7 @@ You can upload these files to GeoSeeq using the command line. This example will 
 # navigate to the directory where the fastq files are stored
 $ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
 
-$ geoseeq upload reads --cores 32 "GeoSeeq" "Example CLI Project" fastq_files.txt
+$ geoseeq upload reads --cores 32 "GeoSeeq/Example CLI Project" fastq_files.txt
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
 sample_name: Sample1
