@@ -25,6 +25,10 @@ class Sample(RemoteObject):
         self._get_result_cache = []
 
     @property
+    def project(self):
+        return self.lib
+
+    @property
     def brn(self):
         return f'brn:{self.knex.instance_code()}:sample:{self.uuid}'
 

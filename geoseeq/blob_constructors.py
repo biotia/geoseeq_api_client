@@ -47,7 +47,7 @@ def project_result_folder_from_blob(knex, blob, already_fetched=True, modified=F
         knex, blob["sample_group_obj"], already_fetched=already_fetched, modified=modified
     )
     ar = ProjectResultFolder(
-        knex, sample, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
+        knex, group, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
     )
     ar.load_blob(blob)
     ar._already_fetched = already_fetched

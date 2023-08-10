@@ -1,4 +1,5 @@
 import json
+import logging
 from os import makedirs
 from os.path import dirname, join
 
@@ -11,7 +12,18 @@ from .shared_params import (
     sample_ids_arg,
     handle_multiple_sample_ids,
     use_common_state,
+    flatten_list_of_els_and_files
 )
+from geoseeq.result.utils import _download_head
+from geoseeq.utils import download_ftp
+from geoseeq.blob_constructors import (
+    sample_result_file_from_uuid,
+    project_result_file_from_uuid,
+)
+from geoseeq.knex import GeoseeqNotFoundError
+from .utils import convert_size
+
+logger = logging.getLogger('geoseeq_api')
 
 
 @click.group("download")
@@ -71,61 +83,170 @@ def cli_download_metadata(state, sample_ids):
     click.echo("Metadata successfully downloaded for samples.", err=True)
 
 
-@cli_download.command("sample-results")
+@cli_download.command("files")
 @use_common_state
-@click.option("--folder-name", multiple=True, help='Name of folder on GeoSeeq to download from')
-@click.option("--file-name", help="Name of file on GeoSeeq to download from")
 @click.option("--target-dir", default=".")
+@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@click.option("--folder-type", type=click.Choice(['all', 'sample', 'project'], case_sensitive=False), default="all", help='Download files from sample folders, project folders, or both')
+@click.option("--folder-name", multiple=True, help='Filter folders for names that include this string. Case insensitive.')
+@click.option("--sample-name-includes", multiple=True, help='Filter samples for names that include this string. Case insensitive.')
+@click.option("--file-name", multiple=True, help="Filter files for names that include this string. Case insensitive.")
+@click.option("--extension", multiple=True, help="Only download files with this extension. e.g. 'fastq.gz', 'bam', 'csv'")
+@click.option("--with-versions/--without-versions", default=False, help="Download all versions of a file, not just the latest")
 @project_id_arg
-@click.argument("sample_names", nargs=-1)
-def cli_download_sample_results(
+@sample_ids_arg
+def cli_download_files(
     state,
+    sample_name_includes,
+    target_dir,
+    yes,
+    folder_type,
     folder_name,
     file_name,
-    target_dir,
-    sample_manifest,
+    extension,
+    with_versions,
     download,
     project_id,
-    sample_names,
+    sample_ids,
 ):
-    """Download Sample Analysis Results for a set of samples."""
-    grp = handle_project_id(state.knex, project_id, create=False)
-    if sample_manifest:
-        sample_names = set(sample_names) | set([el.strip() for el in sample_manifest if el])
+    """Download files from a GeoSeeq project.
+    
+    This command will download multiple files from a GeoSeeq project. You can filter
+    files by file extension, folder name, sample name, file name, and file extension.
+    You can also choose to download all versions of a file, not just the latest.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Download all fastq files from all samples in "My Org/My Project"
+    $ geoseeq download files "My Org/My Project" --extension fastq.gz --folder-type sample
+
+    \b
+    # Download fastq files from the MetaSUB Consortium CSD16 project that have been cleaned
+    # e.g. "https://portal.geoseeq.com/samples/9c60aa67-eb3d-4b02-9c77-94e22361b2f3/analysis-results/b4ae15d2-37b9-448b-9946-3d716826eaa8"
+    $ geoseeq download files "MetaSUB Consortium/CSD16" \\
+        --folder-type sample `# Only download files from sample folders, not project folders` \\
+        --folder-name "clean_reads"  # created by MetaSUB , not all projects will have this folder
+
+    \b
+    # Download a table of taxonomic abundances from the MetaSUB Consortium CSD17 project
+    # produced by the GeoSeeq Search tool
+    $ geoseeq download files "MetaSUB Consortium/CSD17" --folder-type project --folder-name "GeoSeeq Search" --file-name "Taxa Table"
+
+    \b
+    # Download assembly contigs from two samples in the MetaSUB Consortium CSD16 project
+    $ geoseeq download files "MetaSUB Consortium/CSD16" `# specify the project` \ 
+        haib17CEM4890_H2NYMCCXY_SL254769 haib17CEM4890_H2NYMCCXY_SL254773 `# specify the samples by name` \ 
+        --folder-type sample --extension '.contigs.fasta' # filter for contig files
+
+    ---
+
+    Command Arguments:
+
+    [PROJECT_ID] Can be a project UUID, GeoSeeq Resource Number (GRN), or an
+    organization name and project name separated by a slash.
+    
+    \b
+    [SAMPLE_IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
+    ---
+    """
+    knex = state.get_knex()
+    proj = handle_project_id(knex, project_id)
+    samples = []
+    if sample_ids:
+        logger.info(f"Fetching info for {len(sample_ids)} samples.")
+        samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj)
+
+    data = {
+        "sample_uuids": [s.uuid for s in samples],
+        "sample_names": sample_name_includes,
+        "folder_type": folder_type,
+        "folder_names": folder_name,
+        "file_names": file_name,
+        "extensions": extension,
+        "with_versions": with_versions
+    }
+    url = f"sample_groups/{proj.uuid}/download"
+    response = knex.post(url, data)
+
+    if not download:
+        data = json.dumps(response["links"])
+        with open(state.outfile, "w") as f:
+            f.write(data)
 
     else:
-        samples = grp.get_samples(cache=False)
-    for sample in samples:
-        if folder_name:
-            result_folders = [sample.result_folder(name).get() for name in folder_name]
-        else:
-            result_folders = sample.get_result_folders()
-        for ar in result_folders:
-            for field in ar.get_fields(cache=False):
-                if file_name and field.name != file_name:
-                    continue
-                if not download:  # download urls to a file, not actual files.
-                    try:
-                        print(
-                            field.get_download_url(),
-                            field.get_referenced_filename(),
-                            file=state.outfile,
-                        )
-                    except TypeError:
-                        pass
-                    continue
-                filename = join(target_dir, field.get_blob_filename()).replace("::", "__")
-                makedirs(dirname(filename), exist_ok=True)
-                click.echo(f"Downloading BLOB {sample} :: {ar} :: {field} to {filename}", err=True)
-                with open(filename, "w") as blob_file:
-                    blob_file.write(json.dumps(field.stored_data))
-                try:
-                    filename = join(target_dir, field.get_referenced_filename()).replace("::", "__")
-                    click.echo(
-                        f"Downloading FILE {sample} :: {ar} :: {field} to {filename}", err=True
-                    )
-                    field.download_file(filename=filename)
-                except TypeError:
-                    pass
-                click.echo("done.", err=True)
+        files_size = convert_size(response['file_size_bytes'])
+        no_size_info = f"No size info was found for {response['no_size_info_count']} files." if response['no_size_info_count'] else ""
+        click.echo(f"Found {len(response['links'])} files to download with total size of {files_size}. {no_size_info}\n")
+        for fname, url in response["links"].items():
+            clean_url = url.split("?")[0]
+            click.echo(f'{clean_url} -> {target_dir}/{fname}')
+        if not yes:
+            click.confirm('Do you want to download these files?', abort=True)
+
+        for fname, url in response["links"].items():
+            click.echo(f"Downloading file {fname}")
+            file_path = join(target_dir, fname)
+            makedirs(dirname(file_path), exist_ok=True)
+            if url.startswith("ftp"):
+                download_ftp(url, file_path)
+            else:
+                _download_head(url, file_path)
+
+
+@cli_download.command("ids")
+@use_common_state
+@click.option("--target-dir", default=".")
+@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
+@click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@click.argument("ids", nargs=-1)
+def cli_download_ids(state, target_dir, yes, download, ids):
+    """Download a files from GeoSeeq based on their UUID or GeoSeeq Resource Number (GRN).
+
+    This command downloads files directly based on their ID. This is used for "manual"
+    downloads of relatively small amounts of data. For bulk downloads, use the
+    `geoseeq download files` command.
+
+    ---
+
+    Example Usage:
+
+    # Download a single file
+    $ geoseeq download ids 9c60aa67-eb3d-4b02-9c77-94e22361b2f3
+
+    # Download multiple files
+    $ geoseeq download ids 9c60aa67-eb3d-4b02-9c77-94e22361b2f3 9c60aa67-eb3d-4b02-9c77-94e22361b2f3
+
+    ---
+
+    Command Arguments:
+
+    [IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
+
+    ---
+    """
+    result_file_ids = flatten_list_of_els_and_files(ids)
+    knex = state.get_knex()
+    result_files = []
+    for result_id in result_file_ids:
+        result_uuid = result_id.split(':')[-1]
+        # we guess that this is a sample file, TODO: use GRN if available
+        try:
+            result_file = sample_result_file_from_uuid(knex, result_uuid)
+        except GeoseeqNotFoundError:
+            result_file = project_result_file_from_uuid(knex, result_uuid)
+        result_files.append(result_file)
+    
+    for result_file in result_files:
+        click.echo(f"{result_file} -> {target_dir}/{result_file.get_referenced_filename()}")
+    if not yes:
+        click.confirm('Do you want to download these files?', abort=True)
+    
+    for result_file in result_files:
+        click.echo(f"Downloading file {result_file.get_referenced_filename()}")
+        file_path = join(target_dir, result_file.get_referenced_filename())
+        makedirs(dirname(file_path), exist_ok=True)
+        result_file.download(file_path)

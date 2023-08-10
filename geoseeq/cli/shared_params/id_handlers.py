@@ -109,7 +109,7 @@ def handle_folder_id(knex, folder_id, yes=False, private=True, create=True):
     raise ValueError('sample_folder_id must be a UUID, an organization name and project name, or a GRN')
 
 
-def handle_multiple_sample_ids(knex, sample_ids):
+def handle_multiple_sample_ids(knex, sample_ids, proj=None):
     """Return a list of fetched sample objects
     
     `sample_ids` may have three different structures:
@@ -118,20 +118,24 @@ def handle_multiple_sample_ids(knex, sample_ids):
      - No project ID is provided, and each element is a sample id of any type
 
     Any sample may in fact be a file containing sample IDs, in which case the file will be read line by line and
+
+    If `one_project` is True, all samples must be from the same project
     """
-    if proj := el_is_project_id(knex, sample_ids[0]):
+    project_as_arg = bool(proj)
+    if proj or (proj := el_is_project_id(knex, sample_ids[0])):
         # The first element is a project ID. Remaining els may be sample IDs or names
-        if len(sample_ids) == 1:
+        if not project_as_arg and sample_ids:
+            sample_ids = list(sample_ids)[1:]
+        if len(sample_ids) == 0:
             return list(proj.get_samples(cache=False))
         else:
             samples = []
-            for el in flatten_list_of_els_and_files(sample_ids[1:]):
+            for el in flatten_list_of_els_and_files(sample_ids):
                 if is_grn_or_uuid(el):
                     el = el.split(':')[-1]
                     samples.append(sample_from_uuid(knex, el))
                 else:  # assume it's a sample name
                     samples.append(proj.sample(el).get())
-            return samples
     else:
         # No project ID provided. Each element is a sample ID
         samples = []
@@ -141,6 +145,6 @@ def handle_multiple_sample_ids(knex, sample_ids):
                 samples.append(sample_from_uuid(knex, el))
             else:
                 raise ValueError(f'"{el}" is not a valid sample ID. To use samples by name, provide a project ID first.')
-        return samples
+    return samples
 
 
