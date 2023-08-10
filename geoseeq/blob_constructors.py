@@ -47,7 +47,7 @@ def project_result_folder_from_blob(knex, blob, already_fetched=True, modified=F
         knex, blob["sample_group_obj"], already_fetched=already_fetched, modified=modified
     )
     ar = ProjectResultFolder(
-        knex, sample, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
+        knex, group, blob["module_name"], replicate=blob["replicate"], metadata=blob["metadata"]
     )
     ar.load_blob(blob)
     ar._already_fetched = already_fetched
@@ -101,6 +101,11 @@ def project_result_file_from_blob(knex, blob, already_fetched=True, modified=Fal
 
 sample_group_ar_field_from_blob = project_result_file_from_blob  # Alias
 
+def org_from_uuid(knex, uuid):
+    """Return the organization object which the uuid points to."""
+    blob = knex.get(f"organizations/{uuid}")
+    org = org_from_blob(knex, blob)
+    return org
 
 def project_from_uuid(knex, uuid):
     """Return the project object which the uuid points to."""
