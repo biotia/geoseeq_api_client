@@ -99,7 +99,7 @@ You can upload any file to GeoSeeq regardless of type.
 Imageine you are uploading an image file stored as a PNG. You would run the following command
 
 ```
-$ geoseeq upload file "Example GeoSeeq Org" "Example CLI Project" "My Sample" "My Images" "My Image" image.png
+$ geoseeq upload files "Example GeoSeeq Org/Example CLI Project/My Sample/My Images" image.png
 ```
 
 Note: You will need to have an API token set to use this command (see above)
@@ -111,5 +111,5 @@ The command above will upload a file to a sample. You can also upload files to a
 with a specific sample. To do so:
 
 ```
-$ geoseeq upload project-file "Example GeoSeeq Org" "Example CLI Project" "My Images" "My Image" image.png
+$ geoseeq upload files "Example GeoSeeq Org/Example CLI Project/My Images" image.png
 ```

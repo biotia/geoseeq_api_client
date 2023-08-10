@@ -7,11 +7,21 @@ from os.path import basename
 from multiprocessing import Pool, current_process
 
 from geoseeq.cli.constants import *
-from geoseeq.cli.utils import use_common_state
-from geoseeq.cli.shared_params import handle_project_id
+from geoseeq.cli.shared_params import (
+    handle_project_id,
+    flatten_list_of_els_and_files,
+    private_option,
+    link_option,
+    module_option,
+    project_id_arg,
+    overwrite_option,
+    yes_option,
+    use_common_state,
+)
+
 from geoseeq.constants import FASTQ_MODULE_NAMES
 
-from .opts_and_args import *
+
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -137,35 +147,66 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, cores,
 @click.command('reads')
 @use_common_state
 @click.option('--cores', default=1, help='Number of uploads to run in parallel')
-@click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing files')
-@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
+@overwrite_option
+@yes_option
 @click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
 @private_option
 @link_option
 @module_option(FASTQ_MODULE_NAMES)
-@click.argument('project_id', nargs=-1)
-@click.argument('file_list', type=click.File('r'))
-def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, module_name, project_id, file_list):
+@project_id_arg
+@click.argument('fastq_files', type=click.File('r'), nargs=-1)
+def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, module_name, project_id, fastq_files):
     """Upload fastq read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number
     and read number. It asks for confirmation before creating any samples or
     data.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Upload a list of fastq files to a project, useful if you have hundreds of files
+    $ ls -1 path/to/fastq/files/*.fastq.gz > file_list.txt
+    $ geoseeq upload reads "GeoSeeq/Example CLI Project" file_list.txt
+
+    \b
+    # Upload all the fastq files in a directory to a project
+    $ geoseeq upload reads ed59b913-91ec-489b-a1b9-4ea137a6e5cf path/to/fastq/files/*.fastq.gz
+
+    \b
+    # Upload all the fastq files in a directory to a project, performing 4 uploads in parallel
+    $ geoseeq upload reads --cores 4 ed59b913-91ec-489b-a1b9-4ea137a6e5cf path/to/fastq/files/*.fastq.gz
+
+    \b
+    # Upload a list of fastq files to a project, automatically creating a new project and overwriting existing files
+    $ ls -1 path/to/fastq/files/*.fastq.gz > file_list.txt
+    $ geoseeq upload reads --yes --overwrite "GeoSeeq/Example CLI Project" file_list.txt
+
+    ---
+
+    Command Arguments:
     
     [PROJECT_ID] Can be a project UUID, GeoSeeq Resource Number (GRN), or an
-    organization name and project name pair.
+    organization name and project name separated by a slash.
 
     \b
     Examples: 
-     - Name pair: "GeoSeeq" "Example CLI Project"
+     - Name pair: "GeoSeeq/Example CLI Project"
      - UUID: "ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
      - GRN: "grn:gs1:project:ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
 
-    FILE_LIST is a file with a list of fastq filepaths, one per line
+    \b
+    [FASTQ_FILES...] can be paths to fastq files or a file containing a list of paths, or a mix of both.
+    Example: "path/to/fastq/files/*.fastq.gz" "file_list.txt" "path/to/more/fastq/files/*.fastq.gz"
+
+    ---
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, yes, private)
-    filepaths = {basename(line): line for line in (l.strip() for l in file_list) if line}
+    filepaths = {basename(line): line for line in flatten_list_of_els_and_files(fastq_files)}
+    click.echo(f'Found {len(filepaths)} files to upload.', err=True)
     regex = _get_regex(knex, filepaths, module_name, proj, regex)
     groups = _group_files(knex, filepaths, module_name, regex, yes)
     _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, cores, state)

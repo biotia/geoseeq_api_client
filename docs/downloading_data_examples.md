@@ -16,7 +16,7 @@ $ export GEOSEEQ_API_TOKEN=<your token from the geoseeq app>
 ## Download metadata from a GeoSeeq project as a CSV 
 
 ```
-$ geoseeq download metadata GeoSeeq "Example CLI Project"
+$ geoseeq download metadata "GeoSeeq/Example CLI Project" > metadata.csv
 ```
 
 

@@ -24,6 +24,9 @@ logger.addHandler(handler)
 def main():
     pass
 
+main.add_command(cli_download)
+main.add_command(cli_upload)
+
 
 @main.command()
 def version():
@@ -31,14 +34,23 @@ def version():
     click.echo('0.1.15')  # remember to update setup
 
 
+@main.group('advanced')
+def cli_advanced():
+    """Advanced commands."""
+    pass
 
-main.add_command(cli_add)
-main.add_command(cli_create)
-main.add_command(cli_download)
-main.add_command(cli_list)
-main.add_command(cli_upload)
-main.add_command(cli_user)
-main.add_command(cli_delete)
-main.add_command(cli_copy)
-main.add_command(cli_vc)
-main.add_command(cli_view)
+cli_advanced.add_command(cli_view)
+cli_advanced.add_command(cli_add)
+cli_advanced.add_command(cli_create)
+cli_advanced.add_command(cli_list)
+cli_advanced.add_command(cli_delete)
+cli_advanced.add_command(cli_copy)
+cli_advanced.add_command(cli_user)
+
+@cli_advanced.group('experimental')
+def cli_experimental():
+    """Experimental commands."""
+    pass
+
+cli_experimental.add_command(cli_vc)
+

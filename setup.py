@@ -16,6 +16,7 @@ setuptools.setup(
         'click',
         'pandas',
         'biopython',
+        'tqdm',
     ],
     entry_points={
         'console_scripts': [

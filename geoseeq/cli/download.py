@@ -5,40 +5,66 @@ from os.path import dirname, join
 import click
 import pandas as pd
 
-from .. import Organization
-from .utils import use_common_state
+from .shared_params import (
+    handle_project_id,
+    project_id_arg,
+    sample_ids_arg,
+    handle_multiple_sample_ids,
+    use_common_state,
+)
 
 
 @click.group("download")
 def cli_download():
-    """Download objects from GeoSeeq."""
+    """Download data from GeoSeeq."""
     pass
 
-
-def _setup_download(state, sample_manifest, org_name, grp_name, sample_names):
-    knex = state.get_knex()
-    org = Organization(knex, org_name).get()
-    grp = org.sample_group(grp_name).get()
-    if sample_manifest:
-        sample_names = set(sample_names) | set([el.strip() for el in sample_manifest if el])
-    return grp, sample_names
 
 
 @cli_download.command("metadata")
 @use_common_state
-@click.option(
-    "--sample-manifest", type=click.File("r"), help="List of sample names to download from"
-)
-@click.argument("org_name")
-@click.argument("grp_name")
-@click.argument("sample_names", nargs=-1)
-def cli_download_metadata(state, sample_manifest, org_name, grp_name, sample_names):
-    """Download Sample Analysis Results for a set of samples."""
-    grp, sample_names = _setup_download(state, sample_manifest, org_name, grp_name, sample_names)
+@sample_ids_arg
+def cli_download_metadata(state, sample_ids):
+    """Download metadata for a set of samples as a CSV.
+    
+    ---
+
+    Example Usage:
+
+    \b
+    # Download metadata for samples S1, S2, and S3 in project "My Org/My Project"
+    $ geoseeq download metadata "My Org/My Project" S1 S2 S3 > metadata.csv
+
+    \b
+    # Download metadata for all samples in project "My Org/My Project"
+    $ geoseeq download metadata "My Org/My Project" > metadata.csv
+
+    \b
+    # Download metadata for two samples by their UUIDs
+    $ geoseeq download metadata 2b721a88-7387-4085-86df-4995d263b3f9 746424e7-2408-407e-a68d-786c7f5c5da6 > metadata.csv
+
+    \b
+    # Download metadata from a list of sample UUIDs in a file
+    $ echo "2b721a88-7387-4085-86df-4995d263b3f9" > sample_ids.txt
+    $ echo "746424e7-2408-407e-a68d-786c7f5c5da6" >> sample_ids.txt
+    $ geoseeq download metadata sample_ids.txt > metadata.csv
+
+    ---
+
+    Command Arguments:
+
+    \b
+    [SAMPLE_IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
+    The first element in the list can optionally be a project ID or name.
+    If a project ID is not provided, then sample ids must be UUIDs or GRNs, not names.
+    If only a project ID is provided, then metadata for all samples in that project will be downloaded.
+
+    ---
+    """
+    samples = handle_multiple_sample_ids(state.knex, sample_ids)
+    click.echo(f"Found {len(samples)} samples.", err=True)
     metadata = {}
-    for sample in grp.get_samples(cache=False):
-        if sample_names and sample.name not in sample_names:
-            continue
+    for sample in samples:
         metadata[sample.name] = sample.metadata
     metadata = pd.DataFrame.from_dict(metadata, orient="index")
     metadata.to_csv(state.outfile)
@@ -50,15 +76,8 @@ def cli_download_metadata(state, sample_manifest, org_name, grp_name, sample_nam
 @click.option("--folder-name", multiple=True, help='Name of folder on GeoSeeq to download from')
 @click.option("--file-name", help="Name of file on GeoSeeq to download from")
 @click.option("--target-dir", default=".")
-@click.option(
-    "--sample-manifest",
-    default=None,
-    type=click.File("r"),
-    help="List of sample names to download from",
-)
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
-@click.argument("org_name")
-@click.argument("grp_name")
+@project_id_arg
 @click.argument("sample_names", nargs=-1)
 def cli_download_sample_results(
     state,
@@ -67,14 +86,14 @@ def cli_download_sample_results(
     target_dir,
     sample_manifest,
     download,
-    org_name,
-    grp_name,
+    project_id,
     sample_names,
 ):
     """Download Sample Analysis Results for a set of samples."""
-    grp, sample_names = _setup_download(state, sample_manifest, org_name, grp_name, sample_names)
-    if sample_names:
-        samples = [grp.sample(name).get() for name in sample_names]
+    grp = handle_project_id(state.knex, project_id, create=False)
+    if sample_manifest:
+        sample_names = set(sample_names) | set([el.strip() for el in sample_manifest if el])
+
     else:
         samples = grp.get_samples(cache=False)
     for sample in samples:
