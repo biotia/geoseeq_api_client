@@ -108,7 +108,7 @@ class ResultFileUpload:
             for num, url in enumerate(list(urls.values())):
                 response_part = self._upload_one_part(file_chunker, url, num, max_retries, session)
                 complete_parts.append(response_part)
-                progress_tracker.update(file_chunker.get_chunk_size(num))
+                if progress_tracker: progress_tracker.update(file_chunker.get_chunk_size(num))
                 logger.info(f'Uploaded part {num + 1} of {len(urls)} for "{file_chunker.filepath}"')
             return complete_parts
         
@@ -123,7 +123,7 @@ class ResultFileUpload:
             for future in as_completed(futures):
                 response_part = future.result()
                 complete_parts.append(response_part)
-                progress_tracker.update(file_chunker.get_chunk_size(response_part["PartNumber"] - 1))
+                if progress_tracker: progress_tracker.update(file_chunker.get_chunk_size(response_part["PartNumber"] - 1))
                 logger.info(
                     f'Uploaded part {response_part["PartNumber"]} of {len(urls)} for "{file_chunker.filepath}"'
                 )
@@ -137,7 +137,7 @@ class ResultFileUpload:
         chunk_size=FIVE_MB,
         max_retries=3,
         session=None,
-        progress_tracker=lambda x: None,
+        progress_tracker=None,
         threads=1,
     ):
         """Upload a file to S3 using the multipart upload process."""
@@ -146,7 +146,7 @@ class ResultFileUpload:
         logger.info(f'Starting upload for "{filepath}"')
         complete_parts = []
         file_chunker = FileChunker(filepath, chunk_size).load_all_chunks()
-        progress_tracker.set_num_chunks(file_chunker.file_size)
+        if progress_tracker: progress_tracker.set_num_chunks(file_chunker.file_size)
         complete_parts = self._upload_parts(file_chunker, urls, max_retries, session, progress_tracker, threads)
         self._finish_multipart_upload(upload_id, complete_parts)
         logger.info(f'Finished Upload for "{filepath}"')

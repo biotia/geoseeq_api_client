@@ -1,12 +1,15 @@
 
 import urllib.request
+import logging
 from os.path import basename, getsize, join
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from geoseeq.utils import download_ftp
 
-from .utils import *
+from .utils import  _download_head
+
+logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 
 
 class ResultFileDownload:
