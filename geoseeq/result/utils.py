@@ -15,22 +15,6 @@ from geoseeq.utils import download_ftp, md5_checksum
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
-
-
-def _download_head(url, filename, head=None):
-    if head and head > 0:
-        opener = urllib.request.build_opener()
-        if head:
-            opener.addheaders = [('Range', f'bytes=0-{head}')]
-        urllib.request.install_opener(opener)
-    try:
-        urllib.request.urlretrieve(url, filename)  # can throw 416 error if head is too large
-    except urllib.error.HTTPError as e:
-        if e.code == 416:
-            logger.warning(f"HEAD request failed, trying again without HEAD.")
-            _download_head(url, filename, head=None)
-        else:
-            raise e
     
 
 def diff_dicts(blob1, blob2):

@@ -5,7 +5,7 @@ from os.path import dirname, join
 
 import click
 import pandas as pd
-
+from multiprocessing import Pool
 from .shared_params import (
     handle_project_id,
     project_id_arg,
@@ -14,13 +14,14 @@ from .shared_params import (
     use_common_state,
     flatten_list_of_els_and_files
 )
-from geoseeq.result.utils import _download_head
+from geoseeq.result.file_download import download_url
 from geoseeq.utils import download_ftp
 from geoseeq.blob_constructors import (
     sample_result_file_from_uuid,
     project_result_file_from_uuid,
 )
 from geoseeq.knex import GeoseeqNotFoundError
+from .progress_bar import PBarManager
 from .utils import convert_size
 
 logger = logging.getLogger('geoseeq_api')
@@ -83,8 +84,16 @@ def cli_download_metadata(state, sample_ids):
     click.echo("Metadata successfully downloaded for samples.", err=True)
 
 
+def _download_one_file(args):
+    url, file_path, pbar = args
+    return download_url(url, filename=file_path, progress_tracker=pbar)
+
+
+cores_option = click.option('--cores', default=1, help='Number of downloads to run in parallel')
+
 @cli_download.command("files")
 @use_common_state
+@cores_option
 @click.option("--target-dir", default=".")
 @click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
@@ -98,6 +107,7 @@ def cli_download_metadata(state, sample_ids):
 @sample_ids_arg
 def cli_download_files(
     state,
+    cores,
     sample_name_includes,
     target_dir,
     yes,
@@ -186,23 +196,32 @@ def cli_download_files(
         if not yes:
             click.confirm('Do you want to download these files?', abort=True)
 
+        download_args = []
+        pbars = PBarManager()
         for fname, url in response["links"].items():
             click.echo(f"Downloading file {fname}")
             file_path = join(target_dir, fname)
             makedirs(dirname(file_path), exist_ok=True)
-            if url.startswith("ftp"):
-                download_ftp(url, file_path)
-            else:
-                _download_head(url, file_path)
+            pbar = pbars.get_new_bar(file_path)
+            download_args.append((url, file_path, pbar))
+            if cores == 1:
+                download_url(url, filename=file_path, progress_tracker=pbar)
+
+        if cores > 1:
+            with Pool(cores) as p:
+                for _ in p.imap_unordered(_download_one_file, download_args):
+                    pass
 
 
 @cli_download.command("ids")
 @use_common_state
+@cores_option
 @click.option("--target-dir", default=".")
 @click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@click.option('--head', default=None, type=int, help='Download the first N bytes of each file')
 @click.argument("ids", nargs=-1)
-def cli_download_ids(state, target_dir, yes, download, ids):
+def cli_download_ids(state, cores, target_dir, yes, download, head, ids):
     """Download a files from GeoSeeq based on their UUID or GeoSeeq Resource Number (GRN).
 
     This command downloads files directly based on their ID. This is used for "manual"
@@ -228,6 +247,7 @@ def cli_download_ids(state, target_dir, yes, download, ids):
     ---
     """
     result_file_ids = flatten_list_of_els_and_files(ids)
+    cores = max(cores, len(result_file_ids))  # don't use more cores than files
     knex = state.get_knex()
     result_files = []
     for result_id in result_file_ids:
@@ -249,8 +269,18 @@ def cli_download_ids(state, target_dir, yes, download, ids):
     if not yes:
         click.confirm('Do you want to download these files?', abort=True)
 
+    download_args = []
+    pbars = PBarManager()
     for result_file in result_files:
         click.echo(f"Downloading file {result_file.get_referenced_filename()}")
         file_path = join(target_dir, result_file.get_referenced_filename())
         makedirs(dirname(file_path), exist_ok=True)
-        result_file.download(file_path)
+        pbar = pbars.get_new_bar(file_path)
+        download_args.append((result_file, file_path, pbar))
+        if cores == 1:
+            result_file.download(file_path, progress_tracker=pbar, head=head)
+
+    if cores > 1:
+        with Pool(cores) as p:
+            for _ in p.imap_unordered(_download_one_file, download_args):
+                pass
