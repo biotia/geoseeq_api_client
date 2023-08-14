@@ -4,7 +4,7 @@ from os import environ
 from os.path import dirname, join
 from unittest import TestCase, skip
 
-from geoseeq_api import Knex, Organization, RemoteObjectError, SampleGroup
+from geoseeq import Knex, Organization, RemoteObjectError, SampleGroup
 from requests.exceptions import HTTPError
 
 PACKET_DIR = join(dirname(__file__), "built_packet")
@@ -23,7 +23,7 @@ class TestGeoseeqApiClient(TestCase):
     def setUp(self):
         self.knex = Knex(ENDPOINT)
         # Creates a test user and an API token for the user in database. Returns the token.
-        api_token = self.knex.post("/users/test-user", json={"email": f"{random_str()}@gmail.com"})
+        api_token = self.knex.post("/users/test-user", json={"email": f"clitestuser_{random_str()}@gmail.com"})
         self.knex.add_api_token(api_token)
 
     def test_create_org(self):

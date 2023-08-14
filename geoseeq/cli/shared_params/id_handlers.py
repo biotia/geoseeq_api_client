@@ -11,6 +11,7 @@ from geoseeq.knex import GeoseeqNotFoundError
 from os.path import isfile
 from .id_utils import *
 from .obj_getters import (
+    _get_org,
     _get_org_and_proj,
     _get_org_proj_and_sample,
     _get_org_proj_sample_and_folder,
@@ -59,6 +60,24 @@ def el_is_project_id(knex, el):
         return None
     
 
+def handle_org_id(knex, org_id, yes=False, create=True):
+    """Return an organization object.
+    
+    Organization ID must be one of the following types:
+    - a UUID
+    - an organization name
+    - a GeoSeeq Resource Number (GRN)
+
+    If the organization name is provided, the organization will be created if it does not exist
+    """
+    if is_grn_or_uuid(org_id):
+        org_id = org_id.split(':')[-1]  # this gives a UUID either way
+        org = org_from_uuid(knex, org_id)
+        return org
+    org = _get_org(knex, org_id, yes=yes, create=create)
+    return org
+    
+
 def handle_project_id(knex, project_id, yes=False, private=True, create=True):
     """Return a project object
     
@@ -75,8 +94,8 @@ def handle_project_id(knex, project_id, yes=False, private=True, create=True):
         org_name, project_name = project_id.split('/')
         _, project = _get_org_and_proj(knex, org_name, project_name, yes=yes, private=private, create=create)
         return project
-    elif len(project_id) == 1:
-        proj_uuid = project_id[0].split(':')[-1]  # this gives a UUID either way
+    elif is_grn_or_uuid(project_id):
+        proj_uuid = project_id.split(':')[-1]  # this gives a UUID either way
         project = project_from_uuid(knex, proj_uuid)
         return project
     raise ValueError('project_id must be a UUID, an organization name and project name, or a GRN')
@@ -114,10 +133,11 @@ def handle_multiple_sample_ids(knex, sample_ids, proj=None):
     
     `sample_ids` may have three different structures:
      - the sole element may be a project ID of any type, samples will be fetched from that project
-     - the first element may be a project ID of any type, followed by a list of sample ids of any type or sample names
+     - the first element may be a project ID of any type, followed by a list of sample ids of any type or project
      - No project ID is provided, and each element is a sample id of any type
 
-    Any sample may in fact be a file containing sample IDs, in which case the file will be read line by line and
+    Any sample may in fact be a file containing sample IDs, in which case the file will be read line by line
+    and each element will be a sample ID
 
     If `one_project` is True, all samples must be from the same project
     """

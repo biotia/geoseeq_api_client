@@ -10,16 +10,9 @@ class Project(RemoteObject):
     remote_fields = [
         "uuid",
         "created_at",
-        "updated_at",
         "name",
-        "is_library",
-        "is_public",
         "privacy_level",
-        "metadata",
-        "long_description",
         "description",
-        "bucket",
-        "storage_provider_name",
     ]
     optional_remote_fields = [
         "privacy_level",
@@ -86,7 +79,9 @@ class Project(RemoteObject):
             sample_uuids.append(sample_uuid)
         if sample_uuids:
             url = f"sample_groups/{self.uuid}/samples"
-            self.knex.post(url, json={"sample_uuids": sample_uuids})
+            chunk_size = 100
+            for i in range(0, len(sample_uuids), chunk_size):
+                self.knex.post(url, json={"sample_uuids": sample_uuids[i : i + chunk_size]})
         self._sample_cache = []
 
     def _delete_sample_list(self):

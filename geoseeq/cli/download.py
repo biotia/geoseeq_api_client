@@ -12,7 +12,8 @@ from .shared_params import (
     sample_ids_arg,
     handle_multiple_sample_ids,
     use_common_state,
-    flatten_list_of_els_and_files
+    flatten_list_of_els_and_files,
+    yes_option,
 )
 from geoseeq.result.file_download import download_url
 from geoseeq.utils import download_ftp
@@ -95,7 +96,7 @@ cores_option = click.option('--cores', default=1, help='Number of downloads to r
 @use_common_state
 @cores_option
 @click.option("--target-dir", default=".")
-@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
+@yes_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @click.option("--folder-type", type=click.Choice(['all', 'sample', 'project'], case_sensitive=False), default="all", help='Download files from sample folders, project folders, or both')
 @click.option("--folder-name", multiple=True, help='Filter folders for names that include this string. Case insensitive.')
@@ -217,7 +218,7 @@ def cli_download_files(
 @use_common_state
 @cores_option
 @click.option("--target-dir", default=".")
-@click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')
+@yes_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @click.option('--head', default=None, type=int, help='Download the first N bytes of each file')
 @click.argument("ids", nargs=-1)

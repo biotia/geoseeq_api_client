@@ -30,3 +30,4 @@ from .work_orders import (
     WorkOrder,
     WorkOrderProto,
 )
+from .app import App

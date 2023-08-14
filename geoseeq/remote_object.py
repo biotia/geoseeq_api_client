@@ -44,6 +44,10 @@ class RemoteObject:
             parent = getattr(self, self.parent_field)
             opts.update(parent.inherited_url_options)
         return opts
+    
+    def get_remote_fields(self):
+        for key in self.remote_fields:
+            yield key, getattr(self, key), key in self.optional_remote_fields
 
     def invalidate_cache(self):
         self.cache.clear_blob(self)
