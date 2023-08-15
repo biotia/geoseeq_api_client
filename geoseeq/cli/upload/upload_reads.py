@@ -8,7 +8,6 @@ from multiprocessing import Pool, current_process
 from geoseeq.cli.constants import *
 from geoseeq.cli.shared_params import (
     handle_project_id,
-    flatten_list_of_els_and_files,
     private_option,
     link_option,
     module_option,
@@ -115,6 +114,31 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, cores,
             for _ in p.imap_unordered(_upload_one_file, upload_args):
                 pass
 
+
+def _is_fastq(path, fq_exts=['.fastq', '.fq'], compression_exts=['.gz', '.bz2', '']):
+    for fq_ext in fq_exts:
+        for compression_ext in compression_exts:
+            if path.endswith(fq_ext + compression_ext):
+                return True
+    return False
+
+
+def flatten_list_of_fastqs(filepaths):
+    """Turn a list of fastq filepaths and txt files containing fastq filepaths into a single list of fastq filepaths."""
+    flattened = []
+    for path in filepaths:
+        if _is_fastq(path):
+            flattened.append(path)
+        else:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        flattened.append(line)
+    return flattened
+
+
+
 @click.command('reads')
 @use_common_state
 @click.option('--cores', default=1, help='Number of uploads to run in parallel')
@@ -125,7 +149,7 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, cores,
 @link_option
 @module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
-@click.argument('fastq_files', type=click.File('r'), nargs=-1)
+@click.argument('fastq_files', type=click.Path(exists=True), nargs=-1)
 def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, module_name, project_id, fastq_files):
     """Upload fastq read files to GeoSeeq.
 
@@ -176,7 +200,7 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, yes, private)
-    filepaths = {basename(line): line for line in flatten_list_of_els_and_files(fastq_files)}
+    filepaths = {basename(line): line for line in flatten_list_of_fastqs(fastq_files)}
     click.echo(f'Found {len(filepaths)} files to upload.', err=True)
     regex = _get_regex(knex, filepaths, module_name, proj, regex)
     groups = _group_files(knex, filepaths, module_name, regex, yes)
