@@ -1,0 +1,24 @@
+name: Run unit Tests
+
+on:
+  workflow_dispatch:
+  
+jobs:
+  run_unit_tests:
+
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: geoseeq_api_client
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' 
+          
+      - name: Configure environment
+        run: |
+          cd $GITHUB_WORKSPACE/geoseeq_api_client/
+          export GEOSEEQ_API_TESTING_ENDPOINT=geoseeq.dev.biotia.io
+          python setup.py install
+          python -m unittest
