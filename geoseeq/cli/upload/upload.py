@@ -11,7 +11,7 @@ from multiprocessing import Pool, current_process
 from geoseeq import Organization
 from geoseeq.cli.constants import *
 from geoseeq.cli.fastq_utils import group_paired_end_paths, upload_fastq_pair, upload_single_fastq
-
+from geoseeq.cli.progress_bar import PBarManager
 from geoseeq.cli.shared_params import (
     use_common_state,
     yes_option,
@@ -29,6 +29,7 @@ logger = logging.getLogger('geoseeq_api')
 
 @click.command('files')
 @use_common_state
+@click.option('--cores', default=1, help='Number of uploads to run in parallel')
 @yes_option
 @private_option
 @link_option
@@ -36,7 +37,7 @@ logger = logging.getLogger('geoseeq_api')
               help='Specify a different name for the file on GeoSeeq than the local file name')
 @folder_id_arg
 @click.argument('file_paths', type=click.Path(exists=True), nargs=-1)
-def cli_upload_file(state, yes, private, link_type, geoseeq_file_name, folder_id, file_paths):
+def cli_upload_file(state, cores, yes, private, link_type, geoseeq_file_name, folder_id, file_paths):
     """Upload files to GeoSeeq.
 
     This command uploads files to either a sample or project on GeoSeeq. It can be used to upload
@@ -86,10 +87,12 @@ def cli_upload_file(state, yes, private, link_type, geoseeq_file_name, folder_id
         name_pairs = zip(geoseeq_file_name, file_paths)
     else:
         name_pairs = zip([basename(fp) for fp in file_paths], file_paths)
+    
+    pbars = PBarManager()
     for geoseeq_file_name, file_path in name_pairs:
         field = result_folder.result_file(geoseeq_file_name).idem()
         if link_type == 'upload':
-            field.upload_file(file_path)
+            field.upload_file(file_path, progress_tracker=pbars.get_new_bar(file_path))
         else:
             field.link_file(link_type, file_path)
 

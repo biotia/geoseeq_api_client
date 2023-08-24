@@ -96,8 +96,8 @@ class Sample(RemoteObject):
         
         This is an alias for result_folder."""
         return self.result_folder(*args, **kwargs)
-
-    def get_analysis_results(self, cache=True):
+    
+    def get_result_folders(self, cache=True):
         """Yield sample analysis results fetched from the server."""
         self.get()
         if cache and self._get_result_cache:
@@ -120,6 +120,13 @@ class Sample(RemoteObject):
         if cache:
             for ar in self._get_result_cache:
                 yield ar
+
+    def get_analysis_results(self, cache=True):
+        """Yield sample analysis results fetched from the server.
+        
+        This is an alias for get_result_folders.
+        """
+        return self.get_result_folders(cache=cache)
 
     def get_manifest(self):
         """Return a manifest for this sample."""

@@ -2,7 +2,7 @@
 import urllib.request
 import logging
 import requests
-from os.path import basename, getsize, join
+from os.path import basename, getsize, join, isfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -17,6 +17,7 @@ def _download_head(url, filename, head=None, progress_tracker=None):
     if head and head > 0:
         headers = {"Range": f"bytes=0-{head}"}
     response = requests.get(url, stream=True, headers=headers)
+    response.raise_for_status()
     total_size_in_bytes = int(response.headers.get('content-length', 0))
     if progress_tracker: progress_tracker.set_num_chunks(total_size_in_bytes)
     block_size = FIVE_MB
@@ -82,21 +83,40 @@ class ResultFileDownload:
         else:
             return self.stored_data[key]
 
-    def download(self, filename=None, cache=True, head=None, progress_tracker=None):
-        """Return a local filepath to the file this result points to."""
-        if not filename:
+    def download(self, filename=None, flag_suffix='.gs_downloaded', cache=True, head=None, progress_tracker=None):
+        """Return a local filepath to the file in this result. Download the file if necessary.
+        
+        When the file is downloaded, it is cached in the result object. Subsequent calls to download
+        on this object will return the cached file unless cache=False is specified.
+
+        A flag file is created when the file download is complete. Subsequent calls to download
+        will return the cached file if the flag file exists unless cache=False is specified.
+        """
+        if not filename and not not self._cached_filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
             myfile.close()
             filename = myfile.name
+        elif not filename and self._cached_filename:
+            filename = self._cached_filename
+
         blob_type = self.stored_data.get("__type__", "").lower()
         if cache and self._cached_filename:
             return self._cached_filename
+        flag_filename = filename + flag_suffix
+        if cache and flag_suffix:
+            # check if file and flag file exist, if so, return filename
+            if isfile(filename) and isfile(flag_filename):
+                return filename
+
         url = self.get_download_url()
         filepath = download_url(
             url, blob_type, filename,
             head=head, progress_tracker=progress_tracker
         )
+        if cache and flag_suffix:
+            # create flag file
+            open(flag_filename, 'a').close()
         if cache:
             self._cached_filename = filepath
         return filepath

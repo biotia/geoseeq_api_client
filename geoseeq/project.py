@@ -3,6 +3,7 @@ from .remote_object import RemoteObject
 from .sample import Sample
 from .utils import paginated_iterator
 import json
+import pandas as pd
 
 
 
@@ -231,7 +232,7 @@ class Project(RemoteObject):
         """Return a pandas dataframe with sample metadata."""
         url = f"sample_groups/{self.uuid}/metadata"
         blob = self.knex.get(url)
-        return pd.DataFrame.from_dict(blob["metadata"], orient="index")
+        return pd.DataFrame.from_dict(blob, orient="index")
 
     def __str__(self):
         return f"<Geoseeq::Project {self.name} {self.uuid} />"

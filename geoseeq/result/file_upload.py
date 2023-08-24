@@ -1,5 +1,6 @@
 
 import time
+import json
 from os.path import basename, getsize
 from pathlib import Path
 
@@ -156,3 +157,10 @@ class ResultFileUpload:
         resolved_path = Path(filepath).resolve()
         file_size = getsize(resolved_path)
         return self.multipart_upload_file(filepath, file_size, **kwargs)
+    
+    def upload_json(self, data, **kwargs):
+        """Upload a file with the given data as JSON."""
+        with NamedTemporaryFile("w", suffix='.json') as f:
+            json.dump(data, f)
+            f.flush()
+            return self.upload_file(f.name, **kwargs)

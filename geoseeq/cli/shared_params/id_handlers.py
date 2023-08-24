@@ -117,8 +117,8 @@ def handle_folder_id(knex, folder_id, yes=False, private=True, create=True):
         else:
             raise ValueError(f'Invalid folder ID: {folder_id}')
         return folder
-    elif len(folder_id) == 1:
-        folder_uuid = folder_id[0].split(':')[-1]  # this gives a UUID either way
+    elif is_grn_or_uuid(folder_id):
+        folder_uuid = folder_id.split(':')[-1]  # this gives a UUID either way
         # we guess that this is a sample folder, TODO: use GRN if available
         try:
             folder = sample_result_folder_from_uuid(knex, folder_uuid)

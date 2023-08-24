@@ -28,6 +28,10 @@ class ResultFolder(RemoteObject):
         "is_private",
     ]
 
+    @property
+    def name(self):
+        return self.module_name
+
     def _get(self, allow_overwrite=False):
         """Fetch the result from the server."""
         self.parent.idem()

@@ -179,10 +179,10 @@ class Knex:
         )
         return self._handle_response(response, **kwargs)
 
-    def delete(self, url, url_options={}, **kwargs):
+    def delete(self, url, json={}, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth)
         logger.debug(f"Sending DELETE request. {d}")
-        response = self.sess.delete(f"{self.endpoint_url}/{url}")
+        response = self.sess.delete(f"{self.endpoint_url}/{url}", json=json)
         logger.debug(f"DELETE request response:\n{response}")
         return self._handle_response(response, json_response=False, **kwargs)

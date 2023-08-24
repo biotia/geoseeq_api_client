@@ -11,7 +11,9 @@ class TQBar:
 
     def set_num_chunks(self, n_chunks):
         self.n_bars = n_chunks
-        self.bar = tqdm(total=n_chunks, position=self.pos, desc=self.desc, leave=False)
+        self.bar = tqdm(total=n_chunks,
+                        position=self.pos, desc=self.desc, leave=False, unit="B",
+                        unit_scale=True, unit_divisor=1024)
 
     def update(self, chunk_num):
         self.bar.update(chunk_num)

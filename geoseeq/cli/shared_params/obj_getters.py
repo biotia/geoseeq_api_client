@@ -53,7 +53,7 @@ def _get_org_proj_sample_and_folder(knex, org_name, project_name, sample_name, f
             raise
         if not yes:
             click.confirm(f'Folder "{folder_name}" does not exist. Create it?', abort=True)
-        folder = sample.folder(folder_name).create()
+        folder = sample.result_folder(folder_name).create()
     return org, proj, sample, folder
 
 
@@ -66,5 +66,5 @@ def _get_org_proj_and_folder(knex, org_name, project_name, folder_name, yes, pri
             raise
         if not yes:
             click.confirm(f'Folder "{folder_name}" does not exist. Create it?', abort=True)
-        folder = proj.folder(folder_name).create()
+        folder = proj.result_folder(folder_name).create()
     return org, proj, folder
