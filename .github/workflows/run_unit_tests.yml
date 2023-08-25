@@ -27,4 +27,5 @@ jobs:
           
       - name: Run Unit Tests
         run: |
+          cd $GITHUB_WORKSPACE/geoseeq_api_client/
           python -m unittest
