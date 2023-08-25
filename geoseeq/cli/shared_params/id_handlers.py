@@ -9,7 +9,7 @@ from geoseeq.blob_constructors import (
 )
 from geoseeq.knex import GeoseeqNotFoundError
 from os.path import isfile
-from .id_utils import *
+from geoseeq.id_constructors.utils import is_grn, is_uuid, is_grn_or_uuid
 from .obj_getters import (
     _get_org,
     _get_org_and_proj,

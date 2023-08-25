@@ -1,7 +1,7 @@
 import click
 
 from geoseeq import Organization, App
-from geoseeq.utils import paginated_iterator
+from geoseeq.id_constructors import resolve_id
 from .shared_params import (
     use_common_state,
     project_id_arg,
@@ -211,3 +211,35 @@ def cli_view_sample(state, project_id, sample_ids):
         for field_name, field_value, optional in sample.get_remote_fields():
             optional = "Optional" if optional else "Required"
             print(f'\t{field_name} :: "{field_value}" ({optional})')
+
+
+@cli_view.command('object')
+@use_common_state
+@click.argument('ids', nargs=-1)
+def cli_view_object(state, ids):
+    """Print the specified object as well as its type.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Print the object with name "My Org/My Project/My Sample/My Result Folder"
+    $ geoseeq view object "My Org/My Project/My Sample/My Result Folder"
+
+    \b
+    # Print the object with GRN "grn:geoseeq:sample::d051ce05-f799-4aa7-8d8f-5cbf99136543"
+    $ geoseeq view object "grn:geoseeq:sample::d051ce05-f799-4aa7-8d8f-5cbf99136543"
+
+    ---
+
+    Command Arguments:
+
+    [ID] is the name or GRN of the object to print. UUIDs cannot be resolved without a type.
+
+    ---
+    """
+    knex = state.get_knex()
+    for id in ids:
+        obj_type, obj = resolve_id(knex, id)
+        print(f'{obj_type}:\t{obj}', file=state.outfile)

@@ -2,7 +2,6 @@ import logging
 import click
 from os.path import isfile
 from geoseeq.cli.utils import use_common_state
-from geoseeq.blob_constructors import resolve_brn
 from .vc_dir import VCDir
 from .clone import (
     clone_project,
