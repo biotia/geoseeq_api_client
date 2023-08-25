@@ -51,7 +51,7 @@ class SelectablePlot:
         self._add_keys(*keys)
         subdata = self.data
         for key in keys:
-            if keys == keys[-1]:
+            if key == keys[-1]:
                 subdata[key] = plot
             subdata = subdata[key]
         return self
@@ -60,15 +60,16 @@ class SelectablePlot:
         """Ensure we have plots for each key combo."""
         assert self.selectors
         
-        def check_subdata(i, subdata):
+        def check_subdata(i, subdata, key_chain):
             if i == len(self.selectors):
-                assert subdata  # subdata exists and is not empty
+                assert subdata, f"subdata does not exist or is empty. Key Chain: {key_chain}"
+                return
             for key in self.selectors[i]:
                 if key not in subdata:
-                    assert False
-                check_subdata(i + 1, subdata[key])
+                    assert False, f'key: "{key}" is missing in `data`'
+                check_subdata(i + 1, subdata[key], key_chain + [key])
         
-        check_subdata(0, self.data)
+        check_subdata(0, self.data, [])
 
     def to_dict(self):
         """Return the selectable plot as a dictionary."""

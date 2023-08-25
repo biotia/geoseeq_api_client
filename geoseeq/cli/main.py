@@ -30,7 +30,7 @@ main.add_command(cli_view)
 @main.command()
 def version():
     """Print the version of the Geoseeq API being used."""
-    click.echo('0.2.16')  # remember to update setup
+    click.echo('0.2.17')  # remember to update setup
 
 
 @main.group('advanced')
