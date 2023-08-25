@@ -15,17 +15,15 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10' 
-          
-      - name: Configure environment
-        run: |
-          export GEOSEEQ_API_TESTING_ENDPOINT=https://geoseeq.dev.biotia.io
 
       - name: Install client
         run: |
+          export GEOSEEQ_API_TESTING_ENDPOINT=https://geoseeq.dev.biotia.io
           cd $GITHUB_WORKSPACE/geoseeq_api_client/
           python setup.py install
           
       - name: Run Unit Tests
         run: |
+          export GEOSEEQ_API_TESTING_ENDPOINT=https://geoseeq.dev.biotia.io
           cd $GITHUB_WORKSPACE/geoseeq_api_client/
           python -m unittest
