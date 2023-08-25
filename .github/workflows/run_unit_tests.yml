@@ -18,7 +18,13 @@ jobs:
           
       - name: Configure environment
         run: |
-          cd $GITHUB_WORKSPACE/geoseeq_api_client/
           export GEOSEEQ_API_TESTING_ENDPOINT=https://geoseeq.dev.biotia.io
+
+      - name: Install client
+        run: |
+          cd $GITHUB_WORKSPACE/geoseeq_api_client/
           python setup.py install
+          
+      - name: Run Unit Tests
+        run: |
           python -m unittest
