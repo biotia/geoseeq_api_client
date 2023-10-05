@@ -75,7 +75,7 @@ def cli_download_metadata(state, sample_ids):
 
     ---
     """
-    samples = handle_multiple_sample_ids(state.knex, sample_ids)
+    samples = handle_multiple_sample_ids(state.get_knex(), sample_ids)
     click.echo(f"Found {len(samples)} samples.", err=True)
     metadata = {}
     for sample in samples:
