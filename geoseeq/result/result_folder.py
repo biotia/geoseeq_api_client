@@ -13,9 +13,10 @@ from geoseeq.constants import FIVE_MB
 from geoseeq.remote_object import RemoteObject, RemoteObjectError
 from geoseeq.utils import download_ftp, md5_checksum
 
-from .utils import *
 from .bioinfo import SampleBioInfoFolder
-from .result_file import SampleResultFile, ProjectResultFile
+from .result_file import ProjectResultFile, SampleResultFile
+from .utils import *
+
 
 class ResultFolder(RemoteObject):
     remote_fields = [
@@ -120,7 +121,7 @@ class SampleResultFolder(ResultFolder, SampleBioInfoFolder):
             "sample_ar": self,
         }
         logger.debug(f"Creating SampleAnalysisResultField for SampleAnalysisResult. {d}")
-        return SampleResultFile(self.knex, self, field_name, pipeline_run=None, data=data)
+        return SampleResultFile(self.knex, self, field_name, pipeline_run=pipeline_run, data=data)
 
     def field(self, *args, **kwargs):
         return self.result_file(*args, **kwargs)
@@ -194,8 +195,8 @@ class ProjectResultFolder(ResultFolder):
         blob = self.knex.post(f"sample_group_ars?format=json", json=data)
         self.load_blob(blob)
 
-    def result_file(self, field_name, data={}):
-        return ProjectResultFile(self.knex, self, field_name, data=data)
+    def result_file(self, field_name, pipeline_run=None, data={}):
+        return ProjectResultFile(self.knex, self, field_name, pipeline_run=pipeline_run, data=data)
 
     def field(self, *args, **kwargs):
         return self.result_file(*args, **kwargs)
