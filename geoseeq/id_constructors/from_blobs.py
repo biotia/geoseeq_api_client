@@ -1,13 +1,14 @@
-from geoseeq.result import (
-    SampleResultFolder,
-    SampleResultFile,
-    ProjectResultFolder,
-    ProjectResultFile,
-)
-from geoseeq.organization import Organization
-from geoseeq.sample import Sample
-from geoseeq.project import Project 
 from geoseeq import GeoseeqNotFoundError
+from geoseeq.organization import Organization
+from geoseeq.pipeline import PipelineRun
+from geoseeq.project import Project
+from geoseeq.result import (
+    ProjectResultFile,
+    ProjectResultFolder,
+    SampleResultFile,
+    SampleResultFolder,
+)
+from geoseeq.sample import Sample
 
 
 def org_from_blob(knex, blob, already_fetched=True, modified=False):
@@ -29,6 +30,7 @@ def project_from_blob(knex, blob, already_fetched=True, modified=False):
     grp._already_fetched = already_fetched
     grp._modified = modified
     return grp
+
 
 sample_group_from_blob = project_from_blob  # Alias
 
@@ -58,6 +60,7 @@ def project_result_folder_from_blob(knex, blob, already_fetched=True, modified=F
     ar._modified = modified
     return ar
 
+
 sample_group_ar_from_blob = project_result_folder_from_blob  # Alias
 
 
@@ -74,6 +77,7 @@ def sample_result_folder_from_blob(knex, blob, already_fetched=True, modified=Fa
     ar._modified = modified
     return ar
 
+
 sample_ar_from_blob = sample_result_folder_from_blob  # Alias
 
 
@@ -82,13 +86,12 @@ def sample_result_file_from_blob(knex, blob, already_fetched=True, modified=Fals
     ar = sample_result_folder_from_blob(
         knex, blob["analysis_result_obj"], already_fetched=already_fetched, modified=modified
     )
-    arf = SampleResultFile(
-        knex, ar, blob["name"], data=blob["stored_data"]
-    )
+    arf = SampleResultFile(knex, ar, blob["name"], data=blob["stored_data"])
     arf.load_blob(blob)
     ar._already_fetched = already_fetched
     ar._modified = modified
     return arf
+
 
 sample_ar_field_from_blob = sample_result_file_from_blob  # Alias
 
@@ -98,12 +101,26 @@ def project_result_file_from_blob(knex, blob, already_fetched=True, modified=Fal
     ar = project_result_folder_from_blob(
         knex, blob["analysis_result_obj"], already_fetched=already_fetched, modified=modified
     )
-    arf = ProjectResultFile(
-        knex, ar, blob["name"], data=blob["stored_data"]
-    )
+    arf = ProjectResultFile(knex, ar, blob["name"], data=blob["stored_data"])
     arf.load_blob(blob)
     ar._already_fetched = already_fetched
     ar._modified = modified
     return arf
 
+
 sample_group_ar_field_from_blob = project_result_file_from_blob  # Alias
+
+
+def pipeline_run_from_blob(knex, blob, already_fetched=True, modified=False):
+    """Return a Pipeline run object from a blob."""
+    pipeline_run = PipelineRun(
+        knex,
+        blob["sample_group"],
+        blob["pipeline"],
+        pipeline_version=blob["pipeline_version"],
+    )
+    pipeline_run.load_blob(blob)
+
+    pipeline_run._already_fetched = already_fetched
+    pipeline_run._modified = modified
+    return pipeline_run
