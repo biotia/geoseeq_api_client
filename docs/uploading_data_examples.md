@@ -32,7 +32,7 @@ You can upload these files to GeoSeeq using the command line. This example will 
 # navigate to the directory where the fastq files are stored
 $ ls -1 *.fastq.gz > fastq_files.txt  # check that files are present
 
-$ geoseeq upload reads --cores 32 "Example GeoSeeq Org" "Example CLI Project" fastq_files.txt
+$ geoseeq upload reads --cores 32 "Example GeoSeeq Org/Example CLI Project" fastq_files.txt
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
 sample_name: Sample1
