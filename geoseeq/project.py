@@ -196,7 +196,13 @@ class Project(RemoteObject):
             yield sample_blob['uuid']
 
     def get_analysis_results(self, cache=True):
-        """Yield group analysis results fetched from the server."""
+        """Yield ProjectResultFolder objects for this project fetched from the server.
+        
+        Alias for get_result_folders."""
+        return self.get_result_folders(cache=cache)
+
+    def get_result_folders(self, cache=True):
+        """Yield ProjectResultFolder objects for this project fetched from the server."""
         if cache and self._get_result_cache:
             for ar in self._get_result_cache:
                 yield ar

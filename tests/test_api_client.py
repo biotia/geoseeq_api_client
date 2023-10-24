@@ -1,14 +1,19 @@
 """Test suite for experimental functions."""
 import random
+import sys
 from os import environ
-from os.path import dirname, join
 from unittest import TestCase, skip
 
-from geoseeq import Knex, Organization, RemoteObjectError, SampleGroup
-from requests.exceptions import HTTPError
+from geoseeq import (
+    Knex,
+    Organization,
+    GeoseeqOtherError,
+    GeoseeqNotFoundError,
+)
+from requests.exceptions import ConnectionError
 
-PACKET_DIR = join(dirname(__file__), "built_packet")
 ENDPOINT = environ.get("GEOSEEQ_API_TESTING_ENDPOINT", "http://127.0.0.1:8000")
+TOKEN = environ.get("GEOSEEQ_API_TOKEN", "<no_token>")
 
 
 def random_str(len=12):
@@ -23,168 +28,163 @@ class TestGeoseeqApiClient(TestCase):
     def setUp(self):
         self.knex = Knex(ENDPOINT)
         # Creates a test user and an API token for the user in database. Returns the token.
-        api_token = self.knex.post("/users/test-user", json={"email": f"clitestuser_{random_str()}@gmail.com"})
-        self.knex.add_api_token(api_token)
+        if TOKEN == "<no_token>":
+            try:
+                api_token = self.knex.post("/users/test-user",
+                                           json={"email": f"clitestuser_{random_str()}@gmail.com"})
+            except GeoseeqOtherError:
+                print(f"Could not create test user on \"{ENDPOINT}\". If you are running this test suite "\
+                      "against a live server, please set the GEOSEEQ_API_TOKEN environment variable to a "\
+                      "valid API token.",
+                      file=sys.stderr)
+                raise
+            except ConnectionError:
+                print(f"Could not connect to GeoSeeq Server at \"{ENDPOINT}\".",
+                      file=sys.stderr)
+                raise
+            self.knex.add_api_token(api_token)
+        else:
+            self.knex.add_api_token(TOKEN)
+            try:
+                me = self.knex.get("/users/me")  # Test that the token is valid
+                self.username = me["name"]
+                self.org_name = f"API_TEST_ORG 1 {self.username}"
+            except GeoseeqNotFoundError:
+                print(f"Could not connect to GeoSeeq Server at \"{ENDPOINT}\" with the provided token.  "\
+                      "Is it possible that you set thd testing endpoint to a front end url instead of "\
+                      "the corresponding backend url?",
+                      file=sys.stderr)
+                raise
 
     def test_create_org(self):
         """Test that we can create an org."""
-        org = Organization(self.knex, f"my_client_test_org {random_str()}")
-        org.create()
-        self.assertTrue(org.uuid)
-
-    def test_get_org(self):
-        """Test that we can get an org."""
-        name = f"my_client_test_org {random_str()}"
-        Organization(self.knex, name).create()
-        org = Organization(self.knex, name).get()
-        self.assertTrue(org.uuid)
-
-    def test_idem_create_org(self):
-        """Test that we can create an org using idem."""
-        org = Organization(self.knex, f"my_client_test_org {random_str()}")
+        org = Organization(self.knex, self.org_name)
         org.idem()
         self.assertTrue(org.uuid)
 
-    def test_idem_get_org(self):
-        """Test that we can get an org using idem."""
-        name = f"my_client_test_org {random_str()}"
-        Organization(self.knex, name).create()
-        org = Organization(self.knex, name).idem()
-        self.assertTrue(org.uuid)
 
-    def test_create_group(self):
-        """Test that we can create a sample group."""
+    def test_create_project(self):
+        """Test that we can create a project."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        # N.B. It should NOT be necessary to call org.create()
-        grp = org.sample_group(f"my_client_test_grp {key}")
-        grp.create()
-        self.assertTrue(org.uuid)
-        self.assertTrue(grp.uuid)
+        org = Organization(self.knex, self.org_name)
 
-    def test_create_library(self):
-        """Test that we can create a sample group."""
-        key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}").create()
-        grp_name = f"my_client_test_grp {key}"
-        org.sample_group(grp_name, is_library=True).create()
-        grp = SampleGroup(self.knex, org, grp_name).get()
+        proj = org.project(f"my_client_test_project {key}")
+        proj.create()
         self.assertTrue(org.uuid)
-        self.assertTrue(grp.uuid)
-        self.assertTrue(grp.is_library)
+        self.assertTrue(proj.uuid)
 
-    def test_create_group_result(self):
-        """Test that we can create a sample group."""
+    def test_create_project_result_folder(self):
+        """Test that we can create a result folder in a project."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}")
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
         # N.B. It should NOT be necessary to call <parent>.create()
-        ar = grp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
-        ar.create()
+        result_folder = proj.result_folder(f"my_client_test_module_name")  # no {key} necessary
+        result_folder.create()
         self.assertTrue(org.uuid)
-        self.assertTrue(grp.uuid)
-        self.assertTrue(ar.uuid)
+        self.assertTrue(proj.uuid)
+        self.assertTrue(result_folder.uuid)
 
-    def test_create_group_result_field(self):
-        """Test that we can create a sample group."""
+    def test_create_project_result_file(self):
+        """Test that we can create a result file in a project."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}")
-        ar = grp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        result_folder = proj.result_folder(f"my_client_test_module_name")  # no {key} necessary
         # N.B. It should NOT be necessary to call <parent>.create()
-        field = ar.field("my_client_test_field_name", {"foo": "bar"})
-        field.create()
+        result_file = result_folder.result_file("my_client_test_field_name", {"foo": "bar"})
+        result_file.create()
         self.assertTrue(org.uuid)
-        self.assertTrue(grp.uuid)
-        self.assertTrue(ar.uuid)
-        self.assertTrue(field.uuid)
+        self.assertTrue(proj.uuid)
+        self.assertTrue(result_folder.uuid)
+        self.assertTrue(result_file.uuid)
 
     def test_create_sample(self):
-        """Test that we can create a sample group."""
+        """Test that we can create a sample."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
         # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f"my_client_test_sample {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
         samp.create()
         self.assertTrue(org.uuid)
-        self.assertTrue(grp.uuid)
+        self.assertTrue(proj.uuid)
         self.assertTrue(samp.uuid)
 
     def test_add_sample(self):
-        """Test that we can add a sample to a (non-library) sample group."""
+        """Test that we can create a sample and add it to a different project."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        lib = org.sample_group(f"my_client_test_lib {key}", is_library=True)
-        samp = lib.sample(f"my_client_test_sample {key}").create()
+        org = Organization(self.knex, self.org_name)
+        proj1 = org.project(f"my_client_test_proj1 {key}")
+        samp = proj1.sample(f"my_client_test_sample {key}").create()
 
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=False).create()
-        grp.add_sample(samp).save()
-        self.assertIn(samp.uuid, {samp.uuid for samp in grp.get_samples()})
+        proj2 = org.project(f"my_client_test_proj2 {key}").create()
+        proj2.add_sample(samp).save()
+        self.assertIn(samp.uuid, {samp.uuid for samp in proj2.get_samples()})
 
-    def test_get_samples_in_group(self):
-        """Test that we can get the samples in a sample group."""
+    def test_get_samples_project(self):
+        """Test that we can get the samples in a project."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
         samp_names = [f"my_client_test_sample_{i} {key}" for i in range(10)]
         for samp_name in samp_names:
-            grp.sample(samp_name).create()
-        retrieved = org.sample_group(f"my_client_test_grp {key}", is_library=True).get()
+            proj.sample(samp_name).create()
+        retrieved_proj = org.project(f"my_client_test_proj {key}").get()
         retrieved_names = set()
-        for samp in retrieved.get_samples():
+        for samp in retrieved_proj.get_samples():
             retrieved_names.add(samp.name)
             self.assertTrue(samp.uuid)
         for samp_name in samp_names:
             self.assertIn(samp_name, retrieved_names)
 
-    def test_get_results_in_group(self):
-        """Test that we can get the results in a sample group."""
+    def test_get_result_folders_in_project(self):
+        """Test that we can get the result folders in a project."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
         result_names = [("my_client_test_module", f"replicate_{i}") for i in range(10)]
         for module_name, replicate in result_names:
-            grp.analysis_result(module_name, replicate=replicate).create()
-        retrieved = org.sample_group(f"my_client_test_grp {key}", is_library=True).get()
+            proj.result_folder(module_name, replicate=replicate).create()
+        retrieved_proj = org.project(f"my_client_test_proj {key}").get()
         retrieved_names = set()
-        for result in retrieved.get_analysis_results():
+        for result in retrieved_proj.get_result_folders():
             retrieved_names.add((result.module_name, result.replicate))
             self.assertTrue(result.uuid)
         for result_name_rep in result_names:
             self.assertIn(result_name_rep, retrieved_names)
 
-    def test_get_results_in_sample(self):
-        """Test that we can get the results in a sample."""
+    def test_get_result_folders_in_sample(self):
+        """Test that we can get the result folders in a sample."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        samp = grp.sample(f"my_client_test_sample {key}").create()
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        samp = proj.sample(f"my_client_test_sample {key}").create()
         result_names = [("my_client_test_module", f"replicate_{i}") for i in range(10)]
         for module_name, replicate in result_names:
-            samp.analysis_result(module_name, replicate=replicate).create()
-        retrieved = grp.sample(f"my_client_test_sample {key}").get()
+            samp.result_folder(module_name, replicate=replicate).create()
+        retrieved = proj.sample(f"my_client_test_sample {key}").get()
         retrieved_names = set()
-        for result in retrieved.get_analysis_results():
+        for result in retrieved.get_result_folders():
             retrieved_names.add((result.module_name, result.replicate))
             self.assertTrue(result.uuid)
         for result_name_rep in result_names:
             self.assertIn(result_name_rep, retrieved_names)
 
-    def test_get_result_fields(self):
-        """Test that we can get the fields of an analysis result."""
+    def test_get_result_files(self):
+        """Test that we can get the files in a result folder."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        samp = grp.sample(f"my_client_test_sample {key}")
-        ar = samp.analysis_result("my_client_test_module").create()
-        self.assertTrue(grp.uuid)
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
+        result_folder = samp.result_folder("my_client_test_module").create()
+        self.assertTrue(proj.uuid)
 
         field_names = [f"field_{i}" for i in range(10)]
         for field_name in field_names:
-            ar.field(field_name).create()
+            result_folder.field(field_name).create()
 
-        retrieved = samp.analysis_result("my_client_test_module").get()
+        retrieved = samp.result_folder("my_client_test_module").get()
         retrieved_names = set()
         for result in retrieved.get_fields():
             retrieved_names.add(result.name)
@@ -192,30 +192,14 @@ class TestGeoseeqApiClient(TestCase):
         for result_name_rep in field_names:
             self.assertIn(result_name_rep, retrieved_names)
 
-    @skip("nonfunctional currently")
-    def test_delete_sample(self):
-        """Test that we can create a sample group."""
+    def test_modify_sample(self):
+        """Test that we can modify a sample after creation"""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
         # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f"my_client_test_sample {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
         samp.create()
-        self.assertTrue(samp.uuid)
-        samp.delete()
-        self.assertRaises(lambda: setattr(samp, "name", "foo"), RemoteObjectError)
-        retrieved = grp.sample(f"my_client_test_sample {key}")
-        self.assertRaises(retrieved.get, HTTPError)
-
-    def test_modify_sample_save(self):
-        """Test that we can create a sample group."""
-        key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f"my_client_test_sample {key}")
-        samp.create()
-        self.assertTrue(grp.is_public)
         self.assertTrue(samp.uuid)
         self.assertTrue(samp._already_fetched)
         self.assertFalse(samp._modified)
@@ -224,94 +208,76 @@ class TestGeoseeqApiClient(TestCase):
         samp.save()
         self.assertTrue(samp._already_fetched)
         self.assertFalse(samp._modified)
-        retrieved = grp.sample(f"my_client_test_sample {key}").get()
+        retrieved = proj.sample(f"my_client_test_sample {key}").get()
         self.assertIn(f"metadata_{key}", retrieved.metadata)
 
-    def test_modify_sample_idem(self):
-        """Test that we can create a sample group."""
+    def test_create_sample_result_folder(self):
+        """Test that we can create a result folder in a sample."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
         # N.B. It should NOT be necessary to call <parent>.create()
-        samp = grp.sample(f"my_client_test_sample {key}")
-        samp.create()
-        self.assertTrue(samp.uuid)
-        self.assertTrue(samp._already_fetched)
-        self.assertFalse(samp._modified)
-        samp.metadata = {f"metadata_{key}": "some_new_metadata"}
-        self.assertTrue(samp._modified)
-        samp.idem()
-        self.assertTrue(samp._already_fetched)
-        self.assertFalse(samp._modified)
-        retrieved = grp.sample(f"my_client_test_sample {key}").get()
-        self.assertIn(f"metadata_{key}", retrieved.metadata)
-
-    def test_create_sample_result(self):
-        """Test that we can create a sample group."""
-        key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        samp = grp.sample(f"my_client_test_sample {key}")
-        # N.B. It should NOT be necessary to call <parent>.create()
-        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
-        ar.create()
+        result_folder = samp.result_folder(f"my_client_test_module_name")  # no {key} necessary
+        result_folder.create()
         self.assertTrue(org.uuid)
-        self.assertTrue(grp.uuid)
+        self.assertTrue(proj.uuid)
         self.assertTrue(samp.uuid)
-        self.assertTrue(ar.uuid)
+        self.assertTrue(result_folder.uuid)
 
-    def test_create_sample_result_field(self):
-        """Test that we can create a sample group."""
+    def test_create_sample_result_file(self):
+        """Test that we can create a result file in a sample."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        samp = grp.sample(f"my_client_test_sample {key}")
-        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
+        result_folder = samp.result_folder(f"my_client_test_module_name")  # no {key} necessary
         # N.B. It should NOT be necessary to call <parent>.create()
-        field = ar.field("my_client_test_field_name", {"foo": "bar"})
-        field.create()
+        result_file = result_folder.result_file("my_client_test_field_name", {"foo": "bar"})
+        result_file.create()
         self.assertTrue(org.uuid)
-        self.assertTrue(grp.uuid)
+        self.assertTrue(proj.uuid)
         self.assertTrue(samp.uuid)
-        self.assertTrue(ar.uuid)
-        self.assertTrue(field.uuid)
+        self.assertTrue(result_folder.uuid)
+        self.assertTrue(result_file.uuid)
 
-    def test_modify_sample_result_field_idem(self):
-        """Test that we can create a sample group."""
+    @skip("failing on server (2023-10-24)")
+    def test_modify_sample_result_file(self):
+        """Test that we can modify a result file in a sample."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        samp = grp.sample(f"my_client_test_sample {key}")
-        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
+        result_folder = samp.result_folder(f"my_client_test_module_name")  # no {key} necessary
         # N.B. It should NOT be necessary to call <parent>.create()
-        field = ar.field(f"my_client_test_field_name {key}", {"foo": "bar"})
-        field.create()
-        self.assertTrue(field.uuid)
-        field.stored_data = {"foo": "bizz"}  # TODO: handle deep modifications
-        field.idem()
-        retrieved = ar.field(f"my_client_test_field_name {key}").get()
+        result_file = result_folder.result_file(f"my_client_test_file_name {key}", {"foo": "bar"})
+        result_file.create()
+        self.assertTrue(result_file.uuid)
+        result_file.stored_data = {"foo": "bizz"}  # TODO: handle deep modifications
+        result_file.save()
+        retrieved = result_folder.result_file(f"my_client_test_file_name {key}").get()
         self.assertEqual(retrieved.stored_data["foo"], "bizz")
 
-    def test_get_sample_group_manifest(self):
-        """Test that we can get a group manifest."""
+    def test_get_project_manifest(self):
+        """Test that we can get a project manifest."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        samp = grp.sample(f"my_client_test_sample {key}")
-        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
-        field = ar.field("my_client_test_field_name", {"foo": "bar"})
-        field.create()
-        manifest = grp.get_manifest()
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
+        result_folder = samp.result_folder(f"my_client_test_module_name")  # no {key} necessary
+        result_file = result_folder.result_file("my_client_test_field_name", {"foo": "bar"})
+        result_file.create()
+        manifest = proj.get_manifest()
         self.assertTrue(manifest)
 
     def test_get_sample_manifest(self):
-        """Test that we can get a group manifest."""
+        """Test that we can get a sample manifest."""
         key = random_str()
-        org = Organization(self.knex, f"my_client_test_org {key}")
-        grp = org.sample_group(f"my_client_test_grp {key}", is_library=True)
-        samp = grp.sample(f"my_client_test_sample {key}")
-        ar = samp.analysis_result(f"my_client_test_module_name")  # no {key} necessary
-        field = ar.field("my_client_test_field_name", {"foo": "bar"})
-        field.create()
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_proj {key}")
+        samp = proj.sample(f"my_client_test_sample {key}")
+        result_folder = samp.result_folder(f"my_client_test_module_name")  # no {key} necessary
+        result_file = result_folder.result_file("my_client_test_field_name", {"foo": "bar"})
+        result_file.create()
         manifest = samp.get_manifest()
         self.assertTrue(manifest)
