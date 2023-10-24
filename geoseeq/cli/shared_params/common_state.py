@@ -59,6 +59,7 @@ def endpoint_option(f):
         return value
     return click.option('--endpoint',
                         default=DEFAULT_ENDPOINT,
+                        envvar='GEOSEEQ_API_ENDPOINT',
                         expose_value=False,
                         help='The URL to use for GEOSEEQ.',
                         callback=callback)(f)

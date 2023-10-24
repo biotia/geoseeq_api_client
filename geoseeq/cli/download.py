@@ -17,9 +17,9 @@ from .shared_params import (
 )
 from geoseeq.result.file_download import download_url
 from geoseeq.utils import download_ftp
-from geoseeq.blob_constructors import (
-    sample_result_file_from_uuid,
-    project_result_file_from_uuid,
+from geoseeq.id_constructors import (
+    result_file_from_uuid,
+    result_file_from_name,
 )
 from geoseeq.knex import GeoseeqNotFoundError
 from .progress_bar import PBarManager
@@ -218,11 +218,12 @@ def cli_download_files(
 @use_common_state
 @cores_option
 @click.option("--target-dir", default=".")
+@click.option("-n", "--file-name", multiple=True, help="File name to use for downloaded files. If set you must specify once per ID.")
 @yes_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @click.option('--head', default=None, type=int, help='Download the first N bytes of each file')
 @click.argument("ids", nargs=-1)
-def cli_download_ids(state, cores, target_dir, yes, download, head, ids):
+def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, ids):
     """Download a files from GeoSeeq based on their UUID or GeoSeeq Resource Number (GRN).
 
     This command downloads files directly based on their ID. This is used for "manual"
@@ -233,17 +234,32 @@ def cli_download_ids(state, cores, target_dir, yes, download, head, ids):
 
     Example Usage:
 
+    \b
     # Download a single file
     $ geoseeq download ids 9c60aa67-eb3d-4b02-9c77-94e22361b2f3
 
+    \b
     # Download multiple files
     $ geoseeq download ids 9c60aa67-eb3d-4b02-9c77-94e22361b2f3 9c60aa67-eb3d-4b02-9c77-94e22361b2f3
+
+    \b
+    # Download a file by its name
+    $ geoseeq download ids "My Project/My Sample/My File"
+
+    \b 
+    # Download a file by its name and specify a file name to use for the downloaded file
+    $ geoseeq download ids "My Project/My Sample/My File" -n my_file.fastq.gz
+
+    \b
+    # Download multiple files by their names and specify a file name to use for the downloaded files
+    $ geoseeq download ids "My Project/My Sample/My File" "My Project/My Sample/My File 2" \\
+        -n my_file.fastq.gz -n my_file_2.fastq.gz
 
     ---
 
     Command Arguments:
 
-    [IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
+    [IDS]... can be a list of result names or IDs, files containing a list of result names or IDs, or a mix of both.
 
     ---
     """
@@ -252,12 +268,12 @@ def cli_download_ids(state, cores, target_dir, yes, download, head, ids):
     knex = state.get_knex()
     result_files = []
     for result_id in result_file_ids:
-        result_uuid = result_id.split(':')[-1]
-        # we guess that this is a sample file, TODO: use GRN if available
-        try:
-            result_file = sample_result_file_from_uuid(knex, result_uuid)
-        except GeoseeqNotFoundError:
-            result_file = project_result_file_from_uuid(knex, result_uuid)
+        # we guess that this is a sample file to start, TODO: use GRN if available
+        if "/" in result_id:  # result name/path
+            result_file = result_file_from_name(knex, result_id)
+        else:  # uuid or grn
+            result_uuid = result_id.split(':')[-1]
+            result_file = result_file_from_uuid(knex, result_uuid)
         result_files.append(result_file)
 
     if not download:
@@ -265,16 +281,26 @@ def cli_download_ids(state, cores, target_dir, yes, download, head, ids):
             print(result_file.get_download_url(), file=state.outfile)
         return
     
-    for result_file in result_files:
-        click.echo(f"{result_file} -> {target_dir}/{result_file.get_referenced_filename()}")
+    if file_name:
+        if len(file_name) != len(result_files):
+            raise ValueError("If you specify file names then you must specify the same number of names and ids.")
+        result_files_with_names = list(zip(result_files, file_name))
+    else:
+        result_files_with_names = [
+            (result_file, result_file.get_referenced_filename()) for result_file in result_files
+        ]
+            
+
+    for result_file, filename in result_files_with_names:
+        click.echo(f"{result_file} -> {target_dir}/{filename}")
     if not yes:
         click.confirm('Do you want to download these files?', abort=True)
 
     download_args = []
     pbars = PBarManager()
-    for result_file in result_files:
-        click.echo(f"Downloading file {result_file.get_referenced_filename()}")
-        file_path = join(target_dir, result_file.get_referenced_filename())
+    for result_file, filename in result_files_with_names:
+        click.echo(f"Downloading file {filename}")
+        file_path = join(target_dir, filename)
         makedirs(dirname(file_path), exist_ok=True)
         pbar = pbars.get_new_bar(file_path)
         download_args.append((result_file, file_path, pbar))
