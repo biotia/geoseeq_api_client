@@ -12,6 +12,9 @@ from .user import cli_user
 from .view import cli_view
 from .search import cli_search
 from geoseeq.vc.cli import cli_vc
+from geoseeq.knex import DEFAULT_ENDPOINT
+from .shared_params.config import set_profile
+from .shared_params.opts_and_args import overwrite_option
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -32,7 +35,7 @@ main.add_command(cli_search)
 @main.command()
 def version():
     """Print the version of the Geoseeq API being used."""
-    click.echo('0.2.20')  # remember to update setup
+    click.echo('0.2.21')  # remember to update setup
 
 
 @main.group('advanced')
@@ -50,3 +53,14 @@ def cli_experimental():
 
 cli_experimental.add_command(cli_vc)
 
+@main.command('config')
+@click.option('-p', '--profile', default=None, help='The profile name to use.')
+@overwrite_option
+def cli_config(profile, overwrite):
+    """Configure the GeoSeeq API."""
+    if not profile:
+        profile = click.prompt(f'Set custom profile name? (Leave blank for default)', default="").strip(' \"\'')
+    endpoint = click.prompt(f'Enter the URL to use for GeoSeeq (Most users can use the default)', default=DEFAULT_ENDPOINT).strip(' \"\'')
+    api_token = click.prompt(f'Enter your GeoSeeq API token', hide_input=True).strip(' \"\'')
+    set_profile(api_token, endpoint=endpoint, profile=profile, overwrite=overwrite)
+    click.echo(f'Profile configured.')

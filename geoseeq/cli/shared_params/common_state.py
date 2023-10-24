@@ -4,6 +4,7 @@ import click
 from geoseeq.knex import DEFAULT_ENDPOINT
 
 from geoseeq import Knex
+from .config import load_profile
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -43,7 +44,8 @@ def log_level_option(f):
 def api_token_option(f):
     def callback(ctx, param, value):
         state = ctx.ensure_object(State)
-        state.api_token = str(value)
+        if not state.api_token:
+            state.api_token = str(value)
         return value
     return click.option('-a', '--api-token',
                         envvar='GEOSEEQ_API_TOKEN',
@@ -55,7 +57,8 @@ def api_token_option(f):
 def endpoint_option(f):
     def callback(ctx, param, value):
         state = ctx.ensure_object(State)
-        state.endpoint = str(value)
+        if not state.endpoint:
+            state.endpoint = str(value)
         return value
     return click.option('--endpoint',
                         default=DEFAULT_ENDPOINT,
@@ -64,6 +67,26 @@ def endpoint_option(f):
                         help='The URL to use for GEOSEEQ.',
                         callback=callback)(f)
 
+def profile_option(f):
+    def callback(ctx, param, value):
+        state = ctx.ensure_object(State)
+        endpoint, token = None, None
+        if value:
+            endpoint, token = load_profile(value)
+        else:
+            try:
+                endpoint, token = load_profile()  # load default profile, if it exists
+            except KeyError:
+                pass
+        if endpoint and token:
+            state.endpoint = endpoint
+            state.api_token = token
+        return value
+    return click.option('-p', '--profile',
+                        envvar='GEOSEEQ_API_PROFILE',
+                        expose_value=False,
+                        help='The config profile to use for GEOSEEQ.',
+                        callback=callback)(f)
 
 def outfile_option(f):
     def callback(ctx, param, value):
@@ -82,6 +105,7 @@ def common_options(f):
     f = api_token_option(f)
     f = log_level_option(f)
     f = endpoint_option(f)
+    f = profile_option(f)
     return f
 
 

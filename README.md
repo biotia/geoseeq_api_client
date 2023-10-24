@@ -28,15 +28,21 @@ Run the command line by typing `geoseeq` into a terminal prompt. See available o
 $ geoseeq --help
 ```
 
-### Using an API token
+### Configuration and Using an API token
 
 For many tasks you will need an API token to interact with GeoSeeq. You can get this token by logging into the [GeoSeeq Portal](https://portal.geoseeq.com/) going to your user profile and clicking the "Tokens" tab.
 
-Once you have a token you will need to set it as an environment variable like so:
+Once you have a token you will need to configure GeoSeeq to use it. Run `geoseeq config` and leave the profile name and url blank. You will be prompted to enter your API token.
 
 ```
-$ export GEOSEEQ_API_TOKEN=<your token from the geoseeq app>
+$ geoseeq config
+Set custom profile name? (Leave blank for default) []: 
+Enter the URL to use for GeoSeeq (Most users can use the default) [https://backend.geoseeq.com]:
+Enter your GeoSeeq API token:
+Profile configured.
 ```
+
+This command will store your token in a file called `~/.config/geoseeq/profiles.json` and will be used by all future commands.
 
 ### Example Commands
 
