@@ -1,4 +1,5 @@
 from .remote_object import RemoteObject
+from typing import Literal
 
 
 class Pipeline(RemoteObject):
@@ -188,6 +189,12 @@ class PipelineRun(RemoteObject):
         self.error_message = error_message
         self.input_fields = input_fields
         self.input_parameters = input_parameters
+
+    def set_status(self, status: Literal["Running", "Finished", "Error", "Pending"]):
+        """Set the status of the run and save it to the server. Returns self."""
+        self.status = status
+        self.save()
+        return self
 
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}

@@ -35,7 +35,7 @@ main.add_command(cli_search)
 @main.command()
 def version():
     """Print the version of the Geoseeq API being used."""
-    click.echo('0.2.21')  # remember to update setup
+    click.echo('0.2.22')  # remember to update setup
 
 
 @main.group('advanced')
