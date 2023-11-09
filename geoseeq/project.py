@@ -20,6 +20,7 @@ class Project(RemoteObject):
     ]
     optional_remote_fields = [
         "privacy_level",
+        "samples_count",
     ]
     parent_field = "org"
     url_prefix = "sample_groups"
@@ -258,7 +259,9 @@ class Project(RemoteObject):
     @property
     def n_samples(self):
         """Return the number of samples in this project."""
-        return self.samples_count
+        if self.hasattr('samples_count') and self.samples_count is not None:
+            return self.samples_count
+        return len(list(self.get_sample_uuids()))
     
     def bulk_find_files(self,
                         sample_uuids=[],
