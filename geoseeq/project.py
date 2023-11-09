@@ -4,7 +4,9 @@ from .sample import Sample
 from .utils import paginated_iterator
 import json
 import pandas as pd
+import logging
 
+logger = logging.getLogger("geoseeq_api")
 
 
 class Project(RemoteObject):
@@ -14,6 +16,7 @@ class Project(RemoteObject):
         "name",
         "privacy_level",
         "description",
+        "samples_count",
     ]
     optional_remote_fields = [
         "privacy_level",
@@ -195,6 +198,18 @@ class Project(RemoteObject):
         for sample_blob in paginated_iterator(self.knex, url, error_handler=error_handler):
             yield sample_blob['uuid']
 
+    def _batch_sample_uuids(self, batch_size, input_sample_uuids=[]):
+        """Yield batches of sample uuids."""
+        uuids_to_batch = input_sample_uuids if input_sample_uuids else self.get_sample_uuids()
+        sample_uuids = []
+        for sample_uuid in uuids_to_batch:
+            sample_uuids.append(sample_uuid)
+            if len(sample_uuids) == batch_size:
+                yield sample_uuids
+                sample_uuids = []
+        if sample_uuids:
+            yield sample_uuids
+
     def get_analysis_results(self, cache=True):
         """Yield ProjectResultFolder objects for this project fetched from the server.
         
@@ -239,6 +254,74 @@ class Project(RemoteObject):
         url = f"sample_groups/{self.uuid}/metadata"
         blob = self.knex.get(url)
         return pd.DataFrame.from_dict(blob, orient="index")
+    
+    @property
+    def n_samples(self):
+        """Return the number of samples in this project."""
+        return self.samples_count
+    
+    def bulk_find_files(self,
+                        sample_uuids=[],
+                        sample_name_includes=[],
+                        folder_types="all",
+                        folder_names=[],
+                        file_names=[],
+                        extensions=[],
+                        with_versions=False,
+                        use_batches_cutoff=500):
+        """Return a dict with links to download files that match the given criteria.
+
+        Options:
+        - sample_uuids: list of sample uuids; if blank search all samples in project
+        - sample_name_includes: list of strings; finds samples with names that include these strings
+        - folder_types: "all", "project", "sample"; finds files in folders of these types
+        - folder_names: list of strings; finds files in folders that have these strings in their names
+        - file_names: list of strings; finds files that have these strings in their names
+        - extensions: list of strings; finds files with these file extensions
+        - with_versions: bool; if True, include all versions of files in results
+        """
+        def _my_bulk_find(sample_uuids=[]):  # curry to save typing
+            return self._bulk_find_files_batch(sample_uuids=sample_uuids,
+                                             sample_name_includes=sample_name_includes,
+                                             folder_types=folder_types,
+                                             folder_names=folder_names,
+                                             file_names=file_names,
+                                             extensions=extensions,
+                                             with_versions=with_versions)
+        n_samples = len(sample_uuids) if sample_uuids else self.n_samples
+        if n_samples < use_batches_cutoff:
+            logger.debug(f"Using single batch bulk_find for {n_samples} samples")
+            return _my_bulk_find()
+        else:
+            logger.debug(f"Using multi batch bulk_find for {n_samples} samples")
+            merged_response = {'file_size_bytes': 0, 'links': {}, 'no_size_info_count': 0}
+            for batch in self._batch_sample_uuids(use_batches_cutoff - 1, input_sample_uuids=sample_uuids):
+                response = _my_bulk_find(sample_uuids=batch)
+                merged_response['file_size_bytes'] += response['file_size_bytes']
+                merged_response['links'].update(response['links'])
+                merged_response['no_size_info_count'] += response['no_size_info_count']
+            return merged_response
+                
+    def _bulk_find_files_batch(self,
+                               sample_uuids=[],
+                               sample_name_includes=[],
+                               folder_types=[],
+                               folder_names=[],
+                               file_names=[],
+                               extensions=[],
+                               with_versions=False):
+        data = {
+            "sample_uuids": sample_uuids,
+            "sample_names": sample_name_includes,
+            "folder_type": folder_types,
+            "folder_names": folder_names,
+            "file_names": file_names,
+            "extensions": extensions,
+            "with_versions": with_versions
+        }
+        url = f"sample_groups/{self.uuid}/download"
+        response = self.knex.post(url, data)
+        return response
 
     def __str__(self):
         return f"<Geoseeq::Project {self.name} {self.uuid} />"

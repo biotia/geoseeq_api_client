@@ -166,22 +166,22 @@ def cli_download_files(
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id)
+    logger.info(f"Found project \"{proj.name}\"")
     samples = []
     if sample_ids:
         logger.info(f"Fetching info for {len(sample_ids)} samples.")
         samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj)
 
-    data = {
-        "sample_uuids": [s.uuid for s in samples],
-        "sample_names": sample_name_includes,
-        "folder_type": folder_type,
-        "folder_names": folder_name,
-        "file_names": file_name,
-        "extensions": extension,
-        "with_versions": with_versions
-    }
-    url = f"sample_groups/{proj.uuid}/download"
-    response = knex.post(url, data)
+    response = proj.bulk_find_files(
+        sample_uuids=[s.uuid for s in samples],
+        sample_name_includes=sample_name_includes,
+        folder_types=folder_type,
+        folder_names=folder_name,
+        file_names=file_name,
+        extensions=extension,
+        with_versions=with_versions,
+    )
+
 
     if not download:
         data = json.dumps(response["links"])
