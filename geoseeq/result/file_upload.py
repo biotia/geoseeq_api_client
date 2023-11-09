@@ -41,14 +41,13 @@ class FileChunker:
 
 class ResultFileUpload:
     """Abstract class that handles upload methods for result files."""
-    
-    def _prep_multipart_upload(self, filepath, file_size, chunk_size, optional_fields):
-        n_parts = int(file_size / chunk_size) + 1
+
+    def _create_multipart_upload(self, filepath, file_size, optional_fields):
         optional_fields = optional_fields if optional_fields else {}
         optional_fields.update(
             {
                 "md5_checksum": md5_checksum(filepath),
-                "file_size_bytes": getsize(filepath),
+                "file_size_bytes": file_size,
             }
         )
         data = {
@@ -57,6 +56,11 @@ class ResultFileUpload:
             "result_type": "sample" if self.is_sample_result else "group",
         }
         response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload", json=data)
+        return response
+    
+    def _prep_multipart_upload(self, filepath, file_size, chunk_size, optional_fields):
+        n_parts = int(file_size / chunk_size) + 1
+        response = self._create_multipart_upload(filepath, file_size, optional_fields)
         upload_id = response["upload_id"]
         parts = list(range(1, n_parts + 1))
         data = {
@@ -105,6 +109,7 @@ class ResultFileUpload:
 
     def _upload_parts(self, file_chunker, urls, max_retries, session, progress_tracker, threads):
         if threads == 1:
+            logger.info(f"Uploading parts in series for {file_chunker.filepath}")
             complete_parts = []
             for num, url in enumerate(list(urls.values())):
                 response_part = self._upload_one_part(file_chunker, url, num, max_retries, session)
@@ -114,6 +119,7 @@ class ResultFileUpload:
             return complete_parts
         
         with ThreadPoolExecutor(max_workers=threads) as executor:
+            logger.info(f"Uploading parts in parallel for {file_chunker.filepath} with {threads} threads.")
             futures = []
             for num, url in enumerate(list(urls.values())):
                 future = executor.submit(
@@ -128,6 +134,7 @@ class ResultFileUpload:
                 logger.info(
                     f'Uploaded part {response_part["PartNumber"]} of {len(urls)} for "{file_chunker.filepath}"'
                 )
+        complete_parts = sorted(complete_parts, key=lambda x: x["PartNumber"])
         return complete_parts
 
     def multipart_upload_file(
