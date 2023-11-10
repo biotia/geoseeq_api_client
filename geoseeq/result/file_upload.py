@@ -1,6 +1,7 @@
 
-import time
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from os.path import basename, getsize
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import requests
 
 from geoseeq.constants import FIVE_MB
 from geoseeq.utils import md5_checksum
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from .utils import *
 
 
@@ -128,7 +129,9 @@ class ResultFileUpload:
                 logger.info(
                     f'Uploaded part {response_part["PartNumber"]} of {len(urls)} for "{file_chunker.filepath}"'
                 )
-        return complete_parts
+
+        # Parts must be in ascending order based on the "PartNumber" otherwise complete upload request fails
+        return sorted(complete_parts, key=lambda d: d["PartNumber"])
 
     def multipart_upload_file(
         self,
