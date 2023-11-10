@@ -1,14 +1,15 @@
 
-import time
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from os.path import basename, getsize
 from pathlib import Path
 
 import requests
 
-from geoseeq.constants import FIVE_MB
+from geoseeq.constants import CHUNK_SIZE
 from geoseeq.utils import md5_checksum
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from .utils import *
 
 
@@ -142,7 +143,7 @@ class ResultFileUpload:
         filepath,
         file_size,
         optional_fields=None,
-        chunk_size=FIVE_MB,
+        chunk_size=CHUNK_SIZE,
         max_retries=3,
         session=None,
         progress_tracker=None,
@@ -160,7 +161,7 @@ class ResultFileUpload:
         logger.info(f'Finished Upload for "{filepath}"')
         return self
 
-    def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
+    def upload_file(self, filepath, multipart_thresh=CHUNK_SIZE, **kwargs):
         resolved_path = Path(filepath).resolve()
         file_size = getsize(resolved_path)
         return self.multipart_upload_file(filepath, file_size, **kwargs)

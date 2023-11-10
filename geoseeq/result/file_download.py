@@ -1,13 +1,14 @@
 
-import urllib.request
 import logging
-import requests
-from os.path import basename, getsize, join, isfile
+import urllib.request
+from os.path import basename, getsize, isfile, join
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import requests
+
+from geoseeq.constants import CHUNK_SIZE
 from geoseeq.utils import download_ftp
-from geoseeq.constants import FIVE_MB
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 
@@ -20,7 +21,7 @@ def _download_head(url, filename, head=None, progress_tracker=None):
     response.raise_for_status()
     total_size_in_bytes = int(response.headers.get('content-length', 0))
     if progress_tracker: progress_tracker.set_num_chunks(total_size_in_bytes)
-    block_size = FIVE_MB
+    block_size = CHUNK_SIZE
     with open(filename, 'wb') as file:
         for data in response.iter_content(block_size):
             if progress_tracker: progress_tracker.update(len(data))

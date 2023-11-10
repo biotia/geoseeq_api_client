@@ -9,13 +9,13 @@ from tempfile import NamedTemporaryFile
 
 import requests
 
-from geoseeq.constants import FIVE_MB
+from geoseeq.constants import CHUNK_SIZE
 from geoseeq.remote_object import RemoteObject, RemoteObjectError
 from geoseeq.utils import download_ftp, md5_checksum
 
-from .utils import *
-from .file_upload import ResultFileUpload
 from .file_download import ResultFileDownload
+from .file_upload import ResultFileUpload
+from .utils import *
 
 
 class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
