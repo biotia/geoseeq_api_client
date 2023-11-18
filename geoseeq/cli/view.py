@@ -13,7 +13,7 @@ from .shared_params import (
     handle_multiple_sample_ids,
     handle_org_id,
 )
-from geoseeq.blob_constructors import org_from_uuid
+from geoseeq.blob_constructors import org_from_uuid, pipeline_from_blob
 
 
 @click.group('view')
@@ -115,6 +115,28 @@ def cli_list_projects(state, output_type, org_id):
     org = handle_org_id(knex, org_id, create=False)
     for proj in org.get_projects():
         print(get_obj_output(proj, output_type), file=state.outfile)
+
+
+@cli_view.command('apps')
+@use_common_state
+@output_type_opt
+def cli_list_apps(state, output_type):
+    """Print a list of apps.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # List all apps
+    $ geoseeq view apps
+
+    ---
+    """
+    knex = state.get_knex()
+    for app_blob in knex.get('pipelines')['results']:
+        app = pipeline_from_blob(knex, app_blob)
+        print(get_obj_output(app, output_type), file=state.outfile)
 
 
 @cli_view.command('app')
