@@ -168,13 +168,13 @@ def cli_view_app(state, uuid):
     """
     knex = state.get_knex()
     app = handle_pipeline_id(knex, uuid)
-    print(app)
-    print(f'name: {app.name}')
-    print(f'description: {app.description}')
-    print(f'detailed_description:\n{app.long_description}')
-    print('pipeline options:')
+    click.echo(app)
+    click.echo(f'name: {app.name}')
+    click.echo(f'description: {app.description}')
+    click.echo(f'detailed_description:\n{app.long_description}')
+    click.echo('pipeline options:')
     for opt in app.options():
-        print(opt.to_readable_description())
+        click.echo(opt.to_readable_description())
 
 
 @cli_view.command('project')
