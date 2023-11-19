@@ -169,9 +169,12 @@ def cli_view_app(state, uuid):
     knex = state.get_knex()
     app = handle_pipeline_id(knex, uuid)
     print(app)
-    for field_name, field_value, optional in app.get_remote_fields():
-        optional = "Optional" if optional else "Required"
-        print(f'\t{field_name} :: "{field_value}" ({optional})')
+    print(f'name: {app.name}')
+    print(f'description: {app.description}')
+    print(f'detailed_description:\n{app.long_description}')
+    print('pipeline options:')
+    for opt in app.options():
+        print(opt.to_readable_description())
 
 
 @cli_view.command('project')

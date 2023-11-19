@@ -136,6 +136,19 @@ class PipelineOption:
         """Return True if this option has been set."""
         return self._input_val is not None
     
+    def to_readable_description(self):
+        """Return a human friendly description of this option."""
+        out = f"{self.name} ({self.type})\n\t{self.description}\n\t"
+        if self.type == "checkbox":
+            out += f"(default: {self.default_value})"
+        elif self.type == "select":
+            out += f"options: {', '.join(self.options)}\n\t(default: {self.default_value})"
+        elif self.type == "text":
+            out += f"(default: {self.default_value})"
+        else:
+            raise ValueError(f"Unknown option type: {self.type}")
+        return out
+    
     @classmethod
     def from_blob(cls, blob):
         opts = [x['value'] for x in blob.get("options", {})]
