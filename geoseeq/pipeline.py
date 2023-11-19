@@ -10,6 +10,7 @@ class Pipeline(RemoteObject):
         "name",
         "description",
         "long_description",
+        "input_elements",
     ]
     parent_field = None
 
@@ -19,6 +20,7 @@ class Pipeline(RemoteObject):
         self.name = name
         self.description = ""
         self.long_description = ""
+        self._pipeline_options = []
 
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
@@ -74,6 +76,92 @@ class Pipeline(RemoteObject):
             result._already_fetched = True
             result._modified = False
             yield result
+
+    def options(self):
+        """Return a list of PipelineOption objects for this pipeline."""
+        if not self._pipeline_options:
+            self._pipeline_options = [PipelineOption.from_blob(x) for x in self.input_elements]
+        return self._pipeline_options
+    
+    def set_option(self, opt_name, opt_val):
+        """Set the value of an option for this pipeline."""
+        for opt in self.options():
+            if opt.name == opt_name:
+                opt.set_input(opt_val)
+                return
+        raise ValueError(f"Unknown option: {opt_name}")
+    
+    def get_input_parameters(self):
+        """Return a dict of input parameters for this pipeline."""
+        return {x.name: x.input_val for x in self.options()}
+
+
+class PipelineOption:
+
+    def __init__(self, name, type, default, description, default_value, options=[]):
+        self.name = name
+        self.type = type
+        self.default = default
+        self.description = description
+        self.default_value = default_value
+        self.options = options
+        self._input_val = None
+
+    def validate_input(self, input_val):
+        """Return True in input_val is valid for this option."""
+        if self.type == "checkbox":
+            return input_val in [True, False]
+        elif self.type == "select":
+            return input_val in self.options
+        elif self.type == "text":
+            return isinstance(input_val, str)
+        else:
+            raise ValueError(f"Unknown option type: {self.type}")
+    
+    def set_input(self, input_val):
+        """Set the input value for this option."""
+        if not self.validate_input(input_val):
+            raise ValueError(f"Invalid input value: {input_val}")
+        self._input_val = input_val
+
+    @property
+    def input_val(self):
+        """Return the input value for this option."""
+        if self._input_val is None:
+            return self.default_value
+        return self._input_val
+    
+    @property
+    def is_set(self):
+        """Return True if this option has been set."""
+        return self._input_val is not None
+    
+    def to_readable_description(self):
+        """Return a human friendly description of this option."""
+        out = f"{self.name} ({self.type})\n\t{self.description}\n\t"
+        if self.type == "checkbox":
+            out += f"(default: {self.default_value})"
+        elif self.type == "select":
+            out += f"options: {', '.join(self.options)}\n\t(default: {self.default_value})"
+        elif self.type == "text":
+            out += f"(default: {self.default_value})"
+        else:
+            raise ValueError(f"Unknown option type: {self.type}")
+        return out
+    
+    @classmethod
+    def from_blob(cls, blob):
+        opts = [x['value'] for x in blob.get("options", {})]
+        return cls(
+            blob["name"],
+            blob["type"],
+            blob["default_value"],
+            blob["description"],
+            blob["default_value"],
+            options=opts
+        )
+
+
 
 
 class PipelineModule(RemoteObject):

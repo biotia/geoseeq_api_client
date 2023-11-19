@@ -134,4 +134,3 @@ def result_file_from_name(knex, name):
             return project_result_file_from_name(knex, name)
     else:  # can't be a sample result file
         return project_result_file_from_name(knex, name)
-

@@ -16,6 +16,7 @@ from geoseeq.knex import DEFAULT_ENDPOINT
 from .shared_params.config import set_profile
 from .shared_params.opts_and_args import overwrite_option
 from .detail import cli_detail
+from .run import cli_app
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -32,11 +33,12 @@ main.add_command(cli_upload)
 main.add_command(cli_manage)
 main.add_command(cli_view)
 main.add_command(cli_search)
+main.add_command(cli_app)
 
 @main.command()
 def version():
     """Print the version of the Geoseeq API being used."""
-    click.echo('0.3.1')  # remember to update setup
+    click.echo('0.3.2')  # remember to update setup
 
 
 @main.group('advanced')

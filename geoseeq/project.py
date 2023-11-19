@@ -2,6 +2,7 @@ from .result import ProjectResultFolder
 from .remote_object import RemoteObject
 from .sample import Sample
 from .utils import paginated_iterator
+from .pipeline import Pipeline
 import json
 import pandas as pd
 import logging
@@ -325,6 +326,17 @@ class Project(RemoteObject):
         url = f"sample_groups/{self.uuid}/download"
         response = self.knex.post(url, data)
         return response
+    
+    def run_app(self, app: Pipeline, input_parameters=None):
+        """Run an app on this group."""
+        if not input_parameters:
+            input_parameters = app.get_input_parameters()
+        params = {
+            'pipeline_id': app.uuid,
+            'sample_uuids': list(self.get_sample_uuids()),
+            'input_parameters': input_parameters,
+        }
+        self.knex.post(f"sample_groups/{self.uuid}/run_app", json=params, json_response=False)
 
     def __str__(self):
         return f"<Geoseeq::Project {self.name} {self.uuid} />"

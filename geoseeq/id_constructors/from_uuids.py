@@ -87,6 +87,16 @@ def result_file_from_uuid(knex, uuid):
         return sample_result_file_from_uuid(knex, uuid)
     except GeoseeqNotFoundError:
         return project_result_file_from_uuid(knex, uuid)
+    
+
+def pipeline_from_uuid(knex, uuid):
+    """Return the pipeline object which the uuid points to."""
+    blob = knex.get(f"pipelines/{uuid}")
+    pipeline = pipeline_from_blob(knex, blob)
+    return pipeline
+
+
+app_from_uuid = pipeline_from_uuid  # Alias
 
 
 def pipeline_run_from_uuid(knex, uuid):

@@ -6,6 +6,8 @@ from geoseeq.blob_constructors import (
     sample_from_uuid,
     sample_result_folder_from_uuid,
     project_result_folder_from_uuid,
+    pipeline_from_uuid,
+    pipeline_from_blob,
 )
 from geoseeq.knex import GeoseeqNotFoundError
 from os.path import isfile
@@ -168,3 +170,18 @@ def handle_multiple_sample_ids(knex, sample_ids, proj=None):
     return samples
 
 
+def handle_pipeline_id(knex, pipeline_id):
+    """Return a pipeline object.
+    
+    `pipeline_id` may be a UUI, GRN,  or a pipeline name.
+    """
+    if is_grn_or_uuid(pipeline_id):
+        pipeline_uuid = pipeline_id.split(':')[-1]
+        pipeline = pipeline_from_uuid(knex, pipeline_uuid)
+        return pipeline
+    # the pipeline ID is a name, the only way to get it is to fetch all pipelines and search
+    pipelines = list(knex.get('pipelines')['results'])
+    for pipeline in pipelines:
+        if pipeline['name'] == pipeline_id:
+            return pipeline_from_blob(knex, pipeline)
+    raise ValueError(f'Pipeline "{pipeline_id}" not found')
