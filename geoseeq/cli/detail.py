@@ -100,3 +100,13 @@ def detail_pipeline(state, grn):
         click.echo(f'Default: {pipeline_option.default_value}')
         click.echo(f'Description: {pipeline_option.description}')
         click.echo('--')
+
+
+@cli_detail.command('pipeline-run')
+@use_common_state
+@click.argument('uuid')
+def detail_pipeline_run(state, uuid):
+    pipeline_run = state.get_knex().get(f'app_runs/{uuid}')
+    click.echo('Pipeline Run:')
+    for key, val in pipeline_run.items():
+        click.echo(f'{key}: {val}')
