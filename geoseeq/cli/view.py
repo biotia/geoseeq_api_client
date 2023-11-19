@@ -1,6 +1,6 @@
 import click
 
-from geoseeq import Organization, App
+from geoseeq import Organization
 from geoseeq.id_constructors import resolve_id
 from .shared_params import (
     use_common_state,
@@ -12,6 +12,7 @@ from .shared_params import (
     handle_project_id,
     handle_multiple_sample_ids,
     handle_org_id,
+    handle_pipeline_id,
 )
 from geoseeq.blob_constructors import org_from_uuid, pipeline_from_blob
 
@@ -153,6 +154,10 @@ def cli_view_app(state, uuid):
     # Print the app with UUID "d051ce05-f799-4aa7-8d8f-5cbf99136543"
     $ geoseeq view app d051ce05-f799-4aa7-8d8f-5cbf99136543
 
+    \b
+    # Print the app with name "Geoseeq Search"
+    $ geoseeq view app "Geoseeq Search"
+
     ---
 
     Command Arguments:
@@ -162,8 +167,7 @@ def cli_view_app(state, uuid):
     ---
     """
     knex = state.get_knex()
-    app = App(knex, uuid)
-    app.get()
+    app = handle_pipeline_id(knex, uuid)
     print(app)
     for field_name, field_value, optional in app.get_remote_fields():
         optional = "Optional" if optional else "Required"

@@ -5,8 +5,8 @@ from .shared_params import (
     project_id_arg,
     pipeline_id_arg,
     handle_project_id,
+    handle_pipeline_id,
 )
-from geoseeq.id_constructors import pipeline_from_uuid
 from geoseeq.pipeline import PipelineOption
 
 @click.group('app')
@@ -41,8 +41,8 @@ def prompt_for_option(pipeline_opt: PipelineOption):
 def run_pipeline(state, pipeline_option, pipeline_id, project_id):
     """Run a pipeline on a project."""
     knex = state.get_knex()
-    project = handle_project_id(knex, project_id)
-    pipeline = pipeline_from_uuid(knex, pipeline_id)
+    project = handle_project_id(knex, project_id, create=False)
+    pipeline = handle_pipeline_id(knex, pipeline_id)
     for opt_name, opt_val in pipeline_option:
         pipeline.set_option(opt_name, opt_val)
     for pipeline_opt in pipeline.options():
@@ -58,7 +58,7 @@ def get_pipeline_runs(state, pipeline_id, project_id):
     """Get the status of a pipeline."""
     knex = state.get_knex()
     project = handle_project_id(knex, project_id)
-    pipeline_uuid = pipeline_id.split(':')[-1]
+    pipeline_uuid = handle_pipeline_id(knex, pipeline_id).uuid
     response = knex.get(f'app_runs?sample_group_id={project.uuid}')
     for el in response['results']:
         if el['pipeline'] == pipeline_uuid:

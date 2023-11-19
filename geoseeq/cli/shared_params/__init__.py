@@ -4,6 +4,7 @@ from .id_handlers import (
     flatten_list_of_els_and_files,
     handle_multiple_sample_ids,
     handle_folder_id,
+    handle_pipeline_id,
 )
 from .opts_and_args import *
 from .common_state import use_common_state
