@@ -48,6 +48,9 @@ def print_sample(sample, recurse=False):
 @use_common_state
 @click.argument('grn')
 def detail_folder(state, grn):
+    """Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     kind, rfolder = resolve_id(state.get_knex(), grn)
     assert kind == 'folder'
     click.echo('Folder:')
@@ -68,6 +71,9 @@ def detail_folder(state, grn):
 @click.option('--recurse/--no-recurse', default=False)
 @click.argument('grn')
 def detail_project(state, recurse, grn):
+    """Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     kind, project = resolve_id(state.get_knex(), grn)
     assert kind == 'project'
     click.echo('Project:')
@@ -88,6 +94,9 @@ def detail_project(state, recurse, grn):
 @use_common_state
 @click.argument('grn')
 def detail_pipeline(state, grn):
+    """Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     pipeline_uuid = grn.split(':')[-1]
     pipeline = pipeline_from_uuid(state.get_knex(), pipeline_uuid)
     click.echo('Pipeline:')
@@ -106,6 +115,9 @@ def detail_pipeline(state, grn):
 @use_common_state
 @click.argument('uuid')
 def detail_pipeline_run(state, uuid):
+    """Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     pipeline_run = state.get_knex().get(f'app_runs/{uuid}')
     click.echo('Pipeline Run:')
     for key, val in pipeline_run.items():

@@ -74,6 +74,9 @@ def cli_download_metadata(state, sample_ids):
     If only a project ID is provided, then metadata for all samples in that project will be downloaded.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     samples = handle_multiple_sample_ids(state.get_knex(), sample_ids)
     click.echo(f"Found {len(samples)} samples.", err=True)
@@ -163,6 +166,9 @@ def cli_download_files(
     \b
     [SAMPLE_IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id)
@@ -262,6 +268,9 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
     [IDS]... can be a list of result names or IDs, files containing a list of result names or IDs, or a mix of both.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     result_file_ids = flatten_list_of_els_and_files(ids)
     cores = max(cores, len(result_file_ids))  # don't use more cores than files

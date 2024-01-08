@@ -66,7 +66,11 @@ def run_pipeline(state, pipeline_option, pipeline_id, project_id):
     \b
     [PIPELINE_ID] is the name or ID of the pipeline to run.
     [PROJECT_ID] is the name or ID of the project to run the pipeline on.
-    
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     project = handle_project_id(knex, project_id, create=False)
@@ -100,6 +104,11 @@ def get_pipeline_runs(state, pipeline_id, project_id):
     \b
     [PIPELINE_ID] is the name or ID of the pipeline to see the status of.
     [PROJECT_ID] is the name or ID of the project to see the status of.
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     project = handle_project_id(knex, project_id)

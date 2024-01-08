@@ -17,6 +17,7 @@ from .shared_params.config import set_profile
 from .shared_params.opts_and_args import overwrite_option
 from .detail import cli_detail
 from .run import cli_app
+from .get_eula import cli_eula
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -26,6 +27,13 @@ logger.addHandler(handler)
 
 @click.group()
 def main():
+    """Command line interface for the GeoSeeq API.
+    
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     pass
 
 main.add_command(cli_download)
@@ -34,10 +42,17 @@ main.add_command(cli_manage)
 main.add_command(cli_view)
 main.add_command(cli_search)
 main.add_command(cli_app)
+main.add_command(cli_eula)
 
 @main.command()
 def version():
-    """Print the version of the Geoseeq API being used."""
+    """Print the version of the Geoseeq API being used.
+
+    ---
+    
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     click.echo('0.3.2')  # remember to update setup
 
 
@@ -62,7 +77,13 @@ cli_experimental.add_command(cli_vc)
 @click.option('-p', '--profile', default=None, help='The profile name to use.')
 @overwrite_option
 def cli_config(profile, overwrite):
-    """Configure the GeoSeeq API."""
+    """Configure the GeoSeeq API.
+
+    ---
+    
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     if not profile:
         profile = click.prompt(f'Set custom profile name? (Leave blank for default)', default="").strip(' \"\'')
     endpoint = click.prompt(f'Enter the URL to use for GeoSeeq (Most users can use the default)', default=DEFAULT_ENDPOINT).strip(' \"\'')
