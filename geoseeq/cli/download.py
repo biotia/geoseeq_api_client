@@ -14,6 +14,7 @@ from .shared_params import (
     use_common_state,
     flatten_list_of_els_and_files,
     yes_option,
+    module_option,
 )
 from geoseeq.result.file_download import download_url
 from geoseeq.utils import download_ftp
@@ -24,6 +25,7 @@ from geoseeq.id_constructors import (
 from geoseeq.knex import GeoseeqNotFoundError
 from .progress_bar import PBarManager
 from .utils import convert_size
+from geoseeq.constants import FASTQ_MODULE_NAMES
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -316,6 +318,97 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
         download_args.append((result_file, file_path, pbar))
         if cores == 1:
             result_file.download(file_path, progress_tracker=pbar, head=head)
+
+    if cores > 1:
+        with Pool(cores) as p:
+            for _ in p.imap_unordered(_download_one_file, download_args):
+                pass
+
+
+
+@cli_download.command("fastqs")
+@use_common_state
+@cores_option
+@click.option("--target-dir", default=".")
+@yes_option
+@click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@project_id_arg
+@sample_ids_arg
+def cli_download_fastqs(state, cores, target_dir, yes, download, project_id, sample_ids):
+    """Download fastq files from a GeoSeeq project.
+
+    This command will download fastq files from a GeoSeeq project. You can filter
+    files by sample name and by specific fastq read types.
+
+    TODO: list read types
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Download all fastq files from all samples in "My Org/My Project"
+    $ geoseeq download fastqs "My Org/My Project"
+
+    ---
+
+    Command Arguments:
+
+    [PROJECT_ID] Can be a project UUID, GeoSeeq Resource Number (GRN), or an
+    organization name and project name separated by a slash.
+
+    \b
+    [SAMPLE_IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    knex = state.get_knex().set_auth_required()
+    proj = handle_project_id(knex, project_id)
+    logger.info(f"Found project \"{proj.name}\"")
+    samples = []
+    if sample_ids:
+        logger.info(f"Fetching info for {len(sample_ids)} samples.")
+        samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj)
+    else:
+        logger.info("Fetching info for all samples in project.")
+        samples = proj.get_samples()
+
+    result_files_with_names = []
+    for sample in samples:
+        for read_type, folder in sample.get_all_fastqs().items():
+            for folder_name, result_files in folder.items():
+                for result_file in result_files:
+                    if read_type in ["short_read::paired_end"]:
+                        result_files_with_names.append(
+                            (result_file[0], result_file[0].get_referenced_filename())
+                        )
+                        result_files_with_names.append(
+                            (result_file[1], result_file[1].get_referenced_filename())
+                        )
+                    else:
+                        result_files_with_names.append(
+                            (result_file, result_file.get_referenced_filename())
+                        )
+    
+
+    for result_file, filename in result_files_with_names:
+        click.echo(f"{result_file} -> {target_dir}/{filename}")
+    if not yes:
+        click.confirm('Do you want to download these files?', abort=True)
+
+    download_args = []
+    pbars = PBarManager()
+    for result_file, filename in result_files_with_names:
+        click.echo(f"Downloading file {filename}")
+        file_path = join(target_dir, filename)
+        makedirs(dirname(file_path), exist_ok=True)
+        pbar = pbars.get_new_bar(file_path)
+        download_args.append((result_file, file_path, pbar))
+        if cores == 1:
+            result_file.download(file_path, progress_tracker=pbar)
 
     if cores > 1:
         with Pool(cores) as p:
