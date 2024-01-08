@@ -105,7 +105,6 @@ def outfile_option(f):
 
 def common_options(f):
     f = outfile_option(f)
-    f = api_token_option(f)
     f = log_level_option(f)
     f = endpoint_option(f)
     f = profile_option(f)

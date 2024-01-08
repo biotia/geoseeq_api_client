@@ -88,5 +88,9 @@ def cli_config(profile, overwrite):
         profile = click.prompt(f'Set custom profile name? (Leave blank for default)', default="").strip(' \"\'')
     endpoint = click.prompt(f'Enter the URL to use for GeoSeeq (Most users can use the default)', default=DEFAULT_ENDPOINT).strip(' \"\'')
     api_token = click.prompt(f'Enter your GeoSeeq API token', hide_input=True).strip(' \"\'')
+    eula_accepted = click.confirm(f'Have you read and accepted the GeoSeeq End User License Agreement? Use `geoseeq eula show` to view the EULA.')
+    if not eula_accepted:
+        click.echo('You must accept the EULA to use the GeoSeeq API.')
+        return
     set_profile(api_token, endpoint=endpoint, profile=profile, overwrite=overwrite)
     click.echo(f'Profile configured.')
