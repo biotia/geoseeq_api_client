@@ -331,16 +331,16 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
 @cores_option
 @click.option("--target-dir", default=".")
 @yes_option
+@click.option("--first/--all", default=False, help="Download only the first folder of fastq files for each sample.")
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
 @sample_ids_arg
-def cli_download_fastqs(state, cores, target_dir, yes, download, project_id, sample_ids):
+def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_name, project_id, sample_ids):
     """Download fastq files from a GeoSeeq project.
 
     This command will download fastq files from a GeoSeeq project. You can filter
     files by sample name and by specific fastq read types.
-
-    TODO: list read types
 
     ---
 
@@ -349,6 +349,14 @@ def cli_download_fastqs(state, cores, target_dir, yes, download, project_id, sam
     \b
     # Download all fastq files from all samples in "My Org/My Project"
     $ geoseeq download fastqs "My Org/My Project"
+
+    \b
+    # Download paired end fastq files from all samples in "My Org/My Project"
+    $ geoseeq download fastqs "My Org/My Project" --module-name short_read::paired_end
+
+    \b
+    # Download all fastq files from two samples in "My Org/My Project"
+    $ geoseeq download fastqs "My Org/My Project" S1 S2
 
     ---
 
@@ -379,6 +387,8 @@ def cli_download_fastqs(state, cores, target_dir, yes, download, project_id, sam
     result_files_with_names = []
     for sample in samples:
         for read_type, folder in sample.get_all_fastqs().items():
+            if module_name and module_name != read_type:
+                continue
             for folder_name, result_files in folder.items():
                 for result_file in result_files:
                     if read_type in ["short_read::paired_end"]:
@@ -392,7 +402,17 @@ def cli_download_fastqs(state, cores, target_dir, yes, download, project_id, sam
                         result_files_with_names.append(
                             (result_file, result_file.get_referenced_filename())
                         )
+                if first:
+                    break
+
+    if len(result_files_with_names) == 0:
+        click.echo("No suitable fastq files found.")
+        return
     
+    if not download:
+        for result_file, _ in result_files_with_names:
+            print(result_file.get_download_url(), file=state.outfile)
+        return
 
     for result_file, filename in result_files_with_names:
         click.echo(f"{result_file} -> {target_dir}/{filename}")
