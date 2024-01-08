@@ -222,7 +222,6 @@ def cli_download_files(
         with_versions=with_versions,
     )
 
-
     if not download:
         data = json.dumps(response["links"])
         print(data, file=state.outfile)
@@ -235,7 +234,7 @@ def cli_download_files(
             clean_url = url.split("?")[0]
             click.echo(f'{clean_url} -> {target_dir}/{fname}')
         if not yes:
-            click.confirm('Do you want to download these files?', abort=True)
+            click.confirm(f'Do you want to download {len(response["links"])} files?', abort=True)
 
         _download_files(
             ((url, fname) for fname, url in response["links"].items()),
@@ -326,7 +325,7 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
     for result_file, filename in result_files_with_names:
         click.echo(f"{result_file} -> {target_dir}/{filename}")
     if not yes:
-        click.confirm('Do you want to download these files?', abort=True)
+        click.confirm(f'Do you want to download {len(result_files_with_names)} files?', abort=True)
 
     _download_files(result_files_with_names, target_dir, ignore_errors, cores, head)
 
@@ -423,6 +422,6 @@ def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_n
     for result_file, filename in result_files_with_names:
         click.echo(f"{result_file} -> {target_dir}/{filename}")
     if not yes:
-        click.confirm('Do you want to download these files?', abort=True)
+        click.confirm(f'Do you want to download {len(result_files_with_names)} files?', abort=True)
 
     _download_files(result_files_with_names, target_dir, ignore_errors, cores, None)
