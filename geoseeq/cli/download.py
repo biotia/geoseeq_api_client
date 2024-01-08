@@ -78,7 +78,8 @@ def cli_download_metadata(state, sample_ids):
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    samples = handle_multiple_sample_ids(state.get_knex(), sample_ids)
+    knex = state.get_knex().set_auth_required()
+    samples = handle_multiple_sample_ids(knex, sample_ids)
     click.echo(f"Found {len(samples)} samples.", err=True)
     metadata = {}
     for sample in samples:
@@ -170,7 +171,7 @@ def cli_download_files(
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    knex = state.get_knex()
+    knex = state.get_knex().set_auth_required()
     proj = handle_project_id(knex, project_id)
     logger.info(f"Found project \"{proj.name}\"")
     samples = []
@@ -274,7 +275,7 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
     """
     result_file_ids = flatten_list_of_els_and_files(ids)
     cores = max(cores, len(result_file_ids))  # don't use more cores than files
-    knex = state.get_knex()
+    knex = state.get_knex().set_auth_required()
     result_files = []
     for result_id in result_file_ids:
         # we guess that this is a sample file to start, TODO: use GRN if available

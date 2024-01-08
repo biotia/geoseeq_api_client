@@ -64,12 +64,26 @@ class Knex:
         self.cache = FileSystemCache()
         self._verify = self._set_verify()
         self.sess = self._new_session()
+        self.auth_required = False
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
+
+    def check_auth_required(self):
+        """Raise an error if authentication is required but not provided.
+        
+        This is only a soft barrier. This is not a security measure.
+        """
+        if self.auth_required and not self.auth:
+            raise GeoseeqForbiddenError("Authentication is required but not provided. See `geoseeq config` to set auth.")
+        
+    def set_auth_required(self, value=True):
+        self.auth_required = value
+        self.check_auth_required()
+        return self
 
     def close(self):
         self.sess.close()
@@ -144,6 +158,7 @@ class Knex:
     def get(self, url, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth)
+        self.check_auth_required()
         logger.debug(f"Sending GET request. {d}")
         response = self.sess.get(f"{self.endpoint_url}/{url}")
         resp = self._handle_response(response, **kwargs)
@@ -152,6 +167,7 @@ class Knex:
     def post(self, url, json={}, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
+        self.check_auth_required()
         logger.debug(f"Sending POST request. {d}")
         response = self.sess.post(
             f"{self.endpoint_url}/{url}",
@@ -162,6 +178,7 @@ class Knex:
     def put(self, url, json={}, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
+        self.check_auth_required()
         logger.debug(f"Sending PUT request. {d}")
         response = self.sess.put(
             f"{self.endpoint_url}/{url}",
@@ -172,6 +189,7 @@ class Knex:
     def patch(self, url, json={}, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth, json=json)
+        self.check_auth_required()
         logger.debug(f"Sending PATCH request. {d}")
         response = self.sess.patch(
             f"{self.endpoint_url}/{url}",
@@ -182,6 +200,7 @@ class Knex:
     def delete(self, url, json={}, url_options={}, **kwargs):
         url = self._clean_url(url, url_options=url_options)
         d = self._logging_info(url=url, auth_token=self.auth)
+        self.check_auth_required()
         logger.debug(f"Sending DELETE request. {d}")
         response = self.sess.delete(f"{self.endpoint_url}/{url}", json=json)
         logger.debug(f"DELETE request response:\n{response}")
