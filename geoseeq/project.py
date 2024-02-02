@@ -260,7 +260,7 @@ class Project(RemoteObject):
     @property
     def n_samples(self):
         """Return the number of samples in this project."""
-        if self.hasattr('samples_count') and self.samples_count is not None:
+        if hasattr(self, 'samples_count') and self.samples_count is not None:
             return self.samples_count
         return len(list(self.get_sample_uuids()))
     
