@@ -16,13 +16,16 @@ class State(object):
         self.endpoint = DEFAULT_ENDPOINT
         self.outfile = None
         self.log_level = 20
+        self._knex = None
 
     def get_knex(self):
         logger.setLevel(self.log_level)
-        knex = Knex(self.endpoint)
+        self._knex = Knex(self.endpoint)
         if self.api_token:
-            knex.add_api_token(self.api_token)
-        return knex
+            self._knex.add_api_token(self.api_token)
+        return self._knex
+    
+
 
 
 pass_state = click.make_pass_decorator(State, ensure=True)
@@ -102,7 +105,6 @@ def outfile_option(f):
 
 def common_options(f):
     f = outfile_option(f)
-    f = api_token_option(f)
     f = log_level_option(f)
     f = endpoint_option(f)
     f = profile_option(f)

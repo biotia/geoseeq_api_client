@@ -14,6 +14,7 @@ yes_option = click.option('--yes/--confirm', default=False, help='Skip confirmat
 sample_manifest_option = click.option(
     "--sample-manifest", type=click.File("r"), help="List of sample names to download from"
 )
+ignore_errors_option = click.option('--ignore-errors/--no-ignore-errors', default=False, help='Ignore errors and continue')
 org_arg = click.argument('org_name')
 project_arg = click.argument('project_name')
 sample_arg = click.argument('sample_name')

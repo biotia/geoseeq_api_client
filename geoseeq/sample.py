@@ -1,4 +1,4 @@
-from .result import SampleResultFolder
+from .result import SampleResultFolder, SampleResultFile
 from .remote_object import RemoteObject
 
 
@@ -132,6 +132,66 @@ class Sample(RemoteObject):
         """Return a manifest for this sample."""
         url = f"samples/{self.uuid}/manifest"
         return self.knex.get(url)
+    
+    def _grn_to_file(self, grn):
+        from geoseeq.id_constructors.from_blobs import sample_result_file_from_blob
+        file_uuid = grn.split(":")[-1]
+        file_blob = self.knex.get(f"sample_ar_fields/{file_uuid}")
+        file = sample_result_file_from_blob(self.knex, file_blob)
+        return file
+    
+    def get_one_fastq(self):
+        """Return a 2-ple, a fastq ResultFile and a string with the read type.
+
+        Does not download the file.
+        """
+        url = f"data/samples/{self.uuid}/one-fastq"
+        blob = self.knex.get(url)
+        file = self._grn_to_file(blob["grn"])
+        return file, blob["read_type"]
+    
+    def get_all_fastqs(self):
+        """Return a dict with the following structure:
+
+        ```
+        {
+            "<read_type (paired end)>": {
+                "<folder_name_1>": [
+                    [
+                        <ResultFile uuid=f12822f5-8801-49e0-9871-9647beae2cb7>,
+                        <ResultFile uuid=819ec7a5-47ea-43a1-a861-589326b273c6>
+                    ]
+                ],
+            },
+            "<read_type (single end)>": {
+                "<folder_name_1>": [
+                        <ResultFile uuid=eaaaf0c4-883f-4e7b-89c0-8b57552596ea>
+                ],
+        }
+        ```
+
+        Does not download the files.
+        """
+        url = f"data/samples/{self.uuid}/all-fastqs"
+        blob = self.knex.get(url)
+        files = {}
+        for read_type, folders in blob.items():
+            files[read_type] = {}
+            for folder_name, file_grns in folders.items():
+                files[read_type][folder_name] = []
+                for file_grn in file_grns:
+                    if read_type in ["short_read::paired_end"]:
+                        files[read_type][folder_name].append(
+                            [
+                                self._grn_to_file(file_grn[0]),
+                                self._grn_to_file(file_grn[1]),
+                            ]
+                        )
+                    else:
+                        files[read_type][folder_name].append(
+                            self._grn_to_file(file_grn)
+                        )
+        return files
 
     def __str__(self):
         return f"<Geoseeq::Sample {self.name} {self.uuid} />"

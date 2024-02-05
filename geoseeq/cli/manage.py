@@ -51,6 +51,9 @@ def cli_add_samples(state, yes, project_id, sample_ids):
     If only a project ID is provided, then all samples in the project will be added.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, yes=yes)
@@ -88,6 +91,9 @@ def cli_create_org(state, exists_ok, yes, org_name):
     [ORG_NAME] is the name of the organization to create.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     if yes or click.confirm(f'Create Organization {org_name}?'):
@@ -156,6 +162,9 @@ def cli_create_samples(state, yes, private, project_id, sample_names):
     [SAMPLE_NAMES]... is a list of sample names to create.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, yes=yes, private=private)
@@ -196,6 +205,9 @@ def cli_delete_samples(state, yes, sample_ids):
     If only a project ID is provided, then all samples in the project will be deleted.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     samples = handle_multiple_sample_ids(knex, sample_ids)

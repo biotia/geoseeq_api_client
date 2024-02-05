@@ -260,7 +260,7 @@ class Project(RemoteObject):
     @property
     def n_samples(self):
         """Return the number of samples in this project."""
-        if self.hasattr('samples_count') and self.samples_count is not None:
+        if hasattr(self, 'samples_count') and self.samples_count is not None:
             return self.samples_count
         return len(list(self.get_sample_uuids()))
     
@@ -284,8 +284,8 @@ class Project(RemoteObject):
         - extensions: list of strings; finds files with these file extensions
         - with_versions: bool; if True, include all versions of files in results
         """
-        def _my_bulk_find(sample_uuids=[]):  # curry to save typing
-            return self._bulk_find_files_batch(sample_uuids=sample_uuids,
+        def _my_bulk_find(sample_uuids=None):  # curry to save typing
+            return self._bulk_find_files_batch(sample_uuids=sample_uuids or [],
                                              sample_name_includes=sample_name_includes,
                                              folder_types=folder_types,
                                              folder_names=folder_names,
@@ -295,7 +295,7 @@ class Project(RemoteObject):
         n_samples = len(sample_uuids) if sample_uuids else self.n_samples
         if n_samples < use_batches_cutoff:
             logger.debug(f"Using single batch bulk_find for {n_samples} samples")
-            return _my_bulk_find()
+            return _my_bulk_find(sample_uuids=sample_uuids)
         else:
             logger.debug(f"Using multi batch bulk_find for {n_samples} samples")
             merged_response = {'file_size_bytes': 0, 'links': {}, 'no_size_info_count': 0}
@@ -307,20 +307,20 @@ class Project(RemoteObject):
             return merged_response
                 
     def _bulk_find_files_batch(self,
-                               sample_uuids=[],
-                               sample_name_includes=[],
-                               folder_types=[],
-                               folder_names=[],
-                               file_names=[],
-                               extensions=[],
+                               sample_uuids=None,
+                               sample_name_includes=None,
+                               folder_types=None,
+                               folder_names=None,
+                               file_names=None,
+                               extensions=None,
                                with_versions=False):
         data = {
-            "sample_uuids": sample_uuids,
-            "sample_names": sample_name_includes,
-            "folder_type": folder_types,
-            "folder_names": folder_names,
-            "file_names": file_names,
-            "extensions": extensions,
+            "sample_uuids": sample_uuids or [],
+            "sample_names": sample_name_includes or [],
+            "folder_type": folder_types or [],
+            "folder_names": folder_names or [],
+            "file_names": file_names or [],
+            "extensions": extensions or [],
             "with_versions": with_versions
         }
         url = f"sample_groups/{self.uuid}/download"

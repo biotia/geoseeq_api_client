@@ -198,6 +198,9 @@ def cli_view_project(state, project_id):
     [PROJECT_ID] is the name or ID of the project to print.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, create=False)
@@ -231,6 +234,9 @@ def cli_view_sample(state, project_id, sample_ids):
     [SAMPLE_IDS]... is the name or ID of the sample to print.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, create=False)
@@ -267,6 +273,9 @@ def cli_view_object(state, ids):
     [ID] is the name or GRN of the object to print. UUIDs cannot be resolved without a type.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     knex = state.get_knex()
     for id in ids:

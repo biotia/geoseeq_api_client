@@ -6,7 +6,11 @@ from .. import Knex, Organization
 
 @click.group('copy')
 def cli_copy():
-    """Copy samples and analysis results from one geoseeq instance to another."""
+    """Copy samples and analysis results from one geoseeq instance to another.
+    
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     pass
 
 
@@ -26,7 +30,11 @@ def cli_list_samples(log_level, outfile,
                      source_endpoint, target_endpoint,
                      source_org_name, source_grp_name,
                      target_org_name, target_grp_name):
-    """Copy a group and its samples from one geoseeq instance to another."""
+    """Copy a group and its samples from one geoseeq instance to another.
+    
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
     source_knex = Knex(source_endpoint)
     if source_api_token:
         source_knex.add_api_token(source_api_token)

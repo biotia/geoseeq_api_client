@@ -33,6 +33,9 @@ def cli_search(state, sep, search_terms):
     [SEARCH_TERMS]... a list of search terms to search for
 
     ---
+    
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     search = Search(state.get_knex())
     for search_term in search_terms:

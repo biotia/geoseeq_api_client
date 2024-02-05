@@ -14,6 +14,8 @@ from .shared_params import (
     use_common_state,
     flatten_list_of_els_and_files,
     yes_option,
+    module_option,
+    ignore_errors_option,
 )
 from geoseeq.result.file_download import download_url
 from geoseeq.utils import download_ftp
@@ -24,6 +26,8 @@ from geoseeq.id_constructors import (
 from geoseeq.knex import GeoseeqNotFoundError
 from .progress_bar import PBarManager
 from .utils import convert_size
+from geoseeq.constants import FASTQ_MODULE_NAMES
+from geoseeq.result import ResultFile
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -74,8 +78,12 @@ def cli_download_metadata(state, sample_ids):
     If only a project ID is provided, then metadata for all samples in that project will be downloaded.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
-    samples = handle_multiple_sample_ids(state.get_knex(), sample_ids)
+    knex = state.get_knex().set_auth_required()
+    samples = handle_multiple_sample_ids(knex, sample_ids)
     click.echo(f"Found {len(samples)} samples.", err=True)
     metadata = {}
     for sample in samples:
@@ -86,11 +94,38 @@ def cli_download_metadata(state, sample_ids):
 
 
 def _download_one_file(args):
-    url, file_path, pbar = args
-    return download_url(url, filename=file_path, progress_tracker=pbar)
+    url, file_path, pbar, ignore_errors, head = args
+    if isinstance(url, ResultFile):
+        url = url.get_download_url()
+    try:
+        return download_url(url, filename=file_path, progress_tracker=pbar, head=head)
+    except Exception as e:
+        if ignore_errors:
+            logger.error(f"Error downloading {url}: {e}")
+        else:
+            raise e
+        
+
+def _download_files(result_files_with_names, target_dir, ignore_errors, cores, head):
+    download_args = []
+    pbars = PBarManager()
+    for result_file_or_url, filename in result_files_with_names:
+        click.echo(f"Downloading file {filename}")
+        file_path = join(target_dir, filename)
+        makedirs(dirname(file_path), exist_ok=True)
+        pbar = pbars.get_new_bar(file_path)
+        download_args.append((result_file_or_url, file_path, pbar, ignore_errors, head))
+        if cores == 1:
+            _download_one_file(download_args[-1])
+
+    if cores > 1:
+        with Pool(cores) as p:
+            for _ in p.imap_unordered(_download_one_file, download_args):
+                pass
 
 
 cores_option = click.option('--cores', default=1, help='Number of downloads to run in parallel')
+
 
 @cli_download.command("files")
 @use_common_state
@@ -104,6 +139,7 @@ cores_option = click.option('--cores', default=1, help='Number of downloads to r
 @click.option("--file-name", multiple=True, help="Filter files for names that include this string. Case insensitive.")
 @click.option("--extension", multiple=True, help="Only download files with this extension. e.g. 'fastq.gz', 'bam', 'csv'")
 @click.option("--with-versions/--without-versions", default=False, help="Download all versions of a file, not just the latest")
+@ignore_errors_option
 @project_id_arg
 @sample_ids_arg
 def cli_download_files(
@@ -118,6 +154,7 @@ def cli_download_files(
     extension,
     with_versions,
     download,
+    ignore_errors,
     project_id,
     sample_ids,
 ):
@@ -163,8 +200,11 @@ def cli_download_files(
     \b
     [SAMPLE_IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
-    knex = state.get_knex()
+    knex = state.get_knex().set_auth_required()
     proj = handle_project_id(knex, project_id)
     logger.info(f"Found project \"{proj.name}\"")
     samples = []
@@ -182,7 +222,6 @@ def cli_download_files(
         with_versions=with_versions,
     )
 
-
     if not download:
         data = json.dumps(response["links"])
         print(data, file=state.outfile)
@@ -195,23 +234,12 @@ def cli_download_files(
             clean_url = url.split("?")[0]
             click.echo(f'{clean_url} -> {target_dir}/{fname}')
         if not yes:
-            click.confirm('Do you want to download these files?', abort=True)
+            click.confirm(f'Do you want to download {len(response["links"])} files?', abort=True)
 
-        download_args = []
-        pbars = PBarManager()
-        for fname, url in response["links"].items():
-            click.echo(f"Downloading file {fname}")
-            file_path = join(target_dir, fname)
-            makedirs(dirname(file_path), exist_ok=True)
-            pbar = pbars.get_new_bar(file_path)
-            download_args.append((url, file_path, pbar))
-            if cores == 1:
-                download_url(url, filename=file_path, progress_tracker=pbar)
-
-        if cores > 1:
-            with Pool(cores) as p:
-                for _ in p.imap_unordered(_download_one_file, download_args):
-                    pass
+        _download_files(
+            ((url, fname) for fname, url in response["links"].items()),
+            target_dir, ignore_errors, cores, None
+        )
 
 
 @cli_download.command("ids")
@@ -222,8 +250,9 @@ def cli_download_files(
 @yes_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @click.option('--head', default=None, type=int, help='Download the first N bytes of each file')
+@ignore_errors_option
 @click.argument("ids", nargs=-1)
-def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, ids):
+def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, ignore_errors, ids):
     """Download a files from GeoSeeq based on their UUID or GeoSeeq Resource Number (GRN).
 
     This command downloads files directly based on their ID. This is used for "manual"
@@ -262,10 +291,13 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
     [IDS]... can be a list of result names or IDs, files containing a list of result names or IDs, or a mix of both.
 
     ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
     """
     result_file_ids = flatten_list_of_els_and_files(ids)
     cores = max(cores, len(result_file_ids))  # don't use more cores than files
-    knex = state.get_knex()
+    knex = state.get_knex().set_auth_required()
     result_files = []
     for result_id in result_file_ids:
         # we guess that this is a sample file to start, TODO: use GRN if available
@@ -290,24 +322,106 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
             (result_file, result_file.get_referenced_filename()) for result_file in result_files
         ]
             
+    for result_file, filename in result_files_with_names:
+        click.echo(f"{result_file} -> {target_dir}/{filename}")
+    if not yes:
+        click.confirm(f'Do you want to download {len(result_files_with_names)} files?', abort=True)
+
+    _download_files(result_files_with_names, target_dir, ignore_errors, cores, head)
+
+
+@cli_download.command("fastqs")
+@use_common_state
+@cores_option
+@click.option("--target-dir", default=".")
+@yes_option
+@click.option("--first/--all", default=False, help="Download only the first folder of fastq files for each sample.")
+@click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@module_option(FASTQ_MODULE_NAMES)
+@ignore_errors_option
+@project_id_arg
+@sample_ids_arg
+def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_name, ignore_errors, project_id, sample_ids):
+    """Download fastq files from a GeoSeeq project.
+
+    This command will download fastq files from a GeoSeeq project. You can filter
+    files by sample name and by specific fastq read types.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Download all fastq files from all samples in "My Org/My Project"
+    $ geoseeq download fastqs "My Org/My Project"
+
+    \b
+    # Download paired end fastq files from all samples in "My Org/My Project"
+    $ geoseeq download fastqs "My Org/My Project" --module-name short_read::paired_end
+
+    \b
+    # Download all fastq files from two samples in "My Org/My Project"
+    $ geoseeq download fastqs "My Org/My Project" S1 S2
+
+    ---
+
+    Command Arguments:
+
+    [PROJECT_ID] Can be a project UUID, GeoSeeq Resource Number (GRN), or an
+    organization name and project name separated by a slash.
+
+    \b
+    [SAMPLE_IDS]... can be a list of sample names or IDs, files containing a list of sample names or IDs, or a mix of both.
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    knex = state.get_knex().set_auth_required()
+    proj = handle_project_id(knex, project_id)
+    logger.info(f"Found project \"{proj.name}\"")
+    samples = []
+    if sample_ids:
+        logger.info(f"Fetching info for {len(sample_ids)} samples.")
+        samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj)
+    else:
+        logger.info("Fetching info for all samples in project.")
+        samples = proj.get_samples()
+
+    result_files_with_names = []
+    for sample in samples:
+        for read_type, folder in sample.get_all_fastqs().items():
+            if module_name and module_name != read_type:
+                continue
+            for folder_name, result_files in folder.items():
+                for result_file in result_files:
+                    if read_type in ["short_read::paired_end"]:
+                        result_files_with_names.append(
+                            (result_file[0], result_file[0].get_referenced_filename())
+                        )
+                        result_files_with_names.append(
+                            (result_file[1], result_file[1].get_referenced_filename())
+                        )
+                    else:
+                        result_files_with_names.append(
+                            (result_file, result_file.get_referenced_filename())
+                        )
+                if first:
+                    break
+
+    if len(result_files_with_names) == 0:
+        click.echo("No suitable fastq files found.")
+        return
+    
+    if not download:
+        for result_file, _ in result_files_with_names:
+            print(result_file.get_download_url(), file=state.outfile)
+        return
 
     for result_file, filename in result_files_with_names:
         click.echo(f"{result_file} -> {target_dir}/{filename}")
     if not yes:
-        click.confirm('Do you want to download these files?', abort=True)
+        click.confirm(f'Do you want to download {len(result_files_with_names)} files?', abort=True)
 
-    download_args = []
-    pbars = PBarManager()
-    for result_file, filename in result_files_with_names:
-        click.echo(f"Downloading file {filename}")
-        file_path = join(target_dir, filename)
-        makedirs(dirname(file_path), exist_ok=True)
-        pbar = pbars.get_new_bar(file_path)
-        download_args.append((result_file, file_path, pbar))
-        if cores == 1:
-            result_file.download(file_path, progress_tracker=pbar, head=head)
-
-    if cores > 1:
-        with Pool(cores) as p:
-            for _ in p.imap_unordered(_download_one_file, download_args):
-                pass
+    _download_files(result_files_with_names, target_dir, ignore_errors, cores, None)
