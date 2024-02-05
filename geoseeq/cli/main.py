@@ -17,6 +17,7 @@ from .shared_params.config import set_profile
 from .shared_params.opts_and_args import overwrite_option
 from .detail import cli_detail
 from .run import cli_app
+from .plot import cli_plot
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -50,6 +51,7 @@ cli_advanced.add_command(cli_copy)
 cli_advanced.add_command(cli_user)
 cli_advanced.add_command(cli_detail)
 cli_advanced.add_command(cli_upload_advanced)
+cli_advanced.add_command(cli_plot)
 
 @cli_advanced.group('experimental')
 def cli_experimental():
