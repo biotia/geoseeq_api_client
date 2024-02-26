@@ -2,8 +2,8 @@ import logging
 import requests
 from os import environ
 from .file_system_cache import FileSystemCache
-
-DEFAULT_ENDPOINT = "https://backend.geoseeq.com"
+from geoseeq.utils import load_auth_profile
+from geoseeq.constants import DEFAULT_ENDPOINT
 
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
@@ -205,3 +205,36 @@ class Knex:
         response = self.sess.delete(f"{self.endpoint_url}/{url}", json=json)
         logger.debug(f"DELETE request response:\n{response}")
         return self._handle_response(response, json_response=False, **kwargs)
+
+    @classmethod
+    def load_profile(cls, profile=""):
+        """Return a knex authenticated with a profile."""
+        endpoint, token = load_auth_profile(profile)
+        knex = cls(endpoint)
+        knex.add_api_token(token)
+        return knex
+    
+
+def with_knex(func):
+    def wrapper(*args, **kwargs):
+        # check if any of the arguments are a knex instance
+        any_knex = any([isinstance(arg, Knex) for arg in args])
+        if any_knex:
+            return func(*args, **kwargs)
+        else:
+            varnames = [
+                varname for varname in func.__code__.co_varnames
+                if varname != "knex"
+            ]
+            kwargs.update(zip(varnames, args))
+            if "knex" not in kwargs:
+                profile = kwargs.pop("profile", "")
+                kwargs['knex'] = Knex.load_profile(profile=profile)
+            # reorder kwargs to match the function signature
+            reordered = {
+                key: kwargs[key] for key in func.__code__.co_varnames
+                if key in kwargs
+            }
+            return func(**reordered)
+    return wrapper
+        

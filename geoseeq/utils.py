@@ -4,9 +4,45 @@ import logging
 from ftplib import FTP
 from threading import Timer
 from .file_system_cache import FileSystemCache
+from os.path import join, exists
+import json
+from os import environ, makedirs
+from .constants import CONFIG_DIR, PROFILES_PATH, DEFAULT_ENDPOINT
 
 logger = logging.getLogger('geoseeq_api')  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
+
+
+def load_auth_profile(profile=""):
+    """Return an endpoit and a token"""
+    profile = profile or "__default__"
+    with open(PROFILES_PATH, "r") as f:
+        profiles = json.load(f)
+    if profile in profiles:
+        return profiles[profile]["endpoint"], profiles[profile]["token"]
+    raise KeyError(f"Profile {profile} not found.")
+
+
+def set_profile(token, endpoint=DEFAULT_ENDPOINT, profile="", overwrite=False):
+    """Write a profile to a config file.
+    
+    Raises KeyError if profile already exists.
+    """
+    if not exists(PROFILES_PATH):
+        makedirs(CONFIG_DIR)
+        with open(PROFILES_PATH, "w") as f:
+            json.dump({}, f)
+    with open(PROFILES_PATH, "r") as f:
+        profiles = json.load(f)
+    profile = profile or "__default__"
+    if profile in profiles and not overwrite:
+        raise KeyError(f"Profile {profile} already exists.")
+    profiles[profile] = {
+        "token": token,
+        "endpoint": endpoint,
+    }
+    with open(PROFILES_PATH, "w") as f:
+        json.dump(profiles, f, indent=4)
 
 
 def paginated_iterator(knex, initial_url, error_handler=None):

@@ -4,7 +4,7 @@ import click
 from geoseeq.knex import DEFAULT_ENDPOINT
 
 from geoseeq import Knex
-from .config import load_profile
+from geoseeq.utils import load_profile
 
 logger = logging.getLogger('geoseeq_api')
 

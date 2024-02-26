@@ -1,6 +1,8 @@
 from geoseeq import GeoseeqNotFoundError
+from geoseeq.knex import with_knex
 
 
+@with_knex
 def org_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return an Organization object from a blob."""
     from geoseeq.organization import Organization  # import here to avoid circular import
@@ -11,6 +13,7 @@ def org_from_blob(knex, blob, already_fetched=True, modified=False):
     return org
 
 
+@with_knex
 def project_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a Project object from a blob."""
     org = org_from_blob(
@@ -27,6 +30,7 @@ def project_from_blob(knex, blob, already_fetched=True, modified=False):
 sample_group_from_blob = project_from_blob  # Alias
 
 
+@with_knex
 def sample_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a Sample object from a blob."""
     lib = sample_group_from_blob(
@@ -40,6 +44,7 @@ def sample_from_blob(knex, blob, already_fetched=True, modified=False):
     return sample
 
 
+@with_knex
 def project_result_folder_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a ProjectResultFolder object from a blob."""
     group = project_from_blob(
@@ -58,6 +63,7 @@ def project_result_folder_from_blob(knex, blob, already_fetched=True, modified=F
 sample_group_ar_from_blob = project_result_folder_from_blob  # Alias
 
 
+@with_knex
 def sample_result_folder_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a SampleResultFolder object from a blob."""
     sample = sample_from_blob(
@@ -76,6 +82,7 @@ def sample_result_folder_from_blob(knex, blob, already_fetched=True, modified=Fa
 sample_ar_from_blob = sample_result_folder_from_blob  # Alias
 
 
+@with_knex
 def sample_result_file_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a SampleResultFile object from a blob."""
     ar = sample_result_folder_from_blob(
@@ -92,6 +99,7 @@ def sample_result_file_from_blob(knex, blob, already_fetched=True, modified=Fals
 sample_ar_field_from_blob = sample_result_file_from_blob  # Alias
 
 
+@with_knex
 def project_result_file_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a ProjectResultFile object from a blob."""
     ar = project_result_folder_from_blob(
@@ -108,6 +116,7 @@ def project_result_file_from_blob(knex, blob, already_fetched=True, modified=Fal
 sample_group_ar_field_from_blob = project_result_file_from_blob  # Alias
 
 
+@with_knex
 def pipeline_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a Pipeline object from a blob."""
     from geoseeq.pipeline import Pipeline  # import here to avoid circular import
@@ -120,6 +129,7 @@ def pipeline_from_blob(knex, blob, already_fetched=True, modified=False):
 app_from_blob = pipeline_from_blob  # Alias
 
 
+@with_knex
 def pipeline_run_from_blob(knex, blob, already_fetched=True, modified=False):
     """Return a Pipeline run object from a blob."""
     from geoseeq.pipeline import PipelineRun  # import here to avoid circular import

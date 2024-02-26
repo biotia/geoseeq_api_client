@@ -13,7 +13,7 @@ from .view import cli_view
 from .search import cli_search
 from geoseeq.vc.cli import cli_vc
 from geoseeq.knex import DEFAULT_ENDPOINT
-from .shared_params.config import set_profile
+from geoseeq.utils import set_profile
 from .shared_params.opts_and_args import overwrite_option
 from .detail import cli_detail
 from .run import cli_app
@@ -53,7 +53,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.4.1')  # remember to update setup
+    click.echo('0.5.0')  # remember to update setup
 
 
 @main.group('advanced')

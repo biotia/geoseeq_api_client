@@ -22,8 +22,10 @@ from .from_names import (
     result_file_from_name,
 )
 from .utils import is_name, is_grn
+from geoseeq.knex import with_knex
 
 
+@with_knex
 def resolve_id(knex, id):
     """Return the object which the id points to."""
     if is_grn(id):
@@ -33,6 +35,7 @@ def resolve_id(knex, id):
     raise ValueError(f'"{id}" is not a GRN, or name. UUIDs cannot be resolved without a type')
 
 
+@with_knex
 def resolve_name(knex, name):
     """Return the object which the name points to."""
     assert is_name(name), f'"{name}" is not a name'
@@ -56,6 +59,7 @@ def resolve_name(knex, name):
     raise GeoseeqNotFoundError(f'Name "{name}" not found')
 
 
+@with_knex
 def resolve_grn(knex, grn):
     """Return the object which the grn points to."""
     assert is_grn(grn), f'"{grn}" is not a GRN'

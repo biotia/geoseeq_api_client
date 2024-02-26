@@ -22,6 +22,7 @@ from .from_names import (
     result_file_from_name,
 )
 from .utils import is_grn_or_uuid, is_name
+from geoseeq.knex import with_knex
 
 
 def _generic_from_id(knex, id, from_uuid_func, from_name_func):
@@ -33,31 +34,37 @@ def _generic_from_id(knex, id, from_uuid_func, from_name_func):
     raise ValueError(f'"{id}" is not a GRN, UUID, or name')
 
 
+@with_knex
 def org_from_id(knex, id):
     """Return the organization object which the id points to."""
     return _generic_from_id(knex, id, org_from_uuid, org_from_name)
 
 
+@with_knex
 def project_from_id(knex, id):
     """Return the project object which the id points to."""
     return _generic_from_id(knex, id, project_from_uuid, project_from_name)
 
 
+@with_knex
 def sample_from_id(knex, id):
     """Return the sample object which the id points to."""
     return _generic_from_id(knex, id, sample_from_uuid, sample_from_name)
 
 
+@with_knex
 def sample_result_folder_from_id(knex, id):
     """Return the sample result folder object which the id points to."""
     return _generic_from_id(knex, id, sample_result_folder_from_uuid, sample_result_folder_from_name)
 
 
+@with_knex
 def project_result_folder_from_id(knex, id):
     """Return the project result folder object which the id points to."""
     return _generic_from_id(knex, id, project_result_folder_from_uuid, project_result_folder_from_name)
 
 
+@with_knex
 def result_folder_from_id(knex, id):
     """Return a result folder object which the id points to.
     
@@ -66,16 +73,19 @@ def result_folder_from_id(knex, id):
     return _generic_from_id(knex, id, result_folder_from_uuid, result_folder_from_name)
 
 
+@with_knex
 def sample_result_file_from_id(knex, id):
     """Return the sample result file object which the id points to."""
     return _generic_from_id(knex, id, sample_result_file_from_uuid, sample_result_file_from_name)
 
 
+@with_knex
 def project_result_file_from_id(knex, id):
     """Return the project result file object which the id points to."""
     return _generic_from_id(knex, id, project_result_file_from_uuid, project_result_file_from_name)
 
 
+@with_knex
 def result_file_from_id(knex, id):
     """Return a result file object which the id points to.
     

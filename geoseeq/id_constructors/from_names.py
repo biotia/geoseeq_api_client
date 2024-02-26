@@ -14,8 +14,10 @@ This makes them more human-readable, but not reliable for permanent references.
 """
 from geoseeq.organization import Organization
 from geoseeq import GeoseeqNotFoundError
+from geoseeq.knex import with_knex
 
 
+@with_knex
 def org_from_name(knex, name):
     """Return the organization object which the name points to.
     
@@ -28,6 +30,7 @@ def org_from_name(knex, name):
     return org
 
 
+@with_knex
 def project_from_name(knex, name):
     """Return the project object which the name points to.
     
@@ -41,6 +44,7 @@ def project_from_name(knex, name):
     return proj
 
 
+@with_knex
 def sample_from_name(knex, name):
     """Return the sample object which the name points to.
     
@@ -54,6 +58,7 @@ def sample_from_name(knex, name):
     return sample
 
 
+@with_knex
 def sample_result_folder_from_name(knex, name):
     """Return the sample result folder object which the name points to.
     
@@ -67,6 +72,7 @@ def sample_result_folder_from_name(knex, name):
     return ar
 
 
+@with_knex
 def project_result_folder_from_name(knex, name):
     """Return the project result folder object which the name points to.
     
@@ -80,6 +86,7 @@ def project_result_folder_from_name(knex, name):
     return rf
 
 
+@with_knex
 def result_folder_from_name(knex, name):
     """Return a result folder object which the name points to.
     
@@ -95,6 +102,7 @@ def result_folder_from_name(knex, name):
         return project_result_folder_from_name(knex, name)
 
 
+@with_knex
 def sample_result_file_from_name(knex, name):
     """Return the sample result file object which the name points to.
     
@@ -108,6 +116,7 @@ def sample_result_file_from_name(knex, name):
     return r_file
 
 
+@with_knex
 def project_result_file_from_name(knex, name):
     """Return the project result file object which the name points to.
     
@@ -121,6 +130,7 @@ def project_result_file_from_name(knex, name):
     return r_file
 
 
+@with_knex
 def result_file_from_name(knex, name):
     """Return a result file object which the name points to.
     
