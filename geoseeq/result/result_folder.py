@@ -3,7 +3,7 @@ import logging
 import os
 import time
 import urllib.request
-from os.path import basename, getsize, join
+from os.path import basename, getsize, join, isfile, isdir, dirname
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -62,6 +62,84 @@ class ResultFolder(RemoteObject):
         if save:
             copied.idem()
         return copied
+    
+    def link_file(self, link_type, file_path, remote_name=None):
+        """Link a file to this result."""
+        result_file = self.result_file(remote_name or basename(file_path))
+        result_file.idem()
+        result_file.link_file(link_type, file_path)
+        return result_file
+    
+    def upload_file(self, file_path, remote_name=None, progress_tracker=None, chunk_size=FIVE_MB):
+        """Upload a local file to GeoSeeq. Return a ResultFile object."""
+        result_file = self.result_file(remote_name or basename(file_path))
+        result_file.idem()
+        result_file.upload_file(file_path, progress_tracker=progress_tracker, chunk_size=chunk_size)
+        return result_file
+    
+    def upload_folder(
+            self,
+            folder_path,
+            recursive=True,
+            hidden_files=False,
+            prefix=None,
+            chunk_size=FIVE_MB,
+            progress_tracker_factory=None,
+        ):
+        """Upload the contents of a local folder to geoseeq.
+        
+        If recursive is True, folders inside the folder will be
+        uploaded as well. GeoSeeq does not create actual nested
+        folders, rather files will get names that include the path
+        to the file such as `folder/file.txt`.
+
+        If hidden_files is True, files starting with a dot will be
+        uploaded as well. This does not apply to `.` and `..` which
+        are always ignored. Also ignoe `.geoseeq` folders.
+        """
+        if not isdir(folder_path):
+            if isfile(folder_path):
+                # Upload files directly
+                self.upload_file(folder_path)
+                return self
+            raise ValueError(f"{folder_path} is not a folder or file.")
+        for file_name in os.listdir(folder_path):
+            if not hidden_files and file_name.startswith("."):
+                continue
+            if file_name.startswith(".geoseeq") or file_name.endswith(".gs_downloaded"):
+                continue
+            if file_name in ["..", "."]:
+                continue
+            file_path = join(folder_path, file_name)
+            if isfile(file_path):
+                self.upload_file(
+                    file_path,
+                    remote_name=join(prefix or "", file_name),
+                    chunk_size=chunk_size,
+                    progress_tracker=progress_tracker_factory and progress_tracker_factory(file_path),
+                )
+            elif recursive:
+                self.upload_folder(file_path, 
+                    recursive=True,
+                    hidden_files=hidden_files,
+                    prefix=join(prefix or "", file_name),
+                    chunk_size=chunk_size,
+                    progress_tracker_factory=progress_tracker_factory,
+                )
+        return self
+
+    def download_folder(self, local_folder_path, hidden_files=True):
+        """Download the contents of this result folder to a local folder.
+        
+        If hidden_files is True, files starting with a dot will be downloaded as well.
+        """
+        for field in self.get_fields():
+            if not hidden_files and field.name.startswith("."):
+                continue
+            local_file_path = join(local_folder_path, field.name)
+            os.makedirs(dirname(local_file_path), exist_ok=True)
+            field.download(local_file_path)
+        return self
 
 AnalysisResult = ResultFolder # for backwards compatibility
 

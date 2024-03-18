@@ -4,7 +4,7 @@ import click
 from geoseeq.knex import DEFAULT_ENDPOINT
 
 from geoseeq import Knex
-from geoseeq.utils import load_profile
+from geoseeq.utils import load_auth_profile
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -75,10 +75,10 @@ def profile_option(f):
         state = ctx.ensure_object(State)
         endpoint, token = None, None
         if value:
-            endpoint, token = load_profile(value)
+            endpoint, token = load_auth_profile(value)
         else:
             try:
-                endpoint, token = load_profile()  # load default profile, if it exists
+                endpoint, token = load_auth_profile()  # load default profile, if it exists
             except KeyError:
                 pass
         if endpoint and token:

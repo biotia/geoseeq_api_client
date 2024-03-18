@@ -4,7 +4,7 @@ import json
 import click
 import pandas as pd
 import requests
-from os.path import basename
+from os.path import basename, isdir, isfile, exists
 from geoseeq.knex import GeoseeqNotFoundError
 from multiprocessing import Pool, current_process
 
@@ -22,9 +22,14 @@ from geoseeq.cli.shared_params import (
     overwrite_option,
     project_id_arg,
     handle_project_id,
+    project_or_sample_id_arg,
+    handle_project_or_sample_id,
 )
 
 logger = logging.getLogger('geoseeq_api')
+
+recursive_option = click.option('--recursive/--no-recursive', default=True, help='Upload files in subfolders')
+hidden_option = click.option('--hidden/--no-hidden', default=False, help='Upload hidden files in subfolders')
 
 
 @click.command('files')
@@ -33,11 +38,13 @@ logger = logging.getLogger('geoseeq_api')
 @yes_option
 @private_option
 @link_option
+@recursive_option
+@hidden_option
 @click.option('-n', '--geoseeq-file-name', default=None, multiple=True,
-              help='Specify a different name for the file on GeoSeeq than the local file name')
+              help='Specify a different name for the file on GeoSeeq than the local file name.')
 @folder_id_arg
 @click.argument('file_paths', type=click.Path(exists=True), nargs=-1)
-def cli_upload_file(state, cores, yes, private, link_type, geoseeq_file_name, folder_id, file_paths):
+def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, geoseeq_file_name, folder_id, file_paths):
     """Upload files to GeoSeeq.
 
     This command uploads files to either a sample or project on GeoSeeq. It can be used to upload
@@ -67,6 +74,9 @@ def cli_upload_file(state, cores, yes, private, link_type, geoseeq_file_name, fo
     # Upload multiple files to a project but name them differently on GeoSeeq
     $ geoseeq upload files "My Org/My Project/My Folder" /path/to/file1.txt /path/to/file2.txt -n "File 1" -n "File 2"
 
+    \b
+    # Upload all files in a local folder to a folder in a project
+    $ geoseeq upload files "My Org/My Project/My Folder" /path/to/folder
     ---
 
     Command Arguments:
@@ -82,6 +92,9 @@ def cli_upload_file(state, cores, yes, private, link_type, geoseeq_file_name, fo
     knex = state.get_knex()
     result_folder = handle_folder_id(knex, folder_id, yes=yes, private=private, create=True)
     if geoseeq_file_name:
+        uploading_folders = sum([isdir(fp) for fp in file_paths])
+        if uploading_folders:
+            raise click.UsageError('Cannot use --geoseeq-file-name with recursive folder uploads')
         if len(geoseeq_file_name) != len(file_paths):
             raise click.UsageError('Number of --geoseeq-file-name arguments must match number of file_paths')
         name_pairs = zip(geoseeq_file_name, file_paths)
@@ -90,12 +103,51 @@ def cli_upload_file(state, cores, yes, private, link_type, geoseeq_file_name, fo
     
     pbars = PBarManager()
     for geoseeq_file_name, file_path in name_pairs:
-        field = result_folder.result_file(geoseeq_file_name).idem()
-        if link_type == 'upload':
-            field.upload_file(file_path, progress_tracker=pbars.get_new_bar(file_path))
-        else:
-            field.link_file(link_type, file_path)
+        if isfile(file_path):
+            if link_type == 'upload':
+                result_folder.upload_file(
+                    file_path,
+                    remote_name=geoseeq_file_name,
+                    progress_tracker=pbars.get_new_bar(file_path)
+                )
+            else:
+                result_folder.link_file(link_type, file_path)
+        elif isdir(file_path) and recursive:
+            if link_type == 'upload':
+                result_folder.upload_folder(
+                    file_path,
+                    recursive=True,
+                    hidden_files=hidden,
+                    progress_tracker_factory=pbars.get_new_bar,
+                    prefix=basename(file_path),
+                )
+            else:
+                raise click.UsageError('--link-type can only be "upload" for recursive folder uploads')
+        elif isdir(file_path) and not recursive:
+            raise click.UsageError('Cannot upload a folder without --recursive')
 
+
+@click.command('folders')
+@use_common_state
+@click.option('--cores', default=1, help='Number of uploads to run in parallel')
+@yes_option
+@private_option
+@recursive_option
+@hidden_option
+@project_or_sample_id_arg
+@click.argument('folder_names', type=click.Path(exists=True), nargs=-1)
+def cli_upload_folder(state, cores, yes, private, recursive, hidden, project_or_sample_id, folder_names):
+    knex = state.get_knex()
+    root_obj = handle_project_or_sample_id(knex, project_or_sample_id, yes=yes, private=private)
+    pbars = PBarManager()
+    for folder_name in folder_names:
+        result_folder = root_obj.result_folder(folder_name).idem()
+        result_folder.upload_folder(
+            folder_name,
+            recursive=recursive,
+            hidden_files=hidden,
+            progress_tracker_factory=pbars.get_new_bar
+        )
 
 
 @click.command('metadata')

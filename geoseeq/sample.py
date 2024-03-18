@@ -150,6 +150,29 @@ class Sample(RemoteObject):
         file = self._grn_to_file(blob["grn"])
         return file, blob["read_type"]
     
+    def get_one_fastq_folder(self, preference_order=None):
+        """Return a 3-ple, <read_type:str>, <folder_name:str>, a list with reads.
+        
+        If the read type is paired end, the list will contain 2-ples with reads.
+
+        Default preference order is:
+            "short_read::paired_end"
+            "short_read::single_end"
+            "long_read::nanopore"
+        """
+        if preference_order is None:
+            preference_order = [
+                "short_read::paired_end",
+                "short_read::single_end",
+                "long_read::nanopore",
+            ]
+        all_fastqs = self.get_all_fastqs()
+        for read_type in preference_order:
+            if read_type in all_fastqs:
+                for folder_name, reads in all_fastqs[read_type].items():
+                    return read_type, folder_name, reads
+        raise ValueError("No suitable fastq found")
+    
     def get_all_fastqs(self):
         """Return a dict with the following structure:
 

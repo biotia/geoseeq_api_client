@@ -29,13 +29,3 @@ def set_profile(token, endpoint=DEFAULT_ENDPOINT, profile="", overwrite=False):
     }
     with open(PROFILES_PATH, "w") as f:
         json.dump(profiles, f, indent=4)
-    
-
-def load_profile(profile=""):
-    """Return an endpoit and a token"""
-    profile = profile or "__default__"
-    with open(PROFILES_PATH, "r") as f:
-        profiles = json.load(f)
-    if profile in profiles:
-        return profiles[profile]["endpoint"], profiles[profile]["token"]
-    raise KeyError(f"Profile {profile} not found.")

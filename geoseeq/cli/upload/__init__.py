@@ -2,6 +2,7 @@ import click
 
 from .upload import (
     cli_upload_file,
+    cli_upload_folder,
     cli_metadata,
 )
 from .upload_reads import cli_upload_reads_wizard
@@ -14,6 +15,7 @@ def cli_upload():
 
 cli_upload.add_command(cli_upload_reads_wizard)
 cli_upload.add_command(cli_upload_file)
+cli_upload.add_command(cli_upload_folder)
 cli_upload.add_command(cli_metadata)
 
 @click.group('upload')

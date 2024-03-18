@@ -8,6 +8,7 @@ import pandas as pd
 from multiprocessing import Pool
 from .shared_params import (
     handle_project_id,
+    handle_folder_id,
     project_id_arg,
     sample_ids_arg,
     handle_multiple_sample_ids,
@@ -16,6 +17,7 @@ from .shared_params import (
     yes_option,
     module_option,
     ignore_errors_option,
+    folder_ids_arg,
 )
 from geoseeq.result.file_download import download_url
 from geoseeq.utils import download_ftp
@@ -242,6 +244,52 @@ def cli_download_files(
         )
 
 
+@cli_download.command("folders")
+@use_common_state
+@cores_option
+@click.option("-t", "--target-dir", default=".")
+@yes_option
+@click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@ignore_errors_option
+@click.option('--hidden/--no-hidden', default=False, help='Upload hidden files in subfolders')
+@folder_ids_arg
+def cli_download_folders(state, cores, target_dir, yes, download, ignore_errors, hidden, folder_ids):
+    """Download entire folders from GeoSeeq.
+    
+    This command downloads folders directly based on their ID. This is used for "manual"
+    downloads of GeoSeeq folders.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Download a single folder
+    $ geoseeq download folders 9c60aa67-eb3d-4b02-9c77-94e22361b2f3
+
+    \b
+    # Download multiple folders
+    $ geoseeq download folders 9c60aa67-eb3d-4b02-9c77-94e22361b2f3 "My Org/My Project/My Sample/My Folder"
+
+    ---
+
+    Command Arguments:
+
+    [FOLDER_IDS]... a list of folder names, IDs, or GRNs
+    """
+    knex = state.get_knex()
+    result_folders = [
+        handle_folder_id(knex, folder_id, create=False)
+        for folder_id in folder_ids
+    ]
+    for result_folder in result_folders:
+        click.echo(f"{result_folder} -> {target_dir}/{result_folder.name}")
+    if not yes:
+        click.confirm(f'Do you want to download {len(result_folders)} folders?', abort=True)
+    for result_folder in result_folders:
+        result_folder.download_folder(join(target_dir, result_folder.name), hidden_files=hidden)
+
+
 @cli_download.command("ids")
 @use_common_state
 @cores_option
@@ -273,15 +321,15 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
 
     \b
     # Download a file by its name
-    $ geoseeq download ids "My Project/My Sample/My File"
+    $ geoseeq download ids "My Org/My Project/My Sample/My Folder/My File"
 
     \b 
     # Download a file by its name and specify a file name to use for the downloaded file
-    $ geoseeq download ids "My Project/My Sample/My File" -n my_file.fastq.gz
+    $ geoseeq download ids "My Org/My Project/My Sample/My Folder/My File" -n my_file.fastq.gz
 
     \b
     # Download multiple files by their names and specify a file name to use for the downloaded files
-    $ geoseeq download ids "My Project/My Sample/My File" "My Project/My Sample/My File 2" \\
+    $ geoseeq download ids "My Org/My Project/My Sample/My Folder/My File" "My Project/My Sample/My File 2" \\
         -n my_file.fastq.gz -n my_file_2.fastq.gz
 
     ---

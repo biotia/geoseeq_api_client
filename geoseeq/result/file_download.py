@@ -92,7 +92,7 @@ class ResultFileDownload:
         A flag file is created when the file download is complete. Subsequent calls to download
         will return the cached file if the flag file exists unless cache=False is specified.
         """
-        if not filename and not not self._cached_filename:
+        if not filename and not self._cached_filename:
             self._temp_filename = True
             myfile = NamedTemporaryFile(delete=False)
             myfile.close()

@@ -5,6 +5,7 @@ from .id_handlers import (
     handle_multiple_sample_ids,
     handle_folder_id,
     handle_pipeline_id,
+    handle_project_or_sample_id,
 )
 from .opts_and_args import *
 from .common_state import use_common_state

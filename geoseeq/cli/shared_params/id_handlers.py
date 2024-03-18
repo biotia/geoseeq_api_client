@@ -185,3 +185,27 @@ def handle_pipeline_id(knex, pipeline_id):
         if pipeline['name'] == pipeline_id:
             return pipeline_from_blob(knex, pipeline)
     raise ValueError(f'Pipeline "{pipeline_id}" not found')
+
+
+def handle_project_or_sample_id(knex, proj_or_sample_id, yes=False, private=True, create=True):
+    """Return a project or sample object
+    
+    `proj_or_sample_id` may be a project ID or a sample ID
+    """
+    if '/' in proj_or_sample_id:
+        tkns = proj_or_sample_id.split('/')
+        if len(tkns) == 3:
+            org_name, project_name, sample_name = tkns
+            _, _, sample = _get_org_proj_and_sample(knex, org_name, project_name, sample_name, yes=yes, private=private, create=create)
+            return sample
+        elif len(tkns) == 2:
+            org_name, project_name = tkns
+            _, proj = _get_org_and_proj(knex, org_name, project_name, yes=yes, create=create, private=private)
+            return proj
+    elif is_grn_or_uuid(proj_or_sample_id):
+        proj_or_sample_id = proj_or_sample_id.split(':')[-1]
+        try:
+            return sample_from_uuid(knex, proj_or_sample_id)
+        except GeoseeqNotFoundError:
+            return project_from_uuid(knex, proj_or_sample_id)
+    raise ValueError(f'ID must be a UUID, path, or a GRN')
