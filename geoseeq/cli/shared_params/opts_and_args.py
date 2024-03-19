@@ -2,7 +2,14 @@ import click
 
 dryrun_option = click.option('--dryrun/--wetrun', default=False, help='Print what will be created without actually creating it')
 overwrite_option = click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing samples, files, and data')
-module_option = lambda x: click.option('-m', '--module-name', type=click.Choice(x), default=x[0], help='Name for the module that will store the data')
+
+def module_option(options, use_default=True, default=None):
+    if use_default:
+        default = default or options[0]
+    if default and not use_default:
+        raise ValueError('Cannot specify a default value without use_default=True')
+    return click.option('-m', '--module-name', type=click.Choice(options), default=default, help='Name for the module that will store the data')
+
 private_option = click.option('--private/--public', default=True, help='Make objects private (default) or public')
 link_option = click.option(
     '--link-type',

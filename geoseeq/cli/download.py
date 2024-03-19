@@ -12,6 +12,7 @@ from .shared_params import (
     project_id_arg,
     sample_ids_arg,
     handle_multiple_sample_ids,
+    handle_multiple_result_file_ids,
     use_common_state,
     flatten_list_of_els_and_files,
     yes_option,
@@ -30,6 +31,7 @@ from .progress_bar import PBarManager
 from .utils import convert_size
 from geoseeq.constants import FASTQ_MODULE_NAMES
 from geoseeq.result import ResultFile
+from geoseeq.upload_download_manager import GeoSeeqDownloadManager
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -38,7 +40,6 @@ logger = logging.getLogger('geoseeq_api')
 def cli_download():
     """Download data from GeoSeeq."""
     pass
-
 
 
 @cli_download.command("metadata")
@@ -93,37 +94,6 @@ def cli_download_metadata(state, sample_ids):
     metadata = pd.DataFrame.from_dict(metadata, orient="index")
     metadata.to_csv(state.outfile)
     click.echo("Metadata successfully downloaded for samples.", err=True)
-
-
-def _download_one_file(args):
-    url, file_path, pbar, ignore_errors, head = args
-    if isinstance(url, ResultFile):
-        url = url.get_download_url()
-    try:
-        return download_url(url, filename=file_path, progress_tracker=pbar, head=head)
-    except Exception as e:
-        if ignore_errors:
-            logger.error(f"Error downloading {url}: {e}")
-        else:
-            raise e
-        
-
-def _download_files(result_files_with_names, target_dir, ignore_errors, cores, head):
-    download_args = []
-    pbars = PBarManager()
-    for result_file_or_url, filename in result_files_with_names:
-        click.echo(f"Downloading file {filename}")
-        file_path = join(target_dir, filename)
-        makedirs(dirname(file_path), exist_ok=True)
-        pbar = pbars.get_new_bar(file_path)
-        download_args.append((result_file_or_url, file_path, pbar, ignore_errors, head))
-        if cores == 1:
-            _download_one_file(download_args[-1])
-
-    if cores > 1:
-        with Pool(cores) as p:
-            for _ in p.imap_unordered(_download_one_file, download_args):
-                pass
 
 
 cores_option = click.option('--cores', default=1, help='Number of downloads to run in parallel')
@@ -238,10 +208,21 @@ def cli_download_files(
         if not yes:
             click.confirm(f'Do you want to download {len(response["links"])} files?', abort=True)
 
-        _download_files(
-            ((url, fname) for fname, url in response["links"].items()),
-            target_dir, ignore_errors, cores, None
+        download_manager = GeoSeeqDownloadManager(
+            n_parallel_downloads=cores,
+            ignore_errors=ignore_errors,
+            log_level=state.log_level,
+            progress_tracker_factory=PBarManager().get_new_bar,
         )
+        for fname, url in response["links"].items():
+            download_manager.add_download(url, join(target_dir, fname))
+        
+        click.echo(download_manager.get_preview_string(), err=True)
+        if not yes:
+            click.confirm('Continue?', abort=True)
+        logger.info(f'Downloading {len(download_manager)} files to {target_dir}')
+        download_manager.download_files()
+
 
 
 @cli_download.command("folders")
@@ -251,7 +232,7 @@ def cli_download_files(
 @yes_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @ignore_errors_option
-@click.option('--hidden/--no-hidden', default=False, help='Upload hidden files in subfolders')
+@click.option('--hidden/--no-hidden', default=True, help='Download hidden files in folder')
 @folder_ids_arg
 def cli_download_folders(state, cores, target_dir, yes, download, ignore_errors, hidden, folder_ids):
     """Download entire folders from GeoSeeq.
@@ -279,15 +260,23 @@ def cli_download_folders(state, cores, target_dir, yes, download, ignore_errors,
     """
     knex = state.get_knex()
     result_folders = [
-        handle_folder_id(knex, folder_id, create=False)
-        for folder_id in folder_ids
+        handle_folder_id(knex, folder_id, create=False) for folder_id in folder_ids
     ]
+    download_manager = GeoSeeqDownloadManager(
+        n_parallel_downloads=cores,
+        ignore_errors=ignore_errors,
+        log_level=state.log_level,
+        progress_tracker_factory=PBarManager().get_new_bar,
+    )
     for result_folder in result_folders:
-        click.echo(f"{result_folder} -> {target_dir}/{result_folder.name}")
+        download_manager.add_result_folder_download(
+            result_folder, join(target_dir, result_folder.name), hidden_files=hidden
+        )
+    click.echo(download_manager.get_preview_string(), err=True)
     if not yes:
-        click.confirm(f'Do you want to download {len(result_folders)} folders?', abort=True)
-    for result_folder in result_folders:
-        result_folder.download_folder(join(target_dir, result_folder.name), hidden_files=hidden)
+        click.confirm('Continue?', abort=True)
+    logger.info(f'Downloading {len(download_manager)} folders to {target_dir}')
+    download_manager.download_files()
 
 
 @cli_download.command("ids")
@@ -343,39 +332,35 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    result_file_ids = flatten_list_of_els_and_files(ids)
-    cores = max(cores, len(result_file_ids))  # don't use more cores than files
     knex = state.get_knex().set_auth_required()
-    result_files = []
-    for result_id in result_file_ids:
-        # we guess that this is a sample file to start, TODO: use GRN if available
-        if "/" in result_id:  # result name/path
-            result_file = result_file_from_name(knex, result_id)
-        else:  # uuid or grn
-            result_uuid = result_id.split(':')[-1]
-            result_file = result_file_from_uuid(knex, result_uuid)
-        result_files.append(result_file)
+    result_files = handle_multiple_result_file_ids(knex, ids)
+    cores = max(cores, len(result_files))  # don't use more cores than files
 
-    if not download:
-        for result_file in result_files:
-            print(result_file.get_download_url(), file=state.outfile)
-        return
-    
     if file_name:
         if len(file_name) != len(result_files):
             raise ValueError("If you specify file names then you must specify the same number of names and ids.")
         result_files_with_names = list(zip(result_files, file_name))
     else:
         result_files_with_names = [
-            (result_file, result_file.get_referenced_filename()) for result_file in result_files
+            (result_file, result_file.get_local_filename()) for result_file in result_files
         ]
-            
-    for result_file, filename in result_files_with_names:
-        click.echo(f"{result_file} -> {target_dir}/{filename}")
-    if not yes:
-        click.confirm(f'Do you want to download {len(result_files_with_names)} files?', abort=True)
-
-    _download_files(result_files_with_names, target_dir, ignore_errors, cores, head)
+    download_manager = GeoSeeqDownloadManager(
+        n_parallel_downloads=cores,
+        ignore_errors=ignore_errors,
+        log_level=state.log_level,
+        head=head,
+        progress_tracker_factory=PBarManager().get_new_bar,
+    )
+    if not download:
+        print(download_manager.get_url_string(), file=state.outfile)
+    else:
+        for result_file, filename in result_files_with_names:
+            download_manager.add_download(result_file, join(target_dir, filename))
+        click.echo(download_manager.get_preview_string(), err=True)
+        if not yes:
+            click.confirm('Continue?', abort=True)
+        logger.info(f'Downloading {len(download_manager)} files to {target_dir}')
+        download_manager.download_files()
 
 
 @cli_download.command("fastqs")
@@ -385,7 +370,7 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
 @yes_option
 @click.option("--first/--all", default=False, help="Download only the first folder of fastq files for each sample.")
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
-@module_option(FASTQ_MODULE_NAMES)
+@module_option(FASTQ_MODULE_NAMES, use_default=False)
 @ignore_errors_option
 @project_id_arg
 @sample_ids_arg
@@ -462,14 +447,19 @@ def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_n
         click.echo("No suitable fastq files found.")
         return
     
-    if not download:
-        for result_file, _ in result_files_with_names:
-            print(result_file.get_download_url(), file=state.outfile)
-        return
-
+    download_manager = GeoSeeqDownloadManager(
+        n_parallel_downloads=cores,
+        ignore_errors=ignore_errors,
+        log_level=state.log_level,
+        progress_tracker_factory=PBarManager().get_new_bar,
+    )
     for result_file, filename in result_files_with_names:
-        click.echo(f"{result_file} -> {target_dir}/{filename}")
-    if not yes:
-        click.confirm(f'Do you want to download {len(result_files_with_names)} files?', abort=True)
-
-    _download_files(result_files_with_names, target_dir, ignore_errors, cores, None)
+        download_manager.add_download(result_file, join(target_dir, filename))
+    if not download:
+        print(download_manager.get_url_string(), file=state.outfile)
+    else:
+        click.echo(download_manager.get_preview_string(), err=True)
+        if not yes:
+            click.confirm('Continue?', abort=True)
+        logger.info(f'Downloading {len(download_manager)} files to {target_dir}')
+        download_manager.download_files()

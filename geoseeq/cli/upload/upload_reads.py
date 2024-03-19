@@ -16,6 +16,7 @@ from geoseeq.cli.shared_params import (
     yes_option,
     use_common_state,
 )
+from geoseeq.upload_download_manager import GeoSeeqUploadManager
 
 from geoseeq.constants import FASTQ_MODULE_NAMES
 from geoseeq.cli.progress_bar import PBarManager
@@ -35,12 +36,9 @@ def _make_in_process_logger(log_level):
 def _upload_one_file(args):
     result_file, filepath, session, progress_tracker, link_type, overwrite, log_level = args
     _make_in_process_logger(log_level)
-    if result_file.exists() and not overwrite:  
-        return
-    result_file = result_file.idem()
     if link_type == 'upload':
         # TODO: check checksums to see if the file is the same
-        result_file.upload_file(filepath, session=session, progress_tracker=progress_tracker, threads=4)
+        result_file.upload_file(filepath, session=session, overwrite=overwrite,progress_tracker=progress_tracker, threads=4)
     else:
         result_file.link_file(link_type, filepath)
 
@@ -88,31 +86,24 @@ def _group_files(knex, filepaths, module_name, regex, yes):
 
 
 def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, cores, state):
-    def handle_upload(sample, success, error):
-        if success:
-            click.echo(f'Uploaded Sample: {sample.name}', err=True)
-        else:
-            click.echo(f'Failed to upload Sample: {sample.name}', err=True)
-            click.echo(f'Error:\n{error}\n{error.traceback()}', err=True)
 
-    pbars = PBarManager()
     with requests.Session() as session:
-        upload_args = []
+        upload_manager = GeoSeeqUploadManager(
+            n_parallel_uploads=cores,
+            session=session,
+            link_type=link_type,
+            log_level=state.log_level,
+            overwrite=overwrite,
+            progress_tracker_factory=PBarManager().get_new_bar,
+        )
         for group in groups:
             sample = lib.sample(group['sample_name']).idem()
             read_folder = sample.result_folder(module_name).idem()
-
             for field_name, path in group['fields'].items():
                 result_file = read_folder.read_file(field_name)
-                filepath = filepaths[path]
-                upload_args.append((
-                    result_file, filepath, session, pbars.get_new_bar(filepath),
-                    link_type, overwrite, state.log_level
-                ))
+                upload_manager.add_result_file(result_file, filepaths[path])
+        upload_manager.upload_files()
 
-        with Pool(cores) as p:
-            for _ in p.imap_unordered(_upload_one_file, upload_args):
-                pass
 
 
 def _is_fastq(path, fq_exts=['.fastq', '.fq'], compression_exts=['.gz', '.bz2', '']):

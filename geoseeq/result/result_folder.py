@@ -77,6 +77,26 @@ class ResultFolder(RemoteObject):
         result_file.upload_file(file_path, progress_tracker=progress_tracker, chunk_size=chunk_size)
         return result_file
     
+    def _prepare_folder_upload(self, folder_path, recursive, hidden_files, prefix):
+        """Yield result_file, local_path pairs for all files in a folder."""
+        if isfile(folder_path):
+            yield self.result_file(prefix), folder_path
+            return
+        for file_name in os.listdir(folder_path):
+            if not hidden_files and file_name.startswith("."):
+                continue
+            if file_name in ["..", "."]:
+                continue
+            if file_name.startswith(".geoseeq") or file_name.endswith(".gs_downloaded"):
+                continue
+            file_path = join(folder_path, file_name)
+            if isfile(file_path):
+                yield self.result_file(join(prefix or "", file_name)), file_path
+            elif recursive:
+                yield from self._prepare_folder_upload(
+                    file_path, recursive, hidden_files, join(prefix or "", file_name)
+                )
+    
     def upload_folder(
             self,
             folder_path,
@@ -97,36 +117,12 @@ class ResultFolder(RemoteObject):
         uploaded as well. This does not apply to `.` and `..` which
         are always ignored. Also ignoe `.geoseeq` folders.
         """
-        if not isdir(folder_path):
-            if isfile(folder_path):
-                # Upload files directly
-                self.upload_file(folder_path)
-                return self
-            raise ValueError(f"{folder_path} is not a folder or file.")
-        for file_name in os.listdir(folder_path):
-            if not hidden_files and file_name.startswith("."):
-                continue
-            if file_name.startswith(".geoseeq") or file_name.endswith(".gs_downloaded"):
-                continue
-            if file_name in ["..", "."]:
-                continue
-            file_path = join(folder_path, file_name)
-            if isfile(file_path):
-                self.upload_file(
-                    file_path,
-                    remote_name=join(prefix or "", file_name),
-                    chunk_size=chunk_size,
-                    progress_tracker=progress_tracker_factory and progress_tracker_factory(file_path),
-                )
-            elif recursive:
-                self.upload_folder(file_path, 
-                    recursive=True,
-                    hidden_files=hidden_files,
-                    prefix=join(prefix or "", file_name),
-                    chunk_size=chunk_size,
-                    progress_tracker_factory=progress_tracker_factory,
-                )
-        return self
+        for result_file, local_path in self._prepare_folder_upload(folder_path, recursive, hidden_files, prefix):
+            result_file.upload_file(
+                local_path,
+                progress_tracker=progress_tracker_factory and progress_tracker_factory(local_path),
+                chunk_size=chunk_size
+            )
 
     def download_folder(self, local_folder_path, hidden_files=True):
         """Download the contents of this result folder to a local folder.

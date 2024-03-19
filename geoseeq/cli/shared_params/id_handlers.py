@@ -19,7 +19,10 @@ from .obj_getters import (
     _get_org_proj_sample_and_folder,
     _get_org_proj_and_folder,
 )
-
+from geoseeq.id_constructors import (
+    result_file_from_uuid,
+    result_file_from_name,
+)
     
 
 def read_els_from_file(file):
@@ -209,3 +212,24 @@ def handle_project_or_sample_id(knex, proj_or_sample_id, yes=False, private=True
         except GeoseeqNotFoundError:
             return project_from_uuid(knex, proj_or_sample_id)
     raise ValueError(f'ID must be a UUID, path, or a GRN')
+
+
+def handle_multiple_result_file_ids(knex, result_file_ids):
+    """Return a list of fetched result file objects
+    
+    `result_file_ids` is a list of SampleResultFile and ProjectResultFile ids, names, or a mix of both
+
+    Any result file id may in fact be a file containing result file IDs, in which case the file will be read line by line
+    and each element will be a result file ID
+    """
+    result_file_ids = flatten_list_of_els_and_files(result_file_ids)
+    result_files = []
+    for result_id in result_file_ids:
+        # we guess that this is a sample file to start, TODO: use GRN if available
+        if "/" in result_id:  # result name/path
+            result_file = result_file_from_name(knex, result_id)
+        else:  # uuid or grn
+            result_uuid = result_id.split(':')[-1]
+            result_file = result_file_from_uuid(knex, result_uuid)
+        result_files.append(result_file)
+    return result_files

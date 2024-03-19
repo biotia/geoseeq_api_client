@@ -212,7 +212,7 @@ class Sample(RemoteObject):
                         )
                     else:
                         files[read_type][folder_name].append(
-                            self._grn_to_file(file_grn)
+                            self._grn_to_file(file_grn[0])
                         )
         return files
 

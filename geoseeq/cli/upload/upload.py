@@ -25,6 +25,7 @@ from geoseeq.cli.shared_params import (
     project_or_sample_id_arg,
     handle_project_or_sample_id,
 )
+from geoseeq.upload_download_manager import GeoSeeqUploadManager
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -101,30 +102,25 @@ def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, ge
     else:
         name_pairs = zip([basename(fp) for fp in file_paths], file_paths)
     
-    pbars = PBarManager()
+    upload_manager = GeoSeeqUploadManager(
+        n_parallel_uploads=cores,
+        link_type=link_type,
+        progress_tracker_factory=PBarManager().get_new_bar,
+        log_level=state.log_level,
+        overwrite=True
+    )
     for geoseeq_file_name, file_path in name_pairs:
         if isfile(file_path):
-            if link_type == 'upload':
-                result_folder.upload_file(
-                    file_path,
-                    remote_name=geoseeq_file_name,
-                    progress_tracker=pbars.get_new_bar(file_path)
-                )
-            else:
-                result_folder.link_file(link_type, file_path)
+            upload_manager.add_local_file_to_result_folder(result_folder, file_path)
         elif isdir(file_path) and recursive:
-            if link_type == 'upload':
-                result_folder.upload_folder(
-                    file_path,
-                    recursive=True,
-                    hidden_files=hidden,
-                    progress_tracker_factory=pbars.get_new_bar,
-                    prefix=basename(file_path),
-                )
-            else:
-                raise click.UsageError('--link-type can only be "upload" for recursive folder uploads')
+            upload_manager.add_local_folder_to_result_folder(result_folder, file_path, recursive=recursive, hidden_files=hidden, prefix=file_path)
         elif isdir(file_path) and not recursive:
             raise click.UsageError('Cannot upload a folder without --recursive')
+    click.echo(upload_manager.get_preview_string(), err=True)
+    if not yes:
+        click.confirm('Continue?', abort=True)
+    logger.info(f'Uploading {len(upload_manager)} files to {result_folder}')
+    upload_manager.upload_files()
 
 
 @click.command('folders')
@@ -139,15 +135,21 @@ def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, ge
 def cli_upload_folder(state, cores, yes, private, recursive, hidden, project_or_sample_id, folder_names):
     knex = state.get_knex()
     root_obj = handle_project_or_sample_id(knex, project_or_sample_id, yes=yes, private=private)
-    pbars = PBarManager()
+    upload_manager = GeoSeeqUploadManager(
+        n_parallel_uploads=cores,
+        link_type='upload',
+        progress_tracker_factory=PBarManager().get_new_bar,
+        log_level=logging.INFO,
+        overwrite=True
+    )
     for folder_name in folder_names:
         result_folder = root_obj.result_folder(folder_name).idem()
-        result_folder.upload_folder(
-            folder_name,
-            recursive=recursive,
-            hidden_files=hidden,
-            progress_tracker_factory=pbars.get_new_bar
-        )
+        upload_manager.add_local_folder_to_result_folder(result_folder, folder_name, recursive=recursive, hidden_files=hidden)
+    click.echo(upload_manager.get_preview_string(), err=True)
+    if not yes:
+        click.confirm('Continue?', abort=True)
+    logger.info(f'Uploading {len(upload_manager)} folders to {root_obj}')
+    upload_manager.upload_files()
 
 
 @click.command('metadata')

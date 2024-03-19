@@ -6,6 +6,7 @@ from pathlib import Path
 
 import requests
 
+from geoseeq.knex import GeoseeqGeneralError
 from geoseeq.constants import FIVE_MB
 from geoseeq.utils import md5_checksum
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -160,7 +161,10 @@ class ResultFileUpload:
         logger.info(f'Finished Upload for "{filepath}"')
         return self
 
-    def upload_file(self, filepath, multipart_thresh=FIVE_MB, **kwargs):
+    def upload_file(self, filepath, multipart_thresh=FIVE_MB, overwrite=True, **kwargs):
+        if self.exists() and not overwrite:  
+            raise GeoseeqGeneralError(f"Overwrite is set to False and file {self.uuid} already exists.")
+        self.idem()
         resolved_path = Path(filepath).resolve()
         file_size = getsize(resolved_path)
         return self.multipart_upload_file(filepath, file_size, **kwargs)

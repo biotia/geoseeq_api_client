@@ -96,6 +96,13 @@ class RemoteObject:
                     )
             setattr(self, field, new)
 
+    def get_blob(self):
+        blob = {}
+        for key, val, optional in self.get_remote_fields():
+            if val is not None or not optional:
+                blob[key] = val
+        return blob
+
     def exists(self, allow_overwrite=False):
         try:
             self.get(allow_overwrite=allow_overwrite)

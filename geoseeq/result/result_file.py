@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import urllib.request
+import urllib.parse
 from os.path import basename, getsize, join
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -12,6 +13,7 @@ import requests
 from geoseeq.constants import FIVE_MB
 from geoseeq.remote_object import RemoteObject, RemoteObjectError
 from geoseeq.utils import download_ftp, md5_checksum
+from geoseeq.knex import GeoseeqOtherError
 
 from .utils import *
 from .file_upload import ResultFileUpload
@@ -52,7 +54,8 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
         brn = f"brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}"
 
     def nested_url(self):
-        return self.parent.nested_url() + f"/fields/{self.name}"
+        escaped_name = urllib.parse.quote(self.name, safe="")
+        return self.parent.nested_url() + f"/fields/{escaped_name}"
 
     def get_blob_filename(self):
         sname = self.parent.parent.name.replace(".", "-")
@@ -75,20 +78,21 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
 
     def get_referenced_filename(self):
         ext = self.get_referenced_filename_ext()
-        sname = self.parent.parent.name.replace(".", "-")
-        mname = self.parent.module_name.replace(".", "-")
-        fname = self.name.replace(".", "-")
-        filename = join(self.parent.parent.name, f"{sname}.{mname}.{fname}.{ext}").replace(
+        sname = self.parent.parent.name.replace(".", "-").replace(" ", "_").lower()
+        mname = self.parent.module_name.replace(".", "-").replace(" ", "_").lower()
+        fname = self.name.replace(".", "-").replace(" ", "_").lower()
+        filename = f"{sname}.{mname}.{fname}.{ext}".replace(
             "::", "__"
         )
         return filename
 
     def get_local_filename(self):
         """Return a filename that can be used to store this field locally."""
-        try:
-            return basename(self.get_referenced_filename())
-        except TypeError:
-            return basename(self.get_blob_filename())
+        return self.name
+        # try:
+        #     return basename(self.get_referenced_filename())
+        # except TypeError:
+        #     return basename(self.get_blob_filename())
 
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
@@ -101,6 +105,22 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
         self.parent.idem()
         blob = self.knex.get(self.nested_url())
         self.load_blob(blob, allow_overwrite=allow_overwrite)
+
+    def _get_from_list(self, allow_overwrite=False):
+        """Fetch the result from the server by listing the parent's children and finding this field.
+        
+        This function is a workaround for files with names that have funky characters that don't 
+        work well in URLs.
+        """
+        self.parent.idem()
+        for field in self.parent.get_result_files():
+            if field.name == self.name:
+                print(field)
+                print()
+                self.load_blob(field.get_blob(), allow_overwrite=allow_overwrite)
+                self._already_fetched = True
+                self._modified = False
+                return
 
     def get_post_data(self):
         """Return a dict that can be used to POST this field to the server."""
@@ -178,6 +198,17 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
             "endpoint_url": endpoint_url,
         }
         return self.save()
+    
+    def idem(self):
+        try:
+            return super().idem()
+        except GeoseeqOtherError as e:
+            if "The fields analysis_result, name must make a unique set." in str(e):
+                # this typically happens when the field name has a character that doesn't work well in URLs
+                self._get_from_list(allow_overwrite=True)
+            else:
+                raise e
+        return self
 
     def _create(self):
         check_json_serialization(self.stored_data)
