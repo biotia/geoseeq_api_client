@@ -1,3 +1,25 @@
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "geoseeq"
+version = "0.5.6a3"
+authors = [
+  { name="David C. Danko", email="dcdanko@biotia.io" },
+]
+description = "GeoSeeq command line tools and python API"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/biotia/geoseeq_api_client"
+Issues = "https://github.com/biotia/geoseeq_api_client/issues"
+
+[project.scripts]
+geoseeq = "geoseeq.cli:main"

@@ -1,15 +1,20 @@
 import json
 import logging
 import os
+from os.path import join, abspath
 from glob import glob
 from hashlib import sha256
 from random import randint
 from time import time
 
-logger = logging.getLogger(__name__)  # Same name as calling module
+logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
-CACHED_BLOB_TIME = 3 * 60 * 60  # 3 hours in seconds
-CACHE_DIR = os.environ.get('GEOSEEQ_API_CACHE_DIR', '.')
+CACHED_BLOB_TIME = 5 * 60 # 5 minutes in seconds
+CACHE_DIR = join(
+    os.environ.get('XDG_CACHE_HOME', join(os.environ["HOME"], ".cache")),
+    "geoseeq"
+)
+USE_GEOSEEQ_CACHE = None
 
 
 def hash_obj(obj):
@@ -30,8 +35,31 @@ def time_since_file_cached(blob_filepath):
 class FileSystemCache:
 
     def __init__(self, timeout=CACHED_BLOB_TIME):
-        self.no_cache = 'false' in os.environ.get('USE_GEOSEEQ_CACHE', 'TRUE').lower()
         self.timeout = timeout
+        self._no_cache = False
+        self.setup()
+
+    @property
+    def cache_dir_path(self):
+        return abspath(f'{CACHE_DIR}/geoseeq_api_cache/v1/')
+
+    def setup(self):
+        if self.no_cache:
+            return
+        try:
+            os.makedirs(self.cache_dir_path, exist_ok=True)
+            open(join(self.cache_dir_path, 'flag'), 'w').close()
+        except Exception as e:
+            logger.warning(f'Could not create cache directory. {e}')
+            self._no_cache = True
+    
+    @property
+    def no_cache(self):
+        if self._no_cache or not USE_GEOSEEQ_CACHE:
+            logger.debug('Cache is disabled.')
+            return True
+        logger.debug('Cache is enabled.')
+        return not USE_GEOSEEQ_CACHE
 
     def clear_blob(self, obj):
         if self.no_cache:
@@ -46,8 +74,7 @@ class FileSystemCache:
                 pass
 
     def get_cached_blob_filepath(self, obj):
-        path_base = f'{CACHE_DIR}/.geoseeq_api_cache/v1/geoseeq_api_cache__{hash_obj(obj)}'
-        os.makedirs(os.path.dirname(path_base), exist_ok=True)
+        path_base = join(self.cache_dir_path, f'geoseeq_api_cache__{hash_obj(obj)}')
         paths = sorted(glob(f'{path_base}__*.json'))
         if paths:
             return paths[-1], True

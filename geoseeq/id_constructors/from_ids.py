@@ -28,6 +28,7 @@ from geoseeq.knex import with_knex
 def _generic_from_id(knex, id, from_uuid_func, from_name_func):
     """Return the object which the id points to."""
     if is_grn_or_uuid(id):
+        id = id.split(':')[-1]  # if this is a GRN, get the UUID. Won't hurt if it's already a UUID.
         return from_uuid_func(knex, id)
     if is_name(id):
         return from_name_func(knex, id)

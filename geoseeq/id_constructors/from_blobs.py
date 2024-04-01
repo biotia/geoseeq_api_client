@@ -93,6 +93,7 @@ def sample_result_file_from_blob(knex, blob, already_fetched=True, modified=Fals
     arf.load_blob(blob)
     ar._already_fetched = already_fetched
     ar._modified = modified
+    arf.cache_blob(blob)
     return arf
 
 
@@ -110,10 +111,25 @@ def project_result_file_from_blob(knex, blob, already_fetched=True, modified=Fal
     arf.load_blob(blob)
     ar._already_fetched = already_fetched
     ar._modified = modified
+    arf.cache_blob(blob)
     return arf
 
 
 sample_group_ar_field_from_blob = project_result_file_from_blob  # Alias
+
+
+@with_knex
+def result_file_from_blob(knex, blob, already_fetched=True, modified=False):
+    """Return a ResultFile object from a blob."""
+    if "sample_group" in blob["analysis_result_obj"]:
+        ar = project_result_file_from_blob(
+            knex, blob, already_fetched=already_fetched, modified=modified
+        )
+    else:
+        ar = sample_result_file_from_blob(
+            knex, blob, already_fetched=already_fetched, modified=modified
+        )
+    return ar
 
 
 @with_knex

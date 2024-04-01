@@ -346,5 +346,9 @@ class Project(RemoteObject):
 
     def pre_hash(self):
         return "PROJ" + self.name + self.org.pre_hash()
+    
+    @property
+    def grn(self):
+        return f"grn::project:{self.uuid}"
 
 SampleGroup = Project  # alias for backwards compatibility

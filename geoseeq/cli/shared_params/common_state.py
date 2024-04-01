@@ -2,7 +2,7 @@ import logging
 
 import click
 from geoseeq.knex import DEFAULT_ENDPOINT
-
+import geoseeq.file_system_cache
 from geoseeq import Knex
 from geoseeq.utils import load_auth_profile
 
@@ -17,6 +17,7 @@ class State(object):
         self.outfile = None
         self.log_level = 20
         self._knex = None
+        self.use_cache = True
 
     def get_knex(self):
         logger.setLevel(self.log_level)
@@ -37,8 +38,8 @@ def log_level_option(f):
         state.log_level = value
         return value
     return click.option('-l', '--log-level',
-                        type=click.Choice(['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG']),
-                        default='WARNING',
+                        type=click.Choice(['CRITICAL', 'ERROR', 'WARN', 'INFO', 'DEBUG']),
+                        default='WARN',
                         envvar='GEOSEEQ_CLI_LOG_LEVEL',
                         expose_value=False,
                         callback=callback)(f)
@@ -103,11 +104,25 @@ def outfile_option(f):
                         callback=callback)(f)
 
 
+def cache_option(f):
+    def callback(ctx, param, value):
+        state = ctx.ensure_object(State)
+        state.use_cache = value
+        geoseeq.file_system_cache.USE_GEOSEEQ_CACHE = value
+        return value
+    return click.option('--use-cache/--no-cache',
+                        default=True,
+                        expose_value=False,
+                        help='Cache data from the geoseeq server.',
+                        callback=callback)(f)
+
+
 def common_options(f):
     f = outfile_option(f)
     f = log_level_option(f)
     f = endpoint_option(f)
     f = profile_option(f)
+    f = cache_option(f)
     return f
 
 
