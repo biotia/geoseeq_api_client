@@ -53,7 +53,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.5.6a3')  # remember to update setup
+    click.echo('0.5.6a5')  # remember to update setup
 
 
 @main.group('advanced')
@@ -90,7 +90,9 @@ def cli_config(yes, api_token, endpoint, profile, overwrite):
     if not profile and not yes:
         profile = click.prompt(f'Set custom profile name? (Leave blank for default)', default="").strip(' \"\'')
     if not endpoint:
-        endpoint = click.prompt(f'Enter the URL to use for GeoSeeq (Most users can use the default)', default=DEFAULT_ENDPOINT).strip(' \"\'')
+        endpoint = DEFAULT_ENDPOINT
+        if not yes:
+            endpoint = click.prompt(f'Enter the URL to use for GeoSeeq (Most users can use the default)', default=DEFAULT_ENDPOINT).strip(' \"\'')
     if not api_token:
         api_token = click.prompt(f'Enter your GeoSeeq API token', hide_input=True).strip(' \"\'')
     if not yes:
