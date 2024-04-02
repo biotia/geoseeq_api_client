@@ -1,4 +1,5 @@
 import logging
+from pandas import to_datetime
 
 from requests.exceptions import HTTPError
 
@@ -57,6 +58,14 @@ class RemoteObject:
 
     def cache_blob(self, blob):
         return self.cache.cache_blob(self, blob)
+    
+    @property
+    def updated_at_timestamp(self):
+        """Return the updated_at field as a unix timestamp (in seconds).
+        
+        timestamp from servercomes as a string: '2024-03-13T09:06:56.582551Z' 
+        """
+        return to_datetime(self.updated_at).timestamp()
 
     def load_blob(self, blob, allow_overwrite=False):
         logger.debug(f"Loading blob. {blob}")

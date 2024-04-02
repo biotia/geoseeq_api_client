@@ -2,7 +2,7 @@
 import urllib.request
 import logging
 import requests
-from os.path import basename, getsize, join, isfile
+from os.path import basename, getsize, join, isfile, getmtime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -82,12 +82,30 @@ class ResultFileDownload:
             return url
         else:
             return self.stored_data[key]
+        
+    
+    def _download_flag_path(self, filename, flag_suffix='.gs_downloaded'):
+        return filename + flag_suffix
+        
+    def download_needs_update(self, filename, flag_suffix='.gs_downloaded', slack=5):
+        """Return True if the file needs to be downloaded, False otherwise.
+        
+        If either the file or the flag file does not exist, return True.
+        If the flag file is older than `updated_at` in the result, return True.
+        Otherwise, return False.
+        """
+        if isfile(filename) and isfile(self._download_flag_path(filename, flag_suffix)):
+            if self.updated_at_timestamp - getmtime(self._download_flag_path(filename, flag_suffix)) > slack:
+                return True
+            return False
+        return True
 
     def download(self, filename=None, flag_suffix='.gs_downloaded', cache=True, head=None, progress_tracker=None):
         """Return a local filepath to the file in this result. Download the file if necessary.
         
         When the file is downloaded, it is cached in the result object. Subsequent calls to download
-        on this object will return the cached file unless cache=False is specified.
+        on this object will return the cached file unless cache=False is specified or the file is updated
+        on the server.
 
         A flag file is created when the file download is complete. Subsequent calls to download
         will return the cached file if the flag file exists unless cache=False is specified.
@@ -101,13 +119,14 @@ class ResultFileDownload:
             filename = self._cached_filename
 
         blob_type = self.stored_data.get("__type__", "").lower()
-        if cache and self._cached_filename:
-            return self._cached_filename
-        flag_filename = filename + flag_suffix
-        if cache and flag_suffix:
-            # check if file and flag file exist, if so, return filename
-            if isfile(filename) and isfile(flag_filename):
-                return filename
+        needs_update = self.download_needs_update(filename, flag_suffix)
+        if not needs_update:
+            if cache and self._cached_filename:
+                return self._cached_filename
+            if cache and flag_suffix:
+                # check if file and flag file exist, if so, return filename
+                if isfile(filename) and isfile(self._download_flag_path(filename, flag_suffix)):
+                    return filename
 
         url = self.get_download_url()
         filepath = download_url(
@@ -116,7 +135,7 @@ class ResultFileDownload:
         )
         if cache and flag_suffix:
             # create flag file
-            open(flag_filename, 'a').close()
+            open(self._download_flag_path(filename, flag_suffix), 'a').close()
         if cache:
             self._cached_filename = filepath
         return filepath
