@@ -53,6 +53,14 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
         obj_type = "sample" if self.canon_url() == "sample_ar_fields" else "project"
         brn = f"brn:{self.knex.instance_code()}:{obj_type}_result_field:{self.uuid}"
 
+    def has_downloadable_file(self):
+        """Return True if this field has a downloadable file."""
+        try:
+            self.download(head=10, cache=False)
+            return True
+        except Exception as e:
+            return False
+
     def nested_url(self):
         escaped_name = urllib.parse.quote(self.name, safe="")
         return self.parent.nested_url() + f"/fields/{escaped_name}"

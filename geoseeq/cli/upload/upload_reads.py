@@ -15,6 +15,7 @@ from geoseeq.cli.shared_params import (
     overwrite_option,
     yes_option,
     use_common_state,
+    no_new_versions_option
 )
 from geoseeq.upload_download_manager import GeoSeeqUploadManager
 
@@ -85,7 +86,7 @@ def _group_files(knex, filepaths, module_name, regex, yes):
     return groups
 
 
-def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, cores, state):
+def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state):
 
     with requests.Session() as session:
         upload_manager = GeoSeeqUploadManager(
@@ -95,6 +96,8 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, cores,
             log_level=state.log_level,
             overwrite=overwrite,
             progress_tracker_factory=PBarManager().get_new_bar,
+            use_cache=state.use_cache,
+            no_new_versions=no_new_versions,
         )
         for group in groups:
             sample = lib.sample(group['sample_name']).idem()
@@ -138,10 +141,11 @@ def flatten_list_of_fastqs(filepaths):
 @click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
 @private_option
 @link_option
+@no_new_versions_option
 @module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
 @click.argument('fastq_files', type=click.Path(exists=True), nargs=-1)
-def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, module_name, project_id, fastq_files):
+def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, no_new_versions, module_name, project_id, fastq_files):
     """Upload fastq read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number
@@ -195,4 +199,4 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     click.echo(f'Found {len(filepaths)} files to upload.', err=True)
     regex = _get_regex(knex, filepaths, module_name, proj, regex)
     groups = _group_files(knex, filepaths, module_name, regex, yes)
-    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, cores, state)
+    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state)

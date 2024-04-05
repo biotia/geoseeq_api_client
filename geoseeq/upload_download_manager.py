@@ -19,12 +19,18 @@ def _make_in_process_logger(log_level):
 
 
 def _upload_one_file(args):
-    result_file, filepath, session, progress_tracker, link_type, overwrite, log_level, parallel_uploads = args
+    (result_file, filepath, session, progress_tracker,
+     link_type, overwrite, log_level, parallel_uploads,
+     use_cache, no_new_versions) = args
     if parallel_uploads:
         _make_in_process_logger(log_level)
     if link_type == 'upload':
         # TODO: check checksums to see if the file is the same
-        result_file.upload_file(filepath, session=session, overwrite=overwrite, progress_tracker=progress_tracker, threads=4)
+        result_file.upload_file(
+            filepath,
+            session=session, overwrite=overwrite, progress_tracker=progress_tracker,
+            threads=4, use_cache=use_cache, no_new_versions=no_new_versions
+        )
     else:
         result_file.link_file(link_type, filepath)
     return result_file
@@ -38,7 +44,9 @@ class GeoSeeqUploadManager:
                  link_type='upload',
                  progress_tracker_factory=None,
                  log_level=logging.WARNING,
-                 overwrite=True):
+                 overwrite=True,
+                 no_new_versions=False,
+                 use_cache=True):
         self.session = session
         self.n_parallel_uploads = n_parallel_uploads
         self.progress_tracker_factory = progress_tracker_factory if progress_tracker_factory else lambda x: None
@@ -46,6 +54,8 @@ class GeoSeeqUploadManager:
         self.link_type = link_type
         self.overwrite = overwrite
         self._result_files = []
+        self.no_new_versions = no_new_versions
+        self.use_cache = use_cache
 
     def add_result_file(self, result_file, local_path):
         self._result_files.append((result_file, local_path))
@@ -70,7 +80,7 @@ class GeoSeeqUploadManager:
                 result_file, local_path,
                 self.session, self.progress_tracker_factory(local_path),
                 self.link_type, self.overwrite, self.log_level,
-                self.n_parallel_uploads > 1
+                self.n_parallel_uploads > 1, self.use_cache, self.no_new_versions
             ) for result_file, local_path in self._result_files
         ]
         out = []

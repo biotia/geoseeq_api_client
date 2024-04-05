@@ -15,7 +15,7 @@ CACHE_DIR = join(
     "geoseeq"
 )
 USE_GEOSEEQ_CACHE = None
-
+GEOSEEQ_CACHE_DIR = abspath(f'{CACHE_DIR}/geoseeq_api_cache/v1/')
 
 def hash_obj(obj):
     val = obj
@@ -41,7 +41,7 @@ class FileSystemCache:
 
     @property
     def cache_dir_path(self):
-        return abspath(f'{CACHE_DIR}/geoseeq_api_cache/v1/')
+        return GEOSEEQ_CACHE_DIR
 
     def setup(self):
         if self.no_cache:

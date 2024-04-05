@@ -2,7 +2,7 @@ import click
 
 dryrun_option = click.option('--dryrun/--wetrun', default=False, help='Print what will be created without actually creating it')
 overwrite_option = click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing samples, files, and data')
-
+no_new_versions_option = click.option('--no-new-versions/--new-versions', default=False, help='Do not create new versions of the data')
 def module_option(options, use_default=True, default=None):
     if use_default:
         default = default or options[0]

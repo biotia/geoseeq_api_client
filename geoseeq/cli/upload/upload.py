@@ -24,6 +24,7 @@ from geoseeq.cli.shared_params import (
     handle_project_id,
     project_or_sample_id_arg,
     handle_project_or_sample_id,
+    no_new_versions_option,
 )
 from geoseeq.upload_download_manager import GeoSeeqUploadManager
 
@@ -41,11 +42,12 @@ hidden_option = click.option('--hidden/--no-hidden', default=False, help='Upload
 @link_option
 @recursive_option
 @hidden_option
+@no_new_versions_option
 @click.option('-n', '--geoseeq-file-name', default=None, multiple=True,
               help='Specify a different name for the file on GeoSeeq than the local file name.')
 @folder_id_arg
 @click.argument('file_paths', type=click.Path(exists=True), nargs=-1)
-def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, geoseeq_file_name, folder_id, file_paths):
+def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, no_new_versions, geoseeq_file_name, folder_id, file_paths):
     """Upload files to GeoSeeq.
 
     This command uploads files to either a sample or project on GeoSeeq. It can be used to upload
@@ -107,7 +109,8 @@ def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, ge
         link_type=link_type,
         progress_tracker_factory=PBarManager().get_new_bar,
         log_level=state.log_level,
-        overwrite=True
+        no_new_versions=no_new_versions,
+        use_cache=state.use_cache,
     )
     for geoseeq_file_name, file_path in name_pairs:
         if isfile(file_path):
@@ -130,9 +133,10 @@ def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, ge
 @private_option
 @recursive_option
 @hidden_option
+@no_new_versions_option
 @project_or_sample_id_arg
 @click.argument('folder_names', type=click.Path(exists=True), nargs=-1)
-def cli_upload_folder(state, cores, yes, private, recursive, hidden, project_or_sample_id, folder_names):
+def cli_upload_folder(state, cores, yes, private, recursive, hidden, no_new_versions, project_or_sample_id, folder_names):
     knex = state.get_knex()
     root_obj = handle_project_or_sample_id(knex, project_or_sample_id, yes=yes, private=private)
     upload_manager = GeoSeeqUploadManager(
@@ -140,7 +144,9 @@ def cli_upload_folder(state, cores, yes, private, recursive, hidden, project_or_
         link_type='upload',
         progress_tracker_factory=PBarManager().get_new_bar,
         log_level=logging.INFO,
-        overwrite=True
+        overwrite=True,
+        use_cache=state.use_cache,
+        no_new_versions=no_new_versions,
     )
     for folder_name in folder_names:
         result_folder = root_obj.result_folder(folder_name).idem()
