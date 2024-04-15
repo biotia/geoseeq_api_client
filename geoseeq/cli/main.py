@@ -53,7 +53,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.5.6a15')  # remember to update setup
+    click.echo('0.5.6a16')  # remember to update setup
 
 
 @main.group('advanced')
@@ -102,3 +102,19 @@ def cli_config(yes, api_token, endpoint, profile, overwrite):
             return
     set_profile(api_token, endpoint=endpoint, profile=profile, overwrite=overwrite)
     click.echo(f'Profile configured.')
+
+
+@main.command('clear-cache')
+@yes_option
+def cli_clear_cache(yes):
+    """Clear the local cache.
+
+    ---
+    
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    from geoseeq.file_system_cache import GEOSEEQ_CACHE_DIR
+    import shutil
+    if yes or click.confirm('Are you sure you want to clear the cache?'):
+        shutil.rmtree(GEOSEEQ_CACHE_DIR, ignore_errors=True)

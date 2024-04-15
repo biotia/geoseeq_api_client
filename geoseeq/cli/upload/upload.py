@@ -40,7 +40,7 @@ hidden_option = click.option('--hidden/--no-hidden', default=False, help='Upload
 @click.option('--cores', default=1, help='Number of uploads to run in parallel', show_default=True)
 @click.option('--threads-per-upload', default=4, help='Number of threads used to upload each file', show_default=True)
 @click.option('--num-retries', default=3, help='Number of times to retry a failed upload', show_default=True)
-@click.option('--chunk-size-mb', default=5, help='Size of chunks to upload in MB', show_default=True)
+@click.option('--chunk-size-mb', default=-1, help='Size of chunks to upload in MB', show_default=True)
 @ignore_errors_option
 @yes_option
 @private_option
@@ -122,8 +122,8 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         use_cache=state.use_cache,
         num_retries=num_retries,
         ignore_errors=ignore_errors,
-        session=knex.new_session(),
-        chunk_size_mb=chunk_size_mb,
+        session=None, #knex.new_session(),
+        chunk_size_mb=chunk_size_mb if chunk_size_mb > 0 else None,
     )
     for geoseeq_file_name, file_path in name_pairs:
         if isfile(file_path):

@@ -175,7 +175,7 @@ class ResultFileUpload:
         attempts = 0
         while attempts < max_retries:
             try:
-                url = url.replace("s3.wasabisys.com", "s3.us-east-1.wasabisys.com")
+                # url = url.replace("s3.wasabisys.com", "s3.us-east-1.wasabisys.com")
                 logger.debug(f"Uploading part {num + 1} to {url}. Size: {len(file_chunk)} bytes.")
                 if session:
                     http_response = session.put(url, data=file_chunk)
@@ -193,7 +193,7 @@ class ResultFileUpload:
                     raise e
 
                 retry_time = min(8 ** attempts, 120)  # exponential backoff, max 120s
-                retry_time *= 0.8 + (random() * 0.4)  # randomize to avoid thundering herd
+                retry_time *= 0.6 + (random() * 0.8)  # randomize to avoid thundering herd
                 logger.debug(f"Retrying upload for part {num + 1} in {retry_time} seconds.")
                 time.sleep(retry_time)
             
@@ -251,7 +251,7 @@ class ResultFileUpload:
         filepath,
         file_size,
         optional_fields=None,
-        chunk_size=FIVE_MB,
+        chunk_size=None,
         max_retries=3,
         session=None,
         progress_tracker=None,
@@ -260,6 +260,11 @@ class ResultFileUpload:
     ):
         """Upload a file to S3 using the multipart upload process."""
         logger.info(f"Uploading {filepath} to S3 using multipart upload.")
+        if not chunk_size:
+            chunk_size = FIVE_MB
+            if file_size >= 10 * FIVE_MB:
+                chunk_size = 5 * FIVE_MB
+        logger.debug(f"Using chunk size of {chunk_size} bytes.")
         resumable_upload_tracker = None
         if use_cache and file_size > 10 * FIVE_MB:  # only use resumable upload tracker for larger files
             resumable_upload_tracker = ResumableUploadTracker(filepath, chunk_size)

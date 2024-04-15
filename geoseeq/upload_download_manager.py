@@ -23,7 +23,7 @@ def _upload_one_file(args):
      link_type, overwrite, log_level, parallel_uploads,
      use_cache, no_new_versions, threads_per_upload,
      num_retries, ignore_errors, chunk_size_mb) = args
-    chunk_size = chunk_size_mb * 1024 * 1024
+    chunk_size = chunk_size_mb * 1024 * 1024 if chunk_size_mb else None
     if parallel_uploads:
         _make_in_process_logger(log_level)
     try:
