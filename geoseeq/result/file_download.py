@@ -46,6 +46,11 @@ def guess_download_kind(url):
 
 def download_url(url, kind='guess', filename=None, head=None, progress_tracker=None):
     """Return a local filepath to the downloaded file. Download the file."""
+    if filename and isfile(filename):
+        file_size = getsize(filename)
+        if file_size > 0:
+            logger.info(f"File already exists: {filename}. Not overwriting.")
+            return filename
     if kind == 'guess':
         kind = guess_download_kind(url)
         logger.info(f"Guessed download kind: {kind} for {url}")

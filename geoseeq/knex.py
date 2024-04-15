@@ -96,6 +96,9 @@ class Knex:
         sess.auth = self.auth
         sess.verify = self._verify
         return sess
+    
+    def new_session(self):
+        return self._new_session()
 
     def _set_verify(self):
         try:

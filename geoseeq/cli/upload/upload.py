@@ -25,6 +25,7 @@ from geoseeq.cli.shared_params import (
     project_or_sample_id_arg,
     handle_project_or_sample_id,
     no_new_versions_option,
+    ignore_errors_option,
 )
 from geoseeq.upload_download_manager import GeoSeeqUploadManager
 
@@ -36,7 +37,11 @@ hidden_option = click.option('--hidden/--no-hidden', default=False, help='Upload
 
 @click.command('files')
 @use_common_state
-@click.option('--cores', default=1, help='Number of uploads to run in parallel')
+@click.option('--cores', default=1, help='Number of uploads to run in parallel', show_default=True)
+@click.option('--threads-per-upload', default=4, help='Number of threads used to upload each file', show_default=True)
+@click.option('--num-retries', default=3, help='Number of times to retry a failed upload', show_default=True)
+@click.option('--chunk-size-mb', default=5, help='Size of chunks to upload in MB', show_default=True)
+@ignore_errors_option
 @yes_option
 @private_option
 @link_option
@@ -44,10 +49,11 @@ hidden_option = click.option('--hidden/--no-hidden', default=False, help='Upload
 @hidden_option
 @no_new_versions_option
 @click.option('-n', '--geoseeq-file-name', default=None, multiple=True,
-              help='Specify a different name for the file on GeoSeeq than the local file name.')
+              help='Specify a different name for the file on GeoSeeq than the local file name.',
+              show_default=True)
 @folder_id_arg
 @click.argument('file_paths', type=click.Path(exists=True), nargs=-1)
-def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, no_new_versions, geoseeq_file_name, folder_id, file_paths):
+def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb, ignore_errors, yes, private, link_type, recursive, hidden, no_new_versions, geoseeq_file_name, folder_id, file_paths):
     """Upload files to GeoSeeq.
 
     This command uploads files to either a sample or project on GeoSeeq. It can be used to upload
@@ -92,6 +98,8 @@ def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, no
 
     ---
     """
+    if num_retries < 1:
+        raise click.UsageError('--num-retries must be at least 1')
     knex = state.get_knex()
     result_folder = handle_folder_id(knex, folder_id, yes=yes, private=private, create=True)
     if geoseeq_file_name:
@@ -106,11 +114,16 @@ def cli_upload_file(state, cores, yes, private, link_type, recursive, hidden, no
     
     upload_manager = GeoSeeqUploadManager(
         n_parallel_uploads=cores,
+        threads_per_upload=threads_per_upload,
         link_type=link_type,
         progress_tracker_factory=PBarManager().get_new_bar,
         log_level=state.log_level,
         no_new_versions=no_new_versions,
         use_cache=state.use_cache,
+        num_retries=num_retries,
+        ignore_errors=ignore_errors,
+        session=knex.new_session(),
+        chunk_size_mb=chunk_size_mb,
     )
     for geoseeq_file_name, file_path in name_pairs:
         if isfile(file_path):

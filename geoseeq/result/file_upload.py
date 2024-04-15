@@ -2,9 +2,9 @@
 import time
 import json
 import os
-from os.path import basename, getsize, join, dirname, isfile
+from os.path import basename, getsize, join, dirname, isfile, getctime
 from pathlib import Path
-
+from random import random
 import requests
 
 from geoseeq.knex import GeoseeqGeneralError
@@ -31,14 +31,30 @@ class FileChunker:
                     chunk = f.read(self.chunk_size)
                     self.loaded_parts.append(chunk)
         return self  # convenience for chaining
+    
+    def chunk_is_preloaded(self, num):
+        return len(self.loaded_parts) > num and self.loaded_parts[num]
+    
+    def read_one_chunk(self, num):
+        if not self.chunk_is_preloaded(num):
+            logger.debug(f"Reading chunk {num} from {self.filepath}")
+            with open(self.filepath, "rb") as f:
+                f.seek(num * self.chunk_size)
+                chunk = f.read(self.chunk_size)
+                return chunk
+        return self.loaded_parts[num]
 
     def get_chunk(self, num):
-        self.load_all_chunks()
-        return self.loaded_parts[num]
+        if self.chunk_is_preloaded(num):
+            return self.loaded_parts[num]
+        return self.read_one_chunk(num)
     
     def get_chunk_size(self, num):
-        self.load_all_chunks()
-        return len(self.loaded_parts[num])
+        if num < (self.n_parts - 1):  # all but the last chunk
+            return self.chunk_size
+        if self.chunk_is_preloaded(num):  # last chunk, pre-loaded
+            return len(self.loaded_parts[num])
+        return len(self.read_one_chunk(num))  # last chunk, not pre-loaded
     
 
 class ResumableUploadTracker:
@@ -49,7 +65,7 @@ class ResumableUploadTracker:
         self.filepath = filepath
         self.tracker_file = join(
             GEOSEEQ_CACHE_DIR, 'upload',
-            tracker_file_prefix + f".{chunk_size}." + basename(filepath)
+            tracker_file_prefix + f".{chunk_size}.{getsize(filepath)}." + basename(filepath)
         )
         try:
             os.makedirs(dirname(self.tracker_file), exist_ok=True)
@@ -64,7 +80,7 @@ class ResumableUploadTracker:
             return
         if self.upload_started:
             raise GeoseeqGeneralError("Upload has already started.")
-        blob = dict(upload_id=upload_id, urls=urls)
+        blob = dict(upload_id=upload_id, urls=urls, start_time=time.time())
         serialized = json.dumps(blob)
         with open(self.tracker_file, "w") as f:
             f.write(serialized + "\n")
@@ -89,6 +105,11 @@ class ResumableUploadTracker:
         with open(self.tracker_file, "r") as f:
             header_blob = json.loads(f.readline())
             self.upload_id, self.urls = header_blob["upload_id"], header_blob["urls"]
+            start_time = header_blob["start_time"]
+            if (time.time() - start_time) > (60 * 60 * 23):
+                logger.warning(f"Tracker file {self.tracker_file} is too old. Deleting.")
+                os.remove(self.tracker_file)
+                return
             self.upload_started = True
             for line in f:
                 blob = json.loads(line)
@@ -154,6 +175,8 @@ class ResultFileUpload:
         attempts = 0
         while attempts < max_retries:
             try:
+                url = url.replace("s3.wasabisys.com", "s3.us-east-1.wasabisys.com")
+                logger.debug(f"Uploading part {num + 1} to {url}. Size: {len(file_chunk)} bytes.")
                 if session:
                     http_response = session.put(url, data=file_chunk)
                 else:
@@ -161,14 +184,19 @@ class ResultFileUpload:
                 http_response.raise_for_status()
                 logger.debug(f"Upload for part {num + 1} succeeded.")
                 break
-            except requests.exceptions.HTTPError:
-                logger.warn(
-                    f"Upload for part {num + 1} failed. Attempt {attempts + 1} of {max_retries}."
-                )
+            except (requests.exceptions.HTTPError, requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
                 attempts += 1
-                if attempts == max_retries:
-                    raise
-                time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
+                logger.debug(
+                    f"Upload for part {num + 1} failed. Attempt {attempts} of {max_retries}. Error: {e}"
+                )
+                if attempts >= max_retries:
+                    raise e
+
+                retry_time = min(8 ** attempts, 120)  # exponential backoff, max 120s
+                retry_time *= 0.8 + (random() * 0.4)  # randomize to avoid thundering herd
+                logger.debug(f"Retrying upload for part {num + 1} in {retry_time} seconds.")
+                time.sleep(retry_time)
+            
         etag = http_response.headers["ETag"].replace('"', "")
         blob = {"ETag": etag, "PartNumber": num + 1}
         if resumable_upload_tracker:
@@ -245,7 +273,12 @@ class ResultFileUpload:
                 resumable_upload_tracker.start_upload(upload_id, urls)
         logger.info(f'Starting upload for "{filepath}"')
         complete_parts = []
-        file_chunker = FileChunker(filepath, chunk_size).load_all_chunks()
+        file_chunker = FileChunker(filepath, chunk_size)
+        if file_chunker.file_size < 10 * FIVE_MB:
+            file_chunker.load_all_chunks()
+            logger.debug(f"Preloaded all chunks for {filepath}")
+        else:
+            logger.debug(f"Did not preload chunks for {filepath}")
         if progress_tracker: progress_tracker.set_num_chunks(file_chunker.file_size)
         complete_parts = self._upload_parts(
             file_chunker,
