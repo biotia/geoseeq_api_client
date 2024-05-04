@@ -194,7 +194,7 @@ class GeoSeeqDownloadManager:
         self._convert_result_files_to_urls()
         download_args = [(
             url, file_path,
-            self.progress_tracker_factory(url),
+            self.progress_tracker_factory(file_path),
             self.ignore_errors, self.head, self.log_level,
             self.n_parallel_downloads > 1
         ) for url, file_path in self._result_files]
