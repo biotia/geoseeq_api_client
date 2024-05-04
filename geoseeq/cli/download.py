@@ -468,3 +468,4 @@ def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_n
             click.confirm('Continue?', abort=True)
         logger.info(f'Downloading {len(download_manager)} files to {target_dir}')
         download_manager.download_files()
+

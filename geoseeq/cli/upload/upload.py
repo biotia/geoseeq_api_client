@@ -122,6 +122,7 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         use_cache=state.use_cache,
         num_retries=num_retries,
         ignore_errors=ignore_errors,
+        use_atomic_upload=True,
         session=None, #knex.new_session(),
         chunk_size_mb=chunk_size_mb if chunk_size_mb > 0 else None,
     )
@@ -160,6 +161,7 @@ def cli_upload_folder(state, cores, yes, private, recursive, hidden, no_new_vers
         overwrite=True,
         use_cache=state.use_cache,
         no_new_versions=no_new_versions,
+        use_atomic_upload=True,
     )
     for folder_name in folder_names:
         result_folder = root_obj.result_folder(folder_name).idem()

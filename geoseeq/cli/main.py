@@ -18,6 +18,7 @@ from .shared_params.opts_and_args import overwrite_option, yes_option
 from .detail import cli_detail
 from .run import cli_app
 from .get_eula import cli_eula
+from .project import cli_project
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -65,6 +66,7 @@ cli_advanced.add_command(cli_copy)
 cli_advanced.add_command(cli_user)
 cli_advanced.add_command(cli_detail)
 cli_advanced.add_command(cli_upload_advanced)
+cli_advanced.add_command(cli_project)
 
 @cli_advanced.group('experimental')
 def cli_experimental():

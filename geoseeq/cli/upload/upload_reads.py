@@ -98,6 +98,7 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
             progress_tracker_factory=PBarManager().get_new_bar,
             use_cache=state.use_cache,
             no_new_versions=no_new_versions,
+            use_atomic_upload=True,
         )
         for group in groups:
             sample = lib.sample(group['sample_name']).idem()

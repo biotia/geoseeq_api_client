@@ -12,10 +12,10 @@ from geoseeq.constants import FIVE_MB
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 
 
-def _download_head(url, filename, head=None, progress_tracker=None):
+def _download_head(url, filename, head=None, start=0, progress_tracker=None):
     headers = None
     if head and head > 0:
-        headers = {"Range": f"bytes=0-{head}"}
+        headers = {"Range": f"bytes={start}-{head}"}
     response = requests.get(url, stream=True, headers=headers)
     response.raise_for_status()
     total_size_in_bytes = int(response.headers.get('content-length', 0))
@@ -65,7 +65,6 @@ def download_url(url, kind='guess', filename=None, head=None, progress_tracker=N
         return download_ftp(url, filename, head=head)
     else:
         raise ValueError(f"Unknown download kind: {kind}")
-
 
 
 class ResultFileDownload:
