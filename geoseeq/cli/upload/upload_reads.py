@@ -98,6 +98,7 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
             progress_tracker_factory=PBarManager().get_new_bar,
             use_cache=state.use_cache,
             no_new_versions=no_new_versions,
+            use_atomic_upload=True,
         )
         for group in groups:
             sample = lib.sample(group['sample_name']).idem()
@@ -122,6 +123,28 @@ def flatten_list_of_fastqs(filepaths):
     flattened = []
     for path in filepaths:
         if _is_fastq(path):
+            flattened.append(path)
+        else:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        flattened.append(line)
+    return flattened
+
+
+def _is_bam(path):
+    for ext in ['.bam', '.bai']:
+        if path.endswith(ext):
+            return True
+    return False
+
+
+def flatten_list_of_bams(filepaths):
+    """Turn a list of bam filepaths and txt files containing bam filepaths into a single list of bam filepaths."""
+    flattened = []
+    for path in filepaths:
+        if _is_bam(path):
             flattened.append(path)
         else:
             with open(path) as f:
@@ -200,3 +223,67 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     regex = _get_regex(knex, filepaths, module_name, proj, regex)
     groups = _group_files(knex, filepaths, module_name, regex, yes)
     _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state)
+
+
+# @click.command('bam')
+# @use_common_state
+# @click.option('--genome', default=None, help='The genome aligned to the BAM files. Should be in 2bit format.')
+# @click.option('--cores', default=1, help='Number of uploads to run in parallel')
+# @overwrite_option
+# @yes_option
+# @click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
+# @private_option
+# @link_option
+# @no_new_versions_option
+# @project_id_arg
+# @click.argument('files', type=click.Path(exists=True), nargs=-1)
+# def cli_upload_bams(state, genome, cores, overwrite, yes, regex, private, link_type, no_new_versions, project_id, files):
+    """Upload BAM files to GeoSeeq.
+
+    This command automatically groups bams with their index files.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Upload a list of BAM files to a project, useful if you have hundreds of files
+    $ ls -1 path/to/bam/files/*.bam > file_list.txt
+    $ geoseeq upload bams "GeoSeeq/Example CLI Project" file_list.txt
+
+    \b
+    # Upload all the BAM files in a directory to a project with BAM indexes
+    $ geoseeq upload bams ed59b913-91ec-489b-a1b9-4ea137a6e5cf path/to/bam/files/*.bam path/to/bam/files/*.bam.bai
+
+    \b
+    # Upload all the BAM files in a directory to a project, performing 4 uploads in parallel
+    $ geoseeq upload bams --cores 4 ed59b913-91ec-489b-a1b9-4ea137a6e5cf path/to/bam/files/*.bam
+
+    \b
+    # Upload a list of BAM files to a project, automatically creating a new project and overwriting existing files
+    $ ls -1 path/to/bam/files/*.bam > file_list.txt
+    $ geoseeq upload bams --yes --overwrite "GeoSeeq/Example CLI Project" file_list.txt
+
+    ---
+
+    Command Arguments:
+    
+    [PROJECT_ID] Can be a project UUID, GeoSeeq Resource Number (GRN), or an
+    organization name and project name separated by a slash.
+
+    \b
+    Examples: 
+     - Name pair: "GeoSeeq/Example CLI Project"
+     - UUID: "ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
+     - GRN: "grn:gs1:project:ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
+
+    \b
+    [FILES...] can be paths to BAM files or a file containing a list of paths, or a mix of both.
+    Example: "path/to/bam/files
+    """
+    knex = state.get_knex()
+    proj = handle_project_id(knex, project_id, yes, private)
+    filepaths = {basename(line): line for line in flatten_list_of_bams(files)}
+    click.echo(f'Found {len(filepaths)} files to upload.', err=True)
+    groups = _group_files(knex, filepaths, 'bam::bam', regex, yes)
+    _do_upload(groups, 'bam::bam', link_type, proj, filepaths, overwrite, no_new_versions, cores, state)

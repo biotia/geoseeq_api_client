@@ -2,9 +2,9 @@
 import time
 import json
 import os
-from os.path import basename, getsize, join, dirname, isfile
+from os.path import basename, getsize, join, dirname, isfile, getctime
 from pathlib import Path
-
+from random import random
 import requests
 
 from geoseeq.knex import GeoseeqGeneralError
@@ -13,109 +13,21 @@ from geoseeq.utils import md5_checksum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .utils import *
 from geoseeq.file_system_cache import GEOSEEQ_CACHE_DIR
-
-class FileChunker:
-
-    def __init__(self, filepath, chunk_size):
-        self.filepath = filepath
-        self.chunk_size = chunk_size
-        self.file_size = getsize(filepath)
-        self.n_parts = int(self.file_size / self.chunk_size) + 1
-        self.loaded_parts = []
-
-    def load_all_chunks(self):
-        if len(self.loaded_parts) != self.n_parts:
-            with open(self.filepath, "rb") as f:
-                f.seek(0)
-                for i in range(self.n_parts):
-                    chunk = f.read(self.chunk_size)
-                    self.loaded_parts.append(chunk)
-        return self  # convenience for chaining
-
-    def get_chunk(self, num):
-        self.load_all_chunks()
-        return self.loaded_parts[num]
-    
-    def get_chunk_size(self, num):
-        self.load_all_chunks()
-        return len(self.loaded_parts[num])
-    
-
-class ResumableUploadTracker:
-
-    def __init__(self, filepath, chunk_size, tracker_file_prefix="gs_resumable_upload_tracker"):
-        self.open, self.upload_started = True, False
-        self.upload_id, self.urls = None, None
-        self.filepath = filepath
-        self.tracker_file = join(
-            GEOSEEQ_CACHE_DIR, 'upload',
-            tracker_file_prefix + f".{chunk_size}." + basename(filepath)
-        )
-        try:
-            os.makedirs(dirname(self.tracker_file), exist_ok=True)
-        except Exception as e:
-            logger.warning(f'Could not create resumable upload tracker directory. {e}')
-            self.open = False
-        self._loaded_parts = {}
-        self._load_parts_from_file()
-
-    def start_upload(self, upload_id, urls):
-        if not self.open:
-            return
-        if self.upload_started:
-            raise GeoseeqGeneralError("Upload has already started.")
-        blob = dict(upload_id=upload_id, urls=urls)
-        serialized = json.dumps(blob)
-        with open(self.tracker_file, "w") as f:
-            f.write(serialized + "\n")
-        self.upload_id, self.urls = upload_id, urls
-        self.upload_started = True
-    
-    def add_part(self, part_upload_info):
-        if not self.open:
-            return
-        part_id = part_upload_info["PartNumber"]
-        serialized = json.dumps(part_upload_info)
-        with open(self.tracker_file, "a") as f:
-            f.write(serialized + "\n")
-        self._loaded_parts[part_id] = part_upload_info
-        if len(self._loaded_parts) == len(self.urls):
-            self.cleanup()
-            self.open = False
-    
-    def _load_parts_from_file(self):
-        if not isfile(self.tracker_file):
-            return
-        with open(self.tracker_file, "r") as f:
-            header_blob = json.loads(f.readline())
-            self.upload_id, self.urls = header_blob["upload_id"], header_blob["urls"]
-            self.upload_started = True
-            for line in f:
-                blob = json.loads(line)
-                part_id = blob["PartNumber"]
-                self._loaded_parts[part_id] = blob
-    
-    def part_has_been_uploaded(self, part_number):
-        if not self.open:
-            return False
-        return part_number in self._loaded_parts
-    
-    def get_part_info(self, part_number):
-        return self._loaded_parts[part_number]
-    
-    def cleanup(self):
-        if not self.open:
-            return
-        try:
-            os.remove(self.tracker_file)
-        except FileNotFoundError:
-            pass
+from .file_chunker import FileChunker
+from .resumable_upload_tracker import ResumableUploadTracker
 
 
 class ResultFileUpload:
     """Abstract class that handles upload methods for result files."""
 
-    def _create_multipart_upload(self, filepath, file_size, optional_fields):
+    def _result_type(self, atomic=False):
+        if self.is_sample_result:
+            return "sample"
+        if atomic:
+            return "project"
+        return "group"
+
+    def _create_multipart_upload(self, filepath, file_size, optional_fields, atomic=False):
         optional_fields = optional_fields if optional_fields else {}
         optional_fields.update(
             {
@@ -126,23 +38,31 @@ class ResultFileUpload:
         data = {
             "filename": basename(filepath),
             "optional_fields": optional_fields,
-            "result_type": "sample" if self.is_sample_result else "group",
+            "result_type": self._result_type(atomic),
         }
-        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload", json=data)
+        url = f"/ar_fields/{self.uuid}/create_upload"
+        if atomic:
+            data["fieldname"] = self.name
+            url = f"/ars/{self.parent.uuid}/create_atomic_upload"
+        response = self.knex.post(url, json=data)
         return response
     
-    def _prep_multipart_upload(self, filepath, file_size, chunk_size, optional_fields):
+    def _prep_multipart_upload(self, filepath, file_size, chunk_size, optional_fields, atomic=False):
         n_parts = int(file_size / chunk_size) + 1
-        response = self._create_multipart_upload(filepath, file_size, optional_fields)
+        response = self._create_multipart_upload(filepath, file_size, optional_fields, atomic=atomic)
         upload_id = response["upload_id"]
-        parts = list(range(1, n_parts + 1))
         data = {
-            "parts": parts,
+            "parts": list(range(1, n_parts + 1)),
             "stance": "upload-multipart",
             "upload_id": upload_id,
-            "result_type": "sample" if self.is_sample_result else "group",
+            "result_type": self._result_type(atomic),
         }
-        response = self.knex.post(f"/ar_fields/{self.uuid}/create_upload_urls", json=data)
+        url = f"/ar_fields/{self.uuid}/create_upload_urls"
+        if atomic:
+            data["uuid"] = response["uuid"]
+            data["fieldname"] = self.name
+            url = f"ars/{self.parent.uuid}/create_atomic_upload_urls"
+        response = self.knex.post(url, json=data)
         urls = response
         return upload_id, urls
     
@@ -154,6 +74,8 @@ class ResultFileUpload:
         attempts = 0
         while attempts < max_retries:
             try:
+                # url = url.replace("s3.wasabisys.com", "s3.us-east-1.wasabisys.com")
+                logger.debug(f"Uploading part {num + 1} to {url}. Size: {len(file_chunk)} bytes.")
                 if session:
                     http_response = session.put(url, data=file_chunk)
                 else:
@@ -161,14 +83,19 @@ class ResultFileUpload:
                 http_response.raise_for_status()
                 logger.debug(f"Upload for part {num + 1} succeeded.")
                 break
-            except requests.exceptions.HTTPError:
-                logger.warn(
-                    f"Upload for part {num + 1} failed. Attempt {attempts + 1} of {max_retries}."
-                )
+            except (requests.exceptions.HTTPError, requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
                 attempts += 1
-                if attempts == max_retries:
-                    raise
-                time.sleep(10**attempts)  # exponential backoff, (10 ** 2)s default max
+                logger.debug(
+                    f"Upload for part {num + 1} failed. Attempt {attempts} of {max_retries}. Error: {e}"
+                )
+                if attempts >= max_retries:
+                    raise e
+
+                retry_time = min(8 ** attempts, 120)  # exponential backoff, max 120s
+                retry_time *= 0.6 + (random() * 0.8)  # randomize to avoid thundering herd
+                logger.debug(f"Retrying upload for part {num + 1} in {retry_time} seconds.")
+                time.sleep(retry_time)
+            
         etag = http_response.headers["ETag"].replace('"', "")
         blob = {"ETag": etag, "PartNumber": num + 1}
         if resumable_upload_tracker:
@@ -176,16 +103,17 @@ class ResultFileUpload:
             resumable_upload_tracker.add_part(blob)
         return blob
     
-    def _finish_multipart_upload(self, upload_id, complete_parts):
-        response = self.knex.post(
-            f"/ar_fields/{self.uuid}/complete_upload",
-            json={
-                "parts": complete_parts,
-                "upload_id": upload_id,
-                "result_type": "sample" if self.is_sample_result else "group",
-            },
-            json_response=False,
-        )
+    def _finish_multipart_upload(self, upload_id, complete_parts, atomic=False):
+        data = {
+            "parts": complete_parts,
+            "upload_id": upload_id,
+            "result_type": self._result_type(atomic),
+        }
+        url = f"/ar_fields/{self.uuid}/complete_upload"
+        if atomic:
+            data["fieldname"] = self.name
+            url = f"/ars/{self.parent.uuid}/complete_atomic_upload"
+        response = self.knex.post(url, json=data, json_response=False)
         response.raise_for_status()
 
     def _upload_parts(self, file_chunker, urls, max_retries, session, progress_tracker, threads, resumable_upload_tracker=None):
@@ -223,29 +151,46 @@ class ResultFileUpload:
         filepath,
         file_size,
         optional_fields=None,
-        chunk_size=FIVE_MB,
+        chunk_size=None,
         max_retries=3,
         session=None,
         progress_tracker=None,
         threads=1,
         use_cache=True,
+        use_atomic_upload=False,
     ):
         """Upload a file to S3 using the multipart upload process."""
         logger.info(f"Uploading {filepath} to S3 using multipart upload.")
+        if not chunk_size:
+            chunk_size = FIVE_MB
+            if file_size >= 10 * FIVE_MB:
+                chunk_size = 5 * FIVE_MB
+        logger.debug(f"Using chunk size of {chunk_size} bytes.")
         resumable_upload_tracker = None
         if use_cache and file_size > 10 * FIVE_MB:  # only use resumable upload tracker for larger files
-            resumable_upload_tracker = ResumableUploadTracker(filepath, chunk_size)
+            upload_target_uuid = self.parent.uuid if use_atomic_upload else self.uuid
+            resumable_upload_tracker = ResumableUploadTracker(filepath, chunk_size, upload_target_uuid)
+
         if resumable_upload_tracker and resumable_upload_tracker.upload_started:
+            # a resumable upload for this file has already started
+            resumable_upload_exists_and_is_valid = True
             upload_id, urls = resumable_upload_tracker.upload_id, resumable_upload_tracker.urls
+            use_atomic_upload = resumable_upload_tracker.is_atomic_upload
             logger.info(f'Resuming upload for "{filepath}", upload_id: "{upload_id}"')
         else:
-            upload_id, urls = self._prep_multipart_upload(filepath, file_size, chunk_size, optional_fields)
+            upload_id, urls = self._prep_multipart_upload(filepath, file_size, chunk_size, optional_fields, atomic=use_atomic_upload)
             if resumable_upload_tracker:
                 logger.info(f'Creating new resumable upload for "{filepath}", upload_id: "{upload_id}"')
-                resumable_upload_tracker.start_upload(upload_id, urls)
+                resumable_upload_tracker.start_upload(upload_id, urls, is_atomic_upload=use_atomic_upload)
+
         logger.info(f'Starting upload for "{filepath}"')
         complete_parts = []
-        file_chunker = FileChunker(filepath, chunk_size).load_all_chunks()
+        file_chunker = FileChunker(filepath, chunk_size)
+        if file_chunker.file_size < 10 * FIVE_MB:
+            file_chunker.load_all_chunks()
+            logger.debug(f"Preloaded all chunks for {filepath}")
+        else:
+            logger.debug(f"Did not preload chunks for {filepath}")
         if progress_tracker: progress_tracker.set_num_chunks(file_chunker.file_size)
         complete_parts = self._upload_parts(
             file_chunker,
@@ -256,14 +201,20 @@ class ResultFileUpload:
             threads,
             resumable_upload_tracker=resumable_upload_tracker
         )
-        self._finish_multipart_upload(upload_id, complete_parts)
+        self._finish_multipart_upload(upload_id, complete_parts, atomic=use_atomic_upload)
         logger.info(f'Finished Upload for "{filepath}"')
+        if use_atomic_upload:
+            # if this was an atomic upload then this result may not have existed on the server before
+            self.get()
         return self
 
     def upload_file(self, filepath, multipart_thresh=FIVE_MB, overwrite=True, no_new_versions=False, **kwargs):
         if self.exists() and not overwrite:  
             raise GeoseeqGeneralError(f"Overwrite is set to False and file {self.uuid} already exists.")
-        self.idem()
+        if not kwargs.get("use_atomic_upload", False):
+            self.idem()
+        else:
+            self.parent.idem()
         if no_new_versions and self.has_downloadable_file():
             raise GeoseeqGeneralError(f"File {self} already has a downloadable file. Not uploading a new version.")
         resolved_path = Path(filepath).resolve()

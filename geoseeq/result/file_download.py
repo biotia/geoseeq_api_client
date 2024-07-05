@@ -2,29 +2,69 @@
 import urllib.request
 import logging
 import requests
-from os.path import basename, getsize, join, isfile, getmtime
+import os
+from os.path import basename, getsize, join, isfile, getmtime, dirname
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from math import ceil
 
 from geoseeq.utils import download_ftp
 from geoseeq.constants import FIVE_MB
+from hashlib import md5
+from .resumable_download_tracker import ResumableDownloadTracker
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 
+def url_to_id(url):
+    url = url.split("?")[0]
+    return md5(url.encode()).hexdigest()[:16]
 
-def _download_head(url, filename, head=None, progress_tracker=None):
+
+def _download_head(url, filename, head=None, start=0, progress_tracker=None):
     headers = None
     if head and head > 0:
-        headers = {"Range": f"bytes=0-{head}"}
+        headers = {"Range": f"bytes={start}-{head}"}
     response = requests.get(url, stream=True, headers=headers)
     response.raise_for_status()
     total_size_in_bytes = int(response.headers.get('content-length', 0))
     if progress_tracker: progress_tracker.set_num_chunks(total_size_in_bytes)
-    block_size = FIVE_MB
+    if total_size_in_bytes > 10 * FIVE_MB:  # Use resumable download
+        print("Using resumable download")
+        return _download_resumable(response, filename, total_size_in_bytes, progress_tracker)
+    else:
+        block_size = FIVE_MB
+        with open(filename, 'wb') as file:
+            for data in response.iter_content(block_size):
+                if progress_tracker: progress_tracker.update(len(data))
+                file.write(data)
+        return filename
+    
+
+def _download_resumable(response, filename, total_size_in_bytes, progress_tracker=None, chunk_size=5 * FIVE_MB, part_prefix=".gs_download_{}_{}."):
+    target_id = url_to_id(response.url)
+    tracker = ResumableDownloadTracker(chunk_size, target_id, filename)
+    if not tracker.download_started: tracker.start_download(response.url)
+    n_chunks = ceil(total_size_in_bytes / chunk_size)
+    for i in range(n_chunks):
+        bytes_start, bytes_end = i * chunk_size, min((i + 1) * chunk_size - 1, total_size_in_bytes - 1)
+        if tracker.part_has_been_downloaded(i):
+            logger.debug(f"Part {i} has already been downloaded.")
+        else:
+            logger.debug(f"Downloading part {i} of {n_chunks - 1}")
+            part_filename = join(dirname(filename), part_prefix.format(i, n_chunks - 1) + basename(filename))
+            _download_head(response.url, part_filename, head=bytes_end, start=bytes_start, progress_tracker=None)
+            part_info = dict(part_number=i, start=bytes_start, end=bytes_end, part_filename=part_filename)
+            tracker.add_part(part_info)
+        if progress_tracker: progress_tracker.update(bytes_end - bytes_start + 1)
+        
+    # at this point all parts have been downloaded
     with open(filename, 'wb') as file:
-        for data in response.iter_content(block_size):
-            if progress_tracker: progress_tracker.update(len(data))
-            file.write(data)
+        for i in range(n_chunks):
+            part_info = tracker.get_part_info(i)
+            part_filename = part_info["part_filename"]
+            with open(part_filename, 'rb') as part_file:
+                file.write(part_file.read())
+    tracker.cleanup()
     return filename
 
 
@@ -44,8 +84,13 @@ def guess_download_kind(url):
         return 'generic'
 
 
-def download_url(url, kind='guess', filename=None, head=None, progress_tracker=None):
+def download_url(url, kind='guess', filename=None, head=None, progress_tracker=None, target_uuid=None):
     """Return a local filepath to the downloaded file. Download the file."""
+    if filename and isfile(filename):
+        file_size = getsize(filename)
+        if file_size > 0:
+            logger.info(f"File already exists: {filename}. Not overwriting.")
+            return filename
     if kind == 'guess':
         kind = guess_download_kind(url)
         logger.info(f"Guessed download kind: {kind} for {url}")
@@ -60,7 +105,6 @@ def download_url(url, kind='guess', filename=None, head=None, progress_tracker=N
         return download_ftp(url, filename, head=head)
     else:
         raise ValueError(f"Unknown download kind: {kind}")
-
 
 
 class ResultFileDownload:
@@ -131,7 +175,7 @@ class ResultFileDownload:
         url = self.get_download_url()
         filepath = download_url(
             url, blob_type, filename,
-            head=head, progress_tracker=progress_tracker
+            head=head, progress_tracker=progress_tracker,
         )
         if cache and flag_suffix:
             # create flag file

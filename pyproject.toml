@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoseeq"
-version = "0.5.6a9"
+version = "0.6.3"
 authors = [
   { name="David C. Danko", email="dcdanko@biotia.io" },
 ]
@@ -15,6 +15,13 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests",
+    "click",
+    "pandas",
+    "biopython",
+    "tqdm",
 ]
 
 [project.urls]

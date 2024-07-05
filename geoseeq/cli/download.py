@@ -97,13 +97,14 @@ def cli_download_metadata(state, sample_ids):
 
 
 cores_option = click.option('--cores', default=1, help='Number of downloads to run in parallel')
-
+head_option = click.option('--head', default=None, type=int, help='Download the first N bytes of each file')
 
 @cli_download.command("files")
 @use_common_state
 @cores_option
 @click.option("--target-dir", default=".")
 @yes_option
+@head_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @click.option("--folder-type", type=click.Choice(['all', 'sample', 'project'], case_sensitive=False), default="all", help='Download files from sample folders, project folders, or both')
 @click.option("--folder-name", multiple=True, help='Filter folders for names that include this string. Case insensitive.')
@@ -120,6 +121,7 @@ def cli_download_files(
     sample_name_includes,
     target_dir,
     yes,
+    head,
     folder_type,
     folder_name,
     file_name,
@@ -158,8 +160,8 @@ def cli_download_files(
 
     \b
     # Download assembly contigs from two samples in the MetaSUB Consortium CSD16 project
-    $ geoseeq download files "MetaSUB Consortium/CSD16" `# specify the project` \ 
-        haib17CEM4890_H2NYMCCXY_SL254769 haib17CEM4890_H2NYMCCXY_SL254773 `# specify the samples by name` \ 
+    $ geoseeq download files "MetaSUB Consortium/CSD16" `# specify the project` \\ 
+        haib17CEM4890_H2NYMCCXY_SL254769 haib17CEM4890_H2NYMCCXY_SL254773 `# specify the samples by name` \\ 
         --folder-type sample --extension '.contigs.fasta' # filter for contig files
 
     ---
@@ -213,6 +215,7 @@ def cli_download_files(
             ignore_errors=ignore_errors,
             log_level=state.log_level,
             progress_tracker_factory=PBarManager().get_new_bar,
+            head=head,
         )
         for fname, url in response["links"].items():
             download_manager.add_download(url, join(target_dir, fname))
@@ -230,11 +233,12 @@ def cli_download_files(
 @cores_option
 @click.option("-t", "--target-dir", default=".")
 @yes_option
+@head_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @ignore_errors_option
 @click.option('--hidden/--no-hidden', default=True, help='Download hidden files in folder')
 @folder_ids_arg
-def cli_download_folders(state, cores, target_dir, yes, download, ignore_errors, hidden, folder_ids):
+def cli_download_folders(state, cores, target_dir, yes, head, download, ignore_errors, hidden, folder_ids):
     """Download entire folders from GeoSeeq.
     
     This command downloads folders directly based on their ID. This is used for "manual"
@@ -267,6 +271,7 @@ def cli_download_folders(state, cores, target_dir, yes, download, ignore_errors,
         ignore_errors=ignore_errors,
         log_level=state.log_level,
         progress_tracker_factory=PBarManager().get_new_bar,
+        head=head,
     )
     for result_folder in result_folders:
         download_manager.add_result_folder_download(
@@ -286,7 +291,7 @@ def cli_download_folders(state, cores, target_dir, yes, download, ignore_errors,
 @click.option("-n", "--file-name", multiple=True, help="File name to use for downloaded files. If set you must specify once per ID.")
 @yes_option
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
-@click.option('--head', default=None, type=int, help='Download the first N bytes of each file')
+@head_option
 @ignore_errors_option
 @click.argument("ids", nargs=-1)
 def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, ignore_errors, ids):
@@ -463,3 +468,4 @@ def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_n
             click.confirm('Continue?', abort=True)
         logger.info(f'Downloading {len(download_manager)} files to {target_dir}')
         download_manager.download_files()
+

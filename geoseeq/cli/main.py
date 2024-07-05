@@ -18,6 +18,7 @@ from .shared_params.opts_and_args import overwrite_option, yes_option
 from .detail import cli_detail
 from .run import cli_app
 from .get_eula import cli_eula
+from .project import cli_project
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -25,7 +26,7 @@ handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s :: %(message)s'
 logger.addHandler(handler)
 
 
-@click.group()
+@click.group(context_settings={'show_default': True})
 def main():
     """Command line interface for the GeoSeeq API.
     
@@ -53,7 +54,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.5.6a9')  # remember to update setup
+    click.echo('0.6.3')  # remember to update setup
 
 
 @main.group('advanced')
@@ -65,6 +66,7 @@ cli_advanced.add_command(cli_copy)
 cli_advanced.add_command(cli_user)
 cli_advanced.add_command(cli_detail)
 cli_advanced.add_command(cli_upload_advanced)
+cli_advanced.add_command(cli_project)
 
 @cli_advanced.group('experimental')
 def cli_experimental():
@@ -102,3 +104,19 @@ def cli_config(yes, api_token, endpoint, profile, overwrite):
             return
     set_profile(api_token, endpoint=endpoint, profile=profile, overwrite=overwrite)
     click.echo(f'Profile configured.')
+
+
+@main.command('clear-cache')
+@yes_option
+def cli_clear_cache(yes):
+    """Clear the local cache.
+
+    ---
+    
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    from geoseeq.file_system_cache import GEOSEEQ_CACHE_DIR
+    import shutil
+    if yes or click.confirm('Are you sure you want to clear the cache?'):
+        shutil.rmtree(GEOSEEQ_CACHE_DIR, ignore_errors=True)

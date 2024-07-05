@@ -21,18 +21,28 @@ def _make_in_process_logger(log_level):
 def _upload_one_file(args):
     (result_file, filepath, session, progress_tracker,
      link_type, overwrite, log_level, parallel_uploads,
-     use_cache, no_new_versions) = args
+     use_cache, no_new_versions, threads_per_upload,
+     num_retries, ignore_errors, chunk_size_mb, use_atomic_upload) = args
+    chunk_size = chunk_size_mb * 1024 * 1024 if chunk_size_mb else None
     if parallel_uploads:
         _make_in_process_logger(log_level)
-    if link_type == 'upload':
-        # TODO: check checksums to see if the file is the same
-        result_file.upload_file(
-            filepath,
-            session=session, overwrite=overwrite, progress_tracker=progress_tracker,
-            threads=4, use_cache=use_cache, no_new_versions=no_new_versions
-        )
-    else:
-        result_file.link_file(link_type, filepath)
+    try:
+        if link_type == 'upload':
+            # TODO: check checksums to see if the file is the same
+            result_file.upload_file(
+                filepath,
+                session=session, overwrite=overwrite, progress_tracker=progress_tracker,
+                threads=threads_per_upload, use_cache=use_cache, chunk_size=chunk_size,
+                no_new_versions=no_new_versions, max_retries=num_retries,
+                use_atomic_upload=use_atomic_upload
+            )
+        else:
+            result_file.link_file(link_type, filepath)
+    except Exception as e:
+        if ignore_errors:
+            logger.error(f"Error uploading {filepath}: {e}")
+        else:
+            raise e
     return result_file
 
 
@@ -40,12 +50,17 @@ class GeoSeeqUploadManager:
 
     def __init__(self,
                  n_parallel_uploads=1,
+                 threads_per_upload=4,
                  session=None,
                  link_type='upload',
                  progress_tracker_factory=None,
                  log_level=logging.WARNING,
                  overwrite=True,
                  no_new_versions=False,
+                 num_retries=3,
+                 ignore_errors=False,
+                 chunk_size_mb=5,
+                 use_atomic_upload=True,
                  use_cache=True):
         self.session = session
         self.n_parallel_uploads = n_parallel_uploads
@@ -56,12 +71,22 @@ class GeoSeeqUploadManager:
         self._result_files = []
         self.no_new_versions = no_new_versions
         self.use_cache = use_cache
+        self.threads_per_upload = threads_per_upload
+        self.num_retries = num_retries
+        self.ignore_errors = ignore_errors
+        self.chunk_size_mb = chunk_size_mb
+        self.use_atomic_upload = use_atomic_upload
 
     def add_result_file(self, result_file, local_path):
         self._result_files.append((result_file, local_path))
 
     def add_local_file_to_result_folder(self, result_folder, local_path, geoseeq_file_name=None):
-        geoseeq_file_name = geoseeq_file_name if geoseeq_file_name else local_path
+        if not geoseeq_file_name:
+            if local_path.startswith("/"):  # if local path is an absolute path use the basename
+                geoseeq_file_name = basename(local_path)
+            else:
+                # remove "./" and "../" from local path to get a geoseeq file name
+                geoseeq_file_name = local_path.replace("./", "").replace("../", "")
         result_file = result_folder.result_file(geoseeq_file_name)
         self.add_result_file(result_file, local_path)
 
@@ -80,7 +105,9 @@ class GeoSeeqUploadManager:
                 result_file, local_path,
                 self.session, self.progress_tracker_factory(local_path),
                 self.link_type, self.overwrite, self.log_level,
-                self.n_parallel_uploads > 1, self.use_cache, self.no_new_versions
+                self.n_parallel_uploads > 1, self.use_cache, self.no_new_versions,
+                self.threads_per_upload, self.num_retries, self.ignore_errors,
+                self.chunk_size_mb, self.use_atomic_upload
             ) for result_file, local_path in self._result_files
         ]
         out = []
@@ -167,7 +194,7 @@ class GeoSeeqDownloadManager:
         self._convert_result_files_to_urls()
         download_args = [(
             url, file_path,
-            self.progress_tracker_factory(url),
+            self.progress_tracker_factory(file_path),
             self.ignore_errors, self.head, self.log_level,
             self.n_parallel_downloads > 1
         ) for url, file_path in self._result_files]
