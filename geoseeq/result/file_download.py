@@ -6,6 +6,7 @@ import os
 from os.path import basename, getsize, join, isfile, getmtime, dirname
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from math import ceil
 
 from geoseeq.utils import download_ftp
 from geoseeq.constants import FIVE_MB
@@ -43,7 +44,7 @@ def _download_resumable(response, filename, total_size_in_bytes, progress_tracke
     target_id = url_to_id(response.url)
     tracker = ResumableDownloadTracker(chunk_size, target_id, filename)
     if not tracker.download_started: tracker.start_download(response.url)
-    n_chunks = total_size_in_bytes // chunk_size
+    n_chunks = ceil(total_size_in_bytes / chunk_size)
     for i in range(n_chunks):
         bytes_start, bytes_end = i * chunk_size, min((i + 1) * chunk_size - 1, total_size_in_bytes - 1)
         if tracker.part_has_been_downloaded(i):

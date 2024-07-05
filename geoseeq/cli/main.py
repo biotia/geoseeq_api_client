@@ -26,7 +26,7 @@ handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s :: %(message)s'
 logger.addHandler(handler)
 
 
-@click.group()
+@click.group(context_settings={'show_default': True})
 def main():
     """Command line interface for the GeoSeeq API.
     
@@ -54,7 +54,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.6.1')  # remember to update setup
+    click.echo('0.6.3')  # remember to update setup
 
 
 @main.group('advanced')

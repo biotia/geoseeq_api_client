@@ -160,8 +160,8 @@ def cli_download_files(
 
     \b
     # Download assembly contigs from two samples in the MetaSUB Consortium CSD16 project
-    $ geoseeq download files "MetaSUB Consortium/CSD16" `# specify the project` \ 
-        haib17CEM4890_H2NYMCCXY_SL254769 haib17CEM4890_H2NYMCCXY_SL254773 `# specify the samples by name` \ 
+    $ geoseeq download files "MetaSUB Consortium/CSD16" `# specify the project` \\ 
+        haib17CEM4890_H2NYMCCXY_SL254769 haib17CEM4890_H2NYMCCXY_SL254773 `# specify the samples by name` \\ 
         --folder-type sample --extension '.contigs.fasta' # filter for contig files
 
     ---
