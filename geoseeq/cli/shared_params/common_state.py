@@ -18,10 +18,11 @@ class State(object):
         self.log_level = 20
         self._knex = None
         self.use_cache = True
+        self._auth_profile = None
 
     def get_knex(self):
         logger.setLevel(self.log_level)
-        self._knex = Knex(self.endpoint)
+        self._knex = Knex(self.endpoint, profile=self._auth_profile)
         if self.api_token:
             self._knex.add_api_token(self.api_token)
         return self._knex
@@ -76,6 +77,7 @@ def profile_option(f):
         state = ctx.ensure_object(State)
         endpoint, token = None, None
         if value:
+            state._auth_profile = value
             endpoint, token = load_auth_profile(value)
         else:
             try:
