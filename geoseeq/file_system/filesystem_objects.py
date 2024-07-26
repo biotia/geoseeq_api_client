@@ -9,6 +9,7 @@ from geoseeq import (
 )
 from geoseeq.utils import md5_checksum
 from time import time
+from geoseeq import Knex
 from .parallel_manager import AbnormalObjectListManager
 
 FILE_STATUS_MODIFIED_REMOTE = 'MODIFIED_REMOTE'  # file was modified on the server
