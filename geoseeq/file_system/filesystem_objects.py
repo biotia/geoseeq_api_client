@@ -151,14 +151,17 @@ class ResultFileOnFilesystem(GeoSeeqObjectOnFilesystem):
         return not self.result_file.download_needs_update(self.path)
 
     @classmethod
-    def from_path(cls, path, kind=None):
+    def from_path(cls, path, kind=None, knex=None):
         obj = cls(None, path, kind)
         try:
             with open(obj.info_filepath, 'r') as f:
                 result_file_info = json.load(f)
             result_file_uuid = result_file_info['uuid']
             if result_file_uuid:
-                obj.result_file = result_file_from_id(result_file_info['uuid'])
+                if knex:
+                    obj.result_file = result_file_from_id(knex, result_file_info['uuid'])
+                else:
+                    obj.result_file = result_file_from_id(result_file_info['uuid'])
             obj.kind = result_file_info['kind']
             obj.stored_checksum = result_file_info['checksum']
         except FileNotFoundError:
@@ -270,14 +273,17 @@ class ResultFolderOnFilesystem(GeoSeeqObjectOnFilesystem):
         return True
     
     @classmethod
-    def from_path(cls, path, kind=None):
+    def from_path(cls, path, kind=None, knex=None):
         obj = cls(None, path, kind)
         try:
             with open(os.path.join(path, '.gs_result_folder'), 'r') as f:
                 result_folder_info = json.load(f)
             result_folder_uuid = result_folder_info['uuid']
             if result_folder_uuid:
-                obj.result_folder = result_folder_from_id(result_folder_info['uuid'])
+                if knex:
+                    obj.result_folder = result_folder_from_id(knex, result_folder_info['uuid'])
+                else:
+                    obj.result_folder = result_folder_from_id(result_folder_info['uuid'])
             obj.kind = result_folder_info['kind']
         except FileNotFoundError:
             pass
@@ -307,12 +313,15 @@ class ResultFolderOnFilesystem(GeoSeeqObjectOnFilesystem):
                 yield result_file_on_fs
 
         # list local files
+        knex = None
+        if self.result_folder and self.result_folder.knex:
+            knex = self.result_folder.knex
         if os.path.exists(self.path):  # if the result folder exists locally
             for local_file in iterate_non_gs_files(self.path):
                 local_file_path = os.path.join(self.path, local_file)
                 if not os.path.isfile(local_file_path):
                     continue
-                result_file_on_fs = ResultFileOnFilesystem.from_path(local_file_path)
+                result_file_on_fs = ResultFileOnFilesystem.from_path(local_file_path, knex=knex)
                 yield result_file_on_fs
     
     def list_abnormal_objects(self, abnormal_manager=None):
@@ -386,14 +395,17 @@ class SampleOnFilesystem(GeoSeeqObjectOnFilesystem):
         return True
 
     @classmethod
-    def from_path(cls, path):
+    def from_path(cls, path, knex=None):
         obj = cls(None, path)
         try:
             with open(os.path.join(path, '.gs_sample'), 'r') as f:
                 sample_info = json.load(f)
             sample_uuid = sample_info['uuid']
             if sample_uuid:
-                obj.sample = sample_from_id(sample_info['uuid'])
+                if knex:
+                    obj.sample = sample_from_id(knex, sample_info['uuid'])
+                else:
+                    obj.sample = sample_from_id(sample_info['uuid'])
         except FileNotFoundError:
             pass
         return obj
@@ -421,11 +433,14 @@ class SampleOnFilesystem(GeoSeeqObjectOnFilesystem):
             yield result_folder_on_fs
 
         # list local result folders
+        knex = None
+        if self.sample and self.sample.knex:
+            knex = self.sample.knex
         for local_result_folder in iterate_non_gs_files(self.path):
             local_result_folder_path = os.path.join(self.path, local_result_folder)
             if not os.path.isdir(local_result_folder_path):
                 continue
-            result_folder_on_fs = ResultFolderOnFilesystem.from_path(local_result_folder_path, "sample")
+            result_folder_on_fs = ResultFolderOnFilesystem.from_path(local_result_folder_path, "sample", knex=knex)
             yield result_folder_on_fs
     
     def list_abnormal_objects(self, abnormal_manager=None):
@@ -485,13 +500,16 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
     def write_info_file(self):
         project_info = {
             "uuid": self.project.uuid,
-            "knex_info": {
-                "endpoint_url": self.project.knex.endpoint_url,
-                "profile": self.project.knex.profile if self.project.knex.profile else "",
-            }
         }
         with open(self.info_filepath, 'w') as f:
             json.dump(project_info, f)
+        
+        # also write a file with knex info
+        gs_config = {
+            "profile": self.project.knex.profile if self.project.knex.profile else "",
+        }
+        with open(os.path.join(self.path, '.gs_config'), 'w') as f:
+            json.dump(gs_config, f)
 
     def status_is_ok(self):
         # check for an info file
@@ -521,13 +539,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
         try:
             with open(os.path.join(path, '.gs_project'), 'r') as f:
                 project_info = json.load(f)
-                knex_info = project_info.get('knex_info', {})
-            knex_profile = knex_info.get('profile', '')
-            if knex_profile:
-                knex = Knex.load_profile(knex_profile)
-                project = project_from_id(knex, project_info['uuid'])
-            else:
-                project = project_from_id(project_info['uuid'])
+            project = project_from_id(project_info['uuid'])
             return cls(project, path)
         except FileNotFoundError:
             if not recursive:
@@ -571,7 +583,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
             local_sample_path = os.path.join(self.path, "sample_results", local_sample)
             if not os.path.isdir(local_sample_path):
                 continue
-            sample_on_fs = SampleOnFilesystem.from_path(local_sample_path)
+            sample_on_fs = SampleOnFilesystem.from_path(local_sample_path, knex=self.project.knex)
             yield sample_on_fs
     
         # list local project result folders
@@ -579,7 +591,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
             local_result_folder_path = os.path.join(self.path, "project_results", local_result_folder)
             if not os.path.isdir(local_result_folder_path):
                 continue
-            result_folder_on_fs = ResultFolderOnFilesystem.from_path(local_result_folder_path)
+            result_folder_on_fs = ResultFolderOnFilesystem.from_path(local_result_folder_path, knex=self.project.knex)
             yield result_folder_on_fs
 
 

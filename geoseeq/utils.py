@@ -13,9 +13,26 @@ logger = logging.getLogger('geoseeq_api')  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 
 
+def recursively_find_geoseeq_config(path=None):
+    """Recursively search for a .gs_config file. Return the contents of the first one found.
+    
+    This file should contain a JSON object with authentication info.
+    """
+    path = path or os.getcwd()
+    while path != '/':
+        config_path = join(path, '.gs_config')
+        if exists(config_path):
+            with open(config_path, 'r') as f:
+                return json.load(f)
+        path = os.path.dirname(path)
+    return {}
+
+
 def load_auth_profile(profile=""):
-    """Return an endpoit and a token"""
-    profile = profile or "__default__"
+    """Return an endpoint and a token"""
+    if not profile:
+        geoseeq_config = recursively_find_geoseeq_config()
+        profile = geoseeq_config.get("profile", "__default__")
     with open(PROFILES_PATH, "r") as f:
         profiles = json.load(f)
     if profile in profiles:
