@@ -518,7 +518,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
     @classmethod
     def from_path(cls, path, recursive=False):
         try:
-            with open(self.info_filepath, 'r') as f:
+            with open(os.path.join(path, '.gs_project'), 'r') as f:
                 project_info = json.load(f)
                 knex_info = project_info.get('knex_info', {})
             knex_profile = knex_info.get('profile', '')
