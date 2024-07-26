@@ -74,6 +74,18 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
         )
         return filename
 
+    def get_stored_filename(self):
+        try:
+            key = [k for k in ["filename", "uri", "url"] if k in self.stored_data][0]
+        except IndexError:
+            raise TypeError("Cannot make a reference filename for a BLOB type result field.")
+        stored_filename = self.stored_data[key]
+        return stored_filename
+
+    def get_stored_basename(self):
+        stored_filename = self.get_stored_filename()
+        return basename(stored_filename)
+
     def get_referenced_filename_ext(self):
         try:
             key = [k for k in ["filename", "uri", "url"] if k in self.stored_data][0]

@@ -56,7 +56,7 @@ class GeoseeqOtherError(GeoseeqGeneralError):
 
 class Knex:
 
-    def __init__(self, endpoint_url=DEFAULT_ENDPOINT):
+    def __init__(self, endpoint_url=DEFAULT_ENDPOINT, profile=None):
         self.endpoint_url = endpoint_url
         self.endpoint_url += "/api"
         self.auth = None
@@ -65,6 +65,7 @@ class Knex:
         self._verify = self._set_verify()
         self.sess = self._new_session()
         self.auth_required = False
+        self.profile = profile   # this is not used, it's just a hint for downstream code
 
     def __enter__(self):
         return self
@@ -213,7 +214,7 @@ class Knex:
     def load_profile(cls, profile=""):
         """Return a knex authenticated with a profile."""
         endpoint, token = load_auth_profile(profile)
-        knex = cls(endpoint)
+        knex = cls(endpoint, profile=profile)
         knex.add_api_token(token)
         return knex
     

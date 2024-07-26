@@ -131,15 +131,16 @@ class ResultFileDownload:
     def _download_flag_path(self, filename, flag_suffix='.gs_downloaded'):
         return filename + flag_suffix
         
-    def download_needs_update(self, filename, flag_suffix='.gs_downloaded', slack=5):
+    def download_needs_update(self, filename, flag_suffix='.gs_downloaded', slack=5, check_flag=True):
         """Return True if the file needs to be downloaded, False otherwise.
         
         If either the file or the flag file does not exist, return True.
         If the flag file is older than `updated_at` in the result, return True.
         Otherwise, return False.
         """
-        if isfile(filename) and isfile(self._download_flag_path(filename, flag_suffix)):
-            if self.updated_at_timestamp - getmtime(self._download_flag_path(filename, flag_suffix)) > slack:
+        flag_exists = (not check_flag) or isfile(self._download_flag_path(filename, flag_suffix)) 
+        if isfile(filename) and flag_exists:
+            if self.updated_at_timestamp - getmtime(filename) > slack:
                 return True
             return False
         return True

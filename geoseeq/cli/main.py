@@ -44,6 +44,7 @@ main.add_command(cli_view)
 main.add_command(cli_search)
 main.add_command(cli_app)
 main.add_command(cli_eula)
+main.add_command(cli_project)
 
 @main.command()
 def version():
@@ -66,7 +67,6 @@ cli_advanced.add_command(cli_copy)
 cli_advanced.add_command(cli_user)
 cli_advanced.add_command(cli_detail)
 cli_advanced.add_command(cli_upload_advanced)
-cli_advanced.add_command(cli_project)
 
 @cli_advanced.group('experimental')
 def cli_experimental():

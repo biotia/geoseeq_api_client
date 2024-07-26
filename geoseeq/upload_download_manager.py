@@ -127,7 +127,7 @@ class GeoSeeqUploadManager:
 
 
 def _download_one_file(args):
-    url, file_path, pbar, ignore_errors, head, log_level, parallel_downloads = args
+    url, file_path, callback, pbar, ignore_errors, head, log_level, parallel_downloads = args
     if parallel_downloads:
         _make_in_process_logger(log_level)
     if isinstance(url, ResultFile):
@@ -135,7 +135,13 @@ def _download_one_file(args):
     try:
         if dirname(file_path):
             makedirs(dirname(file_path), exist_ok=True)
-        return download_url(url, filename=file_path, progress_tracker=pbar, head=head)
+        out = download_url(url, filename=file_path, progress_tracker=pbar, head=head)
+        if callback:
+            try:
+                callback(out) # callback may take the downloaded file as an argument or no arguments
+            except TypeError:
+                callback()
+        return out
     except Exception as e:
         if ignore_errors:
             logger.error(f"Error downloading {url}: {e}")
@@ -153,13 +159,13 @@ class GeoSeeqDownloadManager:
         self.log_level = log_level
         self._result_files = []
 
-    def add_download(self, url, file_path=None, progress_tracker=None):
+    def add_download(self, url, file_path=None, progress_tracker=None, callback=None):
         if not file_path:
             if isinstance(url, ResultFile):
                 file_path = url.get_local_filename()
             else:
                 raise ValueError("file_path must be provided if url is not a ResultFile object.")
-        self._result_files.append((url, file_path))
+        self._result_files.append((url, file_path, callback))
 
 
     def add_result_folder_download(self, result_folder, local_folder_path, hidden_files=True):
@@ -170,14 +176,14 @@ class GeoSeeqDownloadManager:
 
     def get_preview_string(self):
         out = ["Download Preview:"]
-        for url, file_path in self._result_files:
+        for url, file_path, _ in self._result_files:
             out.append(f"{url} -> {file_path}")
         return "\n".join(out)
     
     def get_url_string(self):
         self._convert_result_files_to_urls()
         out = []
-        for url, _ in self._result_files:
+        for url, _, _ in self._result_files:
             out.append(url)
         return "\n".join(out)
     
@@ -188,16 +194,17 @@ class GeoSeeqDownloadManager:
         self._result_files = [(
             url.get_download_url() if isinstance(url, ResultFile) else url,
             file_path,
-        ) for url, file_path in self._result_files]
+            callback,
+        ) for url, file_path, callback in self._result_files]
 
     def download_files(self):
         self._convert_result_files_to_urls()
         download_args = [(
-            url, file_path,
+            url, file_path, callback,
             self.progress_tracker_factory(file_path),
             self.ignore_errors, self.head, self.log_level,
             self.n_parallel_downloads > 1
-        ) for url, file_path in self._result_files]
+        ) for url, file_path, callback in self._result_files]
         out = []
         if self.n_parallel_downloads == 1:
             logger.info(f"Downloading files in series.")
