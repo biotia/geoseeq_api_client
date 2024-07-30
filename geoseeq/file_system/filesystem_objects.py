@@ -474,7 +474,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
             raise ValueError('Project already exists at path: {}'.format(self.info_filepath))
         
         # download samples
-        sample_dir_path = os.path.join(self.path, "sample_results")
+        sample_dir_path = os.path.join(self.path, "samples")
         os.makedirs(sample_dir_path, exist_ok=True)
         for sample in self.project.get_samples():
             sample_local_path = os.path.join(sample_dir_path,
@@ -484,7 +484,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
                 .download(use_stubs=use_stubs, exists_ok=exists_ok)
         
         # download project result folders
-        project_result_dir_path = os.path.join(self.path, "project_results")
+        project_result_dir_path = os.path.join(self.path, "results")
         os.makedirs(project_result_dir_path, exist_ok=True)
         for result_folder in self.project.get_result_folders():
             result_folder_local_path = os.path.join(project_result_dir_path,
@@ -518,7 +518,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
         
         # check that all samples are downloaded
         for sample in self.project.get_samples():
-            sample_local_path = os.path.join(self.path, "sample_results",
+            sample_local_path = os.path.join(self.path, "samples",
                                              SampleOnFilesystem.local_basename(sample))
             sample_on_fs = SampleOnFilesystem.from_path(sample_local_path)
             if not sample_on_fs.status_is_ok():
@@ -526,7 +526,7 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
         
         # check that all project result folders are downloaded
         for result_folder in self.project.get_result_folders():
-            result_folder_local_path = os.path.join(self.path, "project_results",
+            result_folder_local_path = os.path.join(self.path, "results",
                                                     ResultFolderOnFilesystem.local_basename(result_folder))
             result_folder_on_fs = ResultFolderOnFilesystem.from_path(result_folder_local_path, "project")
             if not result_folder_on_fs.status_is_ok():
@@ -565,30 +565,30 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
     def yield_child_objects(self):
         # list remote samples
         for sample in self.project.get_samples():
-            sample_path = os.path.join(self.path, "sample_results",
+            sample_path = os.path.join(self.path, "samples",
                                        SampleOnFilesystem.local_basename(sample))
             sample_on_fs = SampleOnFilesystem(sample, sample_path)
             yield sample_on_fs
 
         # list remote project result folders
         for result_folder in self.project.get_result_folders():
-            result_folder_path = os.path.join(self.path, "project_results",
+            result_folder_path = os.path.join(self.path, "results",
                                               ResultFolderOnFilesystem.local_basename(result_folder))
 
             result_folder_on_fs = ResultFolderOnFilesystem(result_folder, result_folder_path, "project")
             yield result_folder_on_fs
 
         # list local samples
-        for local_sample in iterate_non_gs_files(os.path.join(self.path, "sample_results")):
-            local_sample_path = os.path.join(self.path, "sample_results", local_sample)
+        for local_sample in iterate_non_gs_files(os.path.join(self.path, "samples")):
+            local_sample_path = os.path.join(self.path, "results", local_sample)
             if not os.path.isdir(local_sample_path):
                 continue
             sample_on_fs = SampleOnFilesystem.from_path(local_sample_path, knex=self.project.knex)
             yield sample_on_fs
     
         # list local project result folders
-        for local_result_folder in iterate_non_gs_files(os.path.join(self.path, "project_results")):
-            local_result_folder_path = os.path.join(self.path, "project_results", local_result_folder)
+        for local_result_folder in iterate_non_gs_files(os.path.join(self.path, "results")):
+            local_result_folder_path = os.path.join(self.path, "results", local_result_folder)
             if not os.path.isdir(local_result_folder_path):
                 continue
             result_folder_on_fs = ResultFolderOnFilesystem.from_path(local_result_folder_path, knex=self.project.knex)
@@ -619,9 +619,9 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
         path = self.path_from_project_root(path)
         tkns = path.split('/')
         print(tkns)
-        if tkns[0] == "project_results":
+        if tkns[0] == "results":
             folder_name, file_name = tkns[1], '/'.join(tkns[2:])
-            local_result_folder_path = os.path.join(self.path, "project_results", folder_name)
+            local_result_folder_path = os.path.join(self.path, "results", folder_name)
             result_folder_on_fs = ResultFolderOnFilesystem.from_path(local_result_folder_path, "project")
             result_folder_on_fs.write_info_file()
             out.append(('FOLDER', FILE_STATUS_NEW_LOCAL, local_result_folder_path, None))
@@ -629,9 +629,9 @@ class ProjectOnFilesystem(GeoSeeqObjectOnFilesystem):
             result_file_on_fs = ResultFileOnFilesystem.from_path(local_file_path, "project")
             result_file_on_fs.write_info_file()
             out.append(('FILE', FILE_STATUS_NEW_LOCAL, local_file_path, None))
-        elif tkns[0] == "sample_results":
+        elif tkns[0] == "samples":
             sample_name, folder_name, file_name = tkns[1], tkns[2], '/'.join(tkns[3:])
-            local_sample_path = os.path.join(self.path, "sample_results", sample_name)
+            local_sample_path = os.path.join(self.path, "samples", sample_name)
             sample_on_fs = SampleOnFilesystem.from_path(local_sample_path)
             sample_on_fs.write_info_file()
             out.append(('SAMPLE', FILE_STATUS_NEW_LOCAL, local_sample_path, None))
