@@ -1,3 +1,5 @@
+import urllib
+
 from .remote_object import RemoteObject
 from .result import SampleResultFile, SampleResultFolder
 
@@ -33,7 +35,8 @@ class Sample(RemoteObject):
         return f'brn:{self.knex.instance_code()}:sample:{self.uuid}'
 
     def nested_url(self):
-        return self.lib.nested_url() + f"/samples/{self.name}"
+        escaped_name = urllib.parse.quote(self.name, safe="")
+        return self.lib.nested_url() + f"/samples/{escaped_name}"
 
     def change_library(self, new_lib):
         self.new_lib = new_lib

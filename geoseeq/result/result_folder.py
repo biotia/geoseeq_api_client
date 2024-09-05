@@ -1,9 +1,6 @@
-import json
-import logging
 import os
-import time
-import urllib.request
-from os.path import basename, getsize, join, isfile, isdir, dirname
+import urllib
+from os.path import basename, dirname, getsize, isdir, isfile, join
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -155,7 +152,8 @@ class SampleResultFolder(ResultFolder, SampleBioInfoFolder):
         self.is_private = is_private
 
     def nested_url(self):
-        return self.sample.nested_url() + f"/analysis_results/{self.module_name}"
+        escaped_name = urllib.parse.quote(self.module_name, safe="")
+        return self.sample.nested_url() + f"/analysis_results/{escaped_name}"
 
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
