@@ -1,11 +1,13 @@
-from .result import ProjectResultFolder
+import logging
+import urllib
+
+import pandas as pd
+
+from .pipeline import Pipeline
 from .remote_object import RemoteObject
+from .result import ProjectResultFolder
 from .sample import Sample
 from .utils import paginated_iterator
-from .pipeline import Pipeline
-import json
-import pandas as pd
-import logging
 
 logger = logging.getLogger("geoseeq_api")
 
@@ -72,7 +74,8 @@ class Project(RemoteObject):
         return data
 
     def nested_url(self):
-        return self.org.nested_url() + f"/sample_groups/{self.name}"
+        escaped_name = urllib.parse.quote(self.name, safe="")
+        return self.org.nested_url() + f"/sample_groups/{escaped_name}"
 
     def _save_group_obj(self):
         data = self.get_post_data()

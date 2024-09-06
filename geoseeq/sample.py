@@ -1,5 +1,7 @@
-from .result import SampleResultFolder, SampleResultFile
+import urllib
+
 from .remote_object import RemoteObject
+from .result import SampleResultFile, SampleResultFolder
 
 
 class Sample(RemoteObject):
@@ -33,7 +35,8 @@ class Sample(RemoteObject):
         return f'brn:{self.knex.instance_code()}:sample:{self.uuid}'
 
     def nested_url(self):
-        return self.lib.nested_url() + f"/samples/{self.name}"
+        escaped_name = urllib.parse.quote(self.name, safe="")
+        return self.lib.nested_url() + f"/samples/{escaped_name}"
 
     def change_library(self, new_lib):
         self.new_lib = new_lib
@@ -212,9 +215,19 @@ class Sample(RemoteObject):
                         )
                     else:
                         files[read_type][folder_name].append(
-                            self._grn_to_file(file_grn[0])
+                            self._grn_to_file(file_grn)
                         )
         return files
+    
+    def get_one_fasta(self):
+        """Return a 2-ple, a fasta ResultFile and a string with the read type.
+
+        Does not download the file.
+        """
+        url = f"data/samples/{self.uuid}/one-fasta"
+        blob = self.knex.get(url)
+        file = self._grn_to_file(blob["grn"])
+        return file, blob["read_type"]
 
     def __str__(self):
         return f"<Geoseeq::Sample {self.name} {self.uuid} />"

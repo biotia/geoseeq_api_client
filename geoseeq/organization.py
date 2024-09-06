@@ -1,6 +1,8 @@
 
-from .remote_object import RemoteObject
+import urllib
+
 from .project import Project
+from .remote_object import RemoteObject
 
 
 class Organization(RemoteObject):
@@ -19,7 +21,8 @@ class Organization(RemoteObject):
         self.name = name
 
     def nested_url(self):
-        return f'nested/{self.name}'
+        escaped_name = urllib.parse.quote(self.name, safe="")
+        return f'nested/{escaped_name}'
 
     def _save(self):
         data = {
