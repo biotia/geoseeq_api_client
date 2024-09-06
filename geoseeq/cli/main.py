@@ -54,7 +54,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.6.3')  # remember to update setup
+    click.echo('0.6.4')  # remember to update setup
 
 
 @main.group('advanced')
