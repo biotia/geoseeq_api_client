@@ -133,7 +133,30 @@ def handle_folder_id(knex, folder_id, yes=False, private=True, create=True):
     raise ValueError('sample_folder_id must be a UUID, an organization name and project name, or a GRN')
 
 
-def handle_multiple_sample_ids(knex, sample_ids, proj=None):
+def map_alternate_ids_to_uuids(proj, alternate_id_col, sample_ids):
+    """Return a list of sample UUIDs
+    
+    `proj` is a project object
+    `alternate_id_col` is the name of the column containing alternate IDs
+    `sample_ids` is a list of alternate IDs
+    """
+    metadata = proj.get_sample_metadata()
+    if alternate_id_col not in metadata:
+        raise ValueError(f'Column "{alternate_id_col}" not found in project metadata')
+    alt_col_df = metadata[["uuid", alternate_id_col]]
+    # filter to the alt ids in our list- it is possible alt_id_col as a whole is not
+    # unique but that our list of alt ids is
+    alt_col_df = alt_col_df[alt_col_df[alternate_id_col].isin(sample_ids)]
+    if alt_col_df.shape[0] == 0:
+        raise ValueError(f'No samples found with the given alternate IDs in list')
+    if alt_col_df.shape[0] < len(sample_ids):
+        raise ValueError(f'Not all alternate IDs in list are found')
+    if alt_col_df.shape[0] > len(sample_ids):
+        raise ValueError(f'More than one sample found with the same alternate ID')
+    return list(alt_col_df['uuid'])
+
+
+def handle_multiple_sample_ids(knex, sample_ids, proj=None, alternate_id_col=None):
     """Return a list of fetched sample objects
     
     `sample_ids` may have three different structures:
@@ -144,7 +167,9 @@ def handle_multiple_sample_ids(knex, sample_ids, proj=None):
     Any sample may in fact be a file containing sample IDs, in which case the file will be read line by line
     and each element will be a sample ID
 
-    If `one_project` is True, all samples must be from the same project
+    If `proj` is provided then `alternate_id_col` may also be provided.
+    If so then alternate IDs will be used to fetch samples. If alternate ids are 
+    not present or not unique then fail.
     """
     project_as_arg = bool(proj)
     if proj or (proj := el_is_project_id(knex, sample_ids[0])):
@@ -155,7 +180,10 @@ def handle_multiple_sample_ids(knex, sample_ids, proj=None):
             return list(proj.get_samples(cache=False))
         else:
             samples = []
-            for el in flatten_list_of_els_and_files(sample_ids):
+            sample_ids = flatten_list_of_els_and_files(sample_ids)
+            if alternate_id_col:
+                sample_ids = map_alternate_ids_to_uuids(proj, alternate_id_col, sample_ids)
+            for el in sample_ids:
                 if is_grn_or_uuid(el):
                     el = el.split(':')[-1]
                     samples.append(sample_from_uuid(knex, el))

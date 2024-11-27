@@ -98,6 +98,7 @@ def cli_download_metadata(state, sample_ids):
 
 cores_option = click.option('--cores', default=1, help='Number of downloads to run in parallel')
 head_option = click.option('--head', default=None, type=int, help='Download the first N bytes of each file')
+alt_id_option = click.option('--alt-sample-id', default=None, help='Specify an alternate sample id from the project metadata to id samples')
 
 @cli_download.command("files")
 @use_common_state
@@ -113,6 +114,7 @@ head_option = click.option('--head', default=None, type=int, help='Download the 
 @click.option("--extension", multiple=True, help="Only download files with this extension. e.g. 'fastq.gz', 'bam', 'csv'")
 @click.option("--with-versions/--without-versions", default=False, help="Download all versions of a file, not just the latest")
 @ignore_errors_option
+@alt_id_option
 @project_id_arg
 @sample_ids_arg
 def cli_download_files(
@@ -129,6 +131,7 @@ def cli_download_files(
     with_versions,
     download,
     ignore_errors,
+    alt_sample_id,
     project_id,
     sample_ids,
 ):
@@ -164,6 +167,13 @@ def cli_download_files(
         haib17CEM4890_H2NYMCCXY_SL254769 haib17CEM4890_H2NYMCCXY_SL254773 `# specify the samples by name` \\ 
         --folder-type sample --extension '.contigs.fasta' # filter for contig files
 
+    \b
+    # Download files from a sample in the metasub project using an alternate sample id called "barcode"
+    $ geoseeq download files 'MetaSUB Consortium/Cell Paper' `# specify the project` \\
+        235183938 `# the alternate sample name (in this case a barcode number)` \\
+        --alt-sample-id barcode `# specify the alternate sample id column name` \\
+        --folder-type 'sample' `# only download files from sample folders`
+
     ---
 
     Command Arguments:
@@ -184,7 +194,7 @@ def cli_download_files(
     samples = []
     if sample_ids:
         logger.info(f"Fetching info for {len(sample_ids)} samples.")
-        samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj)
+        samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj, alternate_id_col=alt_sample_id)
 
     response = proj.bulk_find_files(
         sample_uuids=[s.uuid for s in samples],
@@ -377,9 +387,21 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
 @module_option(FASTQ_MODULE_NAMES, use_default=False)
 @ignore_errors_option
+@alt_id_option
 @project_id_arg
 @sample_ids_arg
-def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_name, ignore_errors, project_id, sample_ids):
+def cli_download_fastqs(state,
+                        cores,
+                        target_dir,
+                        yes,
+                        first,
+                        download,
+                        module_name,
+                        ignore_errors,
+                        alt_sample_id,
+                        project_id,
+                        sample_ids
+):
     """Download fastq files from a GeoSeeq project.
 
     This command will download fastq files from a GeoSeeq project. You can filter
@@ -400,6 +422,10 @@ def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_n
     \b
     # Download all fastq files from two samples in "My Org/My Project"
     $ geoseeq download fastqs "My Org/My Project" S1 S2
+
+    \b
+    # Download all fastq files from a single sample using an alternate sample id called "barcode"
+    $ geoseeq download fastqs 'MetaSUB Consortium/Cell Paper' 235183938 --alt-sample-id barcode
 
     ---
 
@@ -422,7 +448,7 @@ def cli_download_fastqs(state, cores, target_dir, yes, first, download, module_n
     samples = []
     if sample_ids:
         logger.info(f"Fetching info for {len(sample_ids)} samples.")
-        samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj)
+        samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj, alternate_id_col=alt_sample_id)
     else:
         logger.info("Fetching info for all samples in project.")
         samples = proj.get_samples()

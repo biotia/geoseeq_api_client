@@ -15,6 +15,7 @@ from .resumable_download_tracker import ResumableDownloadTracker
 
 logger = logging.getLogger("geoseeq_api")  # Same name as calling module
 
+
 def url_to_id(url):
     url = url.split("?")[0]
     return md5(url.encode()).hexdigest()[:16]
@@ -80,6 +81,8 @@ def guess_download_kind(url):
         return 's3'
     elif 'ftp' in url:
         return 'ftp'
+    elif 'http' in url:  # note works for https too
+        return 'http'
     else:
         return 'generic'
 
@@ -103,6 +106,9 @@ def download_url(url, kind='guess', filename=None, head=None, progress_tracker=N
         return _download_head(url, filename, head=head)
     elif kind == 'ftp':
         return download_ftp(url, filename, head=head)
+    elif kind == 'http':
+        # for http[s] files we care about head is often respected in practice (e.g. by the ENA) 
+        return _download_head(url, filename, head=head, progress_tracker=progress_tracker)
     else:
         raise ValueError(f"Unknown download kind: {kind}")
 
@@ -113,7 +119,7 @@ class ResultFileDownload:
     def get_download_url(self):
         """Return a URL that can be used to download the file for this result."""
         blob_type = self.stored_data.get("__type__", "").lower()
-        if blob_type not in ["s3", "sra", "ftp", "azure"]:
+        if blob_type not in ["s3", "sra", "ftp", "azure", "http"]:
             raise ValueError(f'Unknown URL type: "{blob_type}"')
         key = 'url' if 'url' in self.stored_data else 'uri'
         if blob_type in ["s3", "azure"]:
@@ -127,7 +133,6 @@ class ResultFileDownload:
         else:
             return self.stored_data[key]
         
-    
     def _download_flag_path(self, filename, flag_suffix='.gs_downloaded'):
         return filename + flag_suffix
         

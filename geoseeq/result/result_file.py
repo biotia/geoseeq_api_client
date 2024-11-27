@@ -149,6 +149,9 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
             return self.link_sra(*args, **kwargs)
         elif link_type == "azure":
             return self.link_azure(*args, **kwargs)
+        elif link_type == "http":
+            return self.link_http(*args, **kwargs)
+        assert False, f"Unknown link type: {link_type}"
 
     def link_s3(self, url, endpoint_url=None):
         """Link this field to an S3 object.
@@ -204,6 +207,18 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
             "__type__": "azure",
             "uri": url,
             "endpoint_url": endpoint_url,
+        }
+        return self.save()
+    
+    def link_http(self, url):
+        """Link this field to an HTTP object.
+
+        Args:
+            url (str): The URL of the HTTP object.
+        """
+        self.stored_data = {
+            "__type__": "http",
+            "url": url,
         }
         return self.save()
     

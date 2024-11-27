@@ -214,7 +214,8 @@ class Knex:
         """Return a knex authenticated with a profile."""
         endpoint, token = load_auth_profile(profile)
         knex = cls(endpoint)
-        knex.add_api_token(token)
+        if token:
+            knex.add_api_token(token)
         return knex
     
 

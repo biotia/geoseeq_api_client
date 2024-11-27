@@ -14,7 +14,7 @@ private_option = click.option('--private/--public', default=True, help='Make obj
 link_option = click.option(
     '--link-type',
     default='upload',
-    type=click.Choice(['upload', 's3', 'ftp', 'azure', 'sra']),
+    type=click.Choice(['upload', 's3', 'ftp', 'azure', 'sra', 'http']),
     help='Link the files from a cloud storage service instead of copying them'
 )
 yes_option = click.option('--yes/--confirm', default=False, help='Skip confirmation prompts')

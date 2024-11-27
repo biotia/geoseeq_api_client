@@ -16,11 +16,19 @@ logger.addHandler(logging.NullHandler())  # No output unless configured by calli
 def load_auth_profile(profile=""):
     """Return an endpoit and a token"""
     profile = profile or "__default__"
-    with open(PROFILES_PATH, "r") as f:
-        profiles = json.load(f)
-    if profile in profiles:
-        return profiles[profile]["endpoint"], profiles[profile]["token"]
-    raise KeyError(f"Profile {profile} not found.")
+    try:
+        with open(PROFILES_PATH, "r") as f:
+            profiles = json.load(f)
+        if profile in profiles:
+            return profiles[profile]["endpoint"], profiles[profile]["token"]
+        raise KeyError(f"Profile {profile} not found.")
+    except FileNotFoundError:
+        endpoint, token = environ.get("GEOSEEQ_ENDPOINT", DEFAULT_ENDPOINT), environ.get("GEOSEEQ_API_TOKEN", None)
+        if token:
+            logger.debug("Using environment variables for authentication.")
+        else:
+            logger.warning("Accessing anonymously, functionality may be limited. Configure profiles or set GEOSEEQ_API_TOKEN to authenticate.")
+        return endpoint, token
 
 
 def set_profile(token, endpoint=DEFAULT_ENDPOINT, profile="", overwrite=False):

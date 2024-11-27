@@ -165,6 +165,7 @@ class RemoteObject:
             self._modified = False
         else:
             logger.debug(f"RemoteBlob has not been modified. Nothing to save. {self}")
+        return self
 
     def idem(self):
         """Make the state of this object match the server."""

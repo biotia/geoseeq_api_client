@@ -256,9 +256,14 @@ class Project(RemoteObject):
 
     def get_sample_metadata(self):
         """Return a pandas dataframe with sample metadata."""
-        url = f"sample_groups/{self.uuid}/metadata"
-        blob = self.knex.get(url)
-        return pd.DataFrame.from_dict(blob, orient="index")
+        url = f"sample_groups/{self.uuid}/samples-list?page=1&page_size=500&&"
+        rows = []
+        while url:
+            blob = self.knex.get(url)
+            rows.extend(blob["results"])
+            url = blob["next"]
+        return pd.DataFrame(rows)
+    
     
     @property
     def n_samples(self):

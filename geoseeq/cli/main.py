@@ -11,14 +11,14 @@ from .upload import cli_upload, cli_upload_advanced
 from .user import cli_user
 from .view import cli_view
 from .search import cli_search
-from geoseeq.vc.cli import cli_vc
+
 from geoseeq.knex import DEFAULT_ENDPOINT
 from geoseeq.utils import set_profile
 from .shared_params.opts_and_args import overwrite_option, yes_option
 from .detail import cli_detail
 from .run import cli_app
 from .get_eula import cli_eula
-from .project import cli_project
+
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -54,7 +54,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.6.4')  # remember to update setup
+    click.echo('0.6.9')  # remember to update pyproject.toml
 
 
 @main.group('advanced')
@@ -66,14 +66,22 @@ cli_advanced.add_command(cli_copy)
 cli_advanced.add_command(cli_user)
 cli_advanced.add_command(cli_detail)
 cli_advanced.add_command(cli_upload_advanced)
-cli_advanced.add_command(cli_project)
 
 @cli_advanced.group('experimental')
 def cli_experimental():
     """Experimental commands."""
     pass
 
-cli_experimental.add_command(cli_vc)
+
+
+try:
+    from geoseeq.vc.cli import cli_vc
+    from .project import cli_project
+    cli_experimental.add_command(cli_vc)
+    cli_advanced.add_command(cli_project)
+
+except (ModuleNotFoundError, ImportError):
+    pass
 
 @main.command('config')
 @yes_option
