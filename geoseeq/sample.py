@@ -205,18 +205,17 @@ class Sample(RemoteObject):
             files[read_type] = {}
             for folder_name, file_grns in folders.items():
                 files[read_type][folder_name] = []
-                for file_grn in file_grns:
-                    if read_type in ["short_read::paired_end"]:
-                        files[read_type][folder_name].append(
-                            [
-                                self._grn_to_file(file_grn[0]),
-                                self._grn_to_file(file_grn[1]),
-                            ]
-                        )
-                    else:
-                        files[read_type][folder_name].append(
-                            self._grn_to_file(file_grn[0])
-                        )
+                if read_type in ["short_read::paired_end"]:
+                    files[read_type][folder_name].append(
+                        [
+                            self._grn_to_file(file_grns[0]),
+                            self._grn_to_file(file_grns[1]),
+                        ]
+                    )
+                else:
+                    files[read_type][folder_name].append(
+                        self._grn_to_file(file_grns[0])
+                    )
         return files
     
     def get_one_fasta(self):
