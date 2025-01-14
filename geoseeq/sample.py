@@ -200,6 +200,7 @@ class Sample(RemoteObject):
         """
         url = f"data/samples/{self.uuid}/all-fastqs"
         blob = self.knex.get(url)
+        print(blob)
         files = {}
         for read_type, folders in blob.items():
             files[read_type] = {}
@@ -208,8 +209,8 @@ class Sample(RemoteObject):
                 if read_type in ["short_read::paired_end"]:
                     files[read_type][folder_name].append(
                         [
-                            self._grn_to_file(file_grns[0]),
-                            self._grn_to_file(file_grns[1]),
+                            self._grn_to_file(file_grns[0][0]),
+                            self._grn_to_file(file_grns[0][1]),
                         ]
                     )
                 else:
