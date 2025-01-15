@@ -1,5 +1,6 @@
 from geoseeq import GeoseeqNotFoundError
 from geoseeq.knex import with_knex
+
 from .from_blobs import *
 
 
@@ -115,3 +116,11 @@ def pipeline_run_from_uuid(knex, uuid):
     blob = knex.get(f"app_runs/{uuid}")
     pipeline_run = pipeline_run_from_blob(knex, blob)
     return pipeline_run
+
+
+@with_knex
+def smart_table_from_uuid(knex, uuid):
+    """Return a smart table object which the uuid points to."""
+    blob = knex.get(f"table/{uuid}")
+    table = smart_table_from_blob(knex, blob)
+    return table
