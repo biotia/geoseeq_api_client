@@ -127,17 +127,16 @@ class GeoSeeqUploadManager:
 
 
 def _download_one_file(args):
-    original_url, file_path, key, callback, pbar, ignore_errors, head, log_level, parallel_downloads = args
+    url, file_path, key, callback, pbar, ignore_errors, head, log_level, parallel_downloads = args
     if parallel_downloads:
         _make_in_process_logger(log_level)
-    if isinstance(original_url, ResultFile):
-        url = original_url.get_download_url()
+    if dirname(file_path):
+        makedirs(dirname(file_path), exist_ok=True)
+    if isinstance(url, ResultFile):
+        local_path = url.download(filename=file_path, progress_tracker=pbar, head=head)
     else:
-        url = original_url
-    try:
-        if dirname(file_path):
-            makedirs(dirname(file_path), exist_ok=True)
         local_path = download_url(url, filename=file_path, progress_tracker=pbar, head=head)
+    try:
         if callback is not None:
             callback_result = callback(local_path)
         else:

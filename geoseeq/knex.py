@@ -222,16 +222,20 @@ class Knex:
 def with_knex(func):
     def wrapper(*args, **kwargs):
         # check if any of the arguments are a knex instance
+        logger.debug(f"Checking for knex in args: {args}, kwargs: {kwargs}")
         any_knex = any([isinstance(arg, Knex) for arg in args])
         if any_knex:
+            logger.debug("knex found in args args: {args}, kwargs: {kwargs}")
             return func(*args, **kwargs)
         else:
+            logger.debug("knex not found in args args: {args}, kwargs: {kwargs}")
             varnames = [
                 varname for varname in func.__code__.co_varnames
                 if varname != "knex"
             ]
             kwargs.update(zip(varnames, args))
             if "knex" not in kwargs:
+                logger.debug("knex not found in kwargs args: {args}, kwargs: {kwargs}")
                 profile = kwargs.pop("profile", "")
                 kwargs['knex'] = Knex.load_profile(profile=profile)
             # reorder kwargs to match the function signature

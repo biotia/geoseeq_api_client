@@ -1,4 +1,5 @@
 from geoseeq import GeoseeqNotFoundError
+import logging
 from .from_uuids import (
     org_from_uuid,
     project_from_uuid,
@@ -24,9 +25,12 @@ from .from_names import (
 from .utils import is_grn_or_uuid, is_name
 from geoseeq.knex import with_knex
 
+logger = logging.getLogger("geoseeq_api")  # Same name as calling module
+
 
 def _generic_from_id(knex, id, from_uuid_func, from_name_func):
     """Return the object which the id points to."""
+    logger.debug(f'Getting object from id: {id}, knex: {knex}, from_uuid_func: {from_uuid_func}, from_name_func: {from_name_func}')
     if is_grn_or_uuid(id):
         id = id.split(':')[-1]  # if this is a GRN, get the UUID. Won't hurt if it's already a UUID.
         return from_uuid_func(knex, id)
