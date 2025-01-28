@@ -18,7 +18,7 @@ from .shared_params.opts_and_args import overwrite_option, yes_option
 from .detail import cli_detail
 from .run import cli_app
 from .get_eula import cli_eula
-
+from .find_grn import cli_find_grn
 
 logger = logging.getLogger('geoseeq_api')
 handler = logging.StreamHandler()
@@ -44,6 +44,7 @@ main.add_command(cli_view)
 main.add_command(cli_search)
 main.add_command(cli_app)
 main.add_command(cli_eula)
+main.add_command(cli_find_grn)
 
 @main.command()
 def version():
@@ -54,7 +55,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.6.13')  # remember to update pyproject.toml
+    click.echo('0.6.14dev4')  # remember to update pyproject.toml
 
 
 @main.group('advanced')

@@ -33,3 +33,4 @@ from .work_orders import (
 from .app import App
 from .id_constructors import *
 from .upload_download_manager import GeoSeeqDownloadManager, GeoSeeqUploadManager
+from .smart_table import SmartTable

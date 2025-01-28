@@ -378,6 +378,71 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
         download_manager.download_files()
 
 
+def _get_sample_result_files_with_names(sample, module_name=None, first=False):
+    for read_type, folder in sample.get_all_fastqs().items():
+        if module_name and module_name != read_type:
+            continue
+        result_files_with_names = []
+        for folder_name, result_files in folder.items():
+            for lane_num, result_file in enumerate(result_files):
+                lane_num = lane_num + 1  # 1 indexed
+                if read_type in ["short_read::paired_end"]:
+                    key = (sample, read_type, 1, lane_num)  # sample name, read type, read number, lane number
+                    result_files_with_names.append(
+                        (result_file[0], result_file[0].get_referenced_filename(), key)
+                    )
+                    key = (sample, read_type, 2, lane_num)
+                    result_files_with_names.append(
+                        (result_file[1], result_file[1].get_referenced_filename(), key)
+                    )
+                else:
+                    key = (sample, read_type, 1, lane_num)
+                    result_files_with_names.append(
+                        (result_file, result_file.get_referenced_filename(), key)
+                    )
+            if first:
+                break
+
+    return result_files_with_names
+
+
+def _make_read_configs(download_results, config_dir="."):
+    """Make JSON config files that look like this.
+    
+    {
+        "sample_name": "small",
+        "reads_1": ["small.fq.gz"],
+        "reads_2": [],
+        "fastq_checksum": "",
+        "data_type": "short-read",
+        "bdx_result_dir": "results",
+        "geoseeq_uuid": "05bf22e9-9d25-42db-af25-31bc538a7006"
+    }
+    """
+    config_blobs = {}  # sample ids -> config_blobs
+    download_results = sorted(download_results, key=lambda x: x[1][3])  # sort by lane number
+    for local_path, (sample, read_type, read_num, lane_num), _ in download_results:
+        if sample.name not in config_blobs:
+            config_blobs[sample.name] = {
+                "sample_name": sample.name,
+                "reads_1": [],
+                "reads_2": [],
+                "fastq_checksum": "",
+                "data_type": "short-read",
+                "bdx_result_dir": "results",
+                "geoseeq_uuid": sample.uuid,
+            }
+        if read_num == 1:
+            config_blobs[sample.name]["reads_1"].append(local_path)  # sorted by lane number
+        else:
+            config_blobs[sample.name]["reads_2"].append(local_path)
+
+    for sample_name, config_blob in config_blobs.items():
+        config_path = join(config_dir, f"{sample_name}.config.json")
+        with open(config_path, "w") as f:
+            json.dump(config_blob, f, indent=4)
+
+
 @cli_download.command("fastqs")
 @use_common_state
 @cores_option
@@ -385,6 +450,7 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
 @yes_option
 @click.option("--first/--all", default=False, help="Download only the first folder of fastq files for each sample.")
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@click.option("--config-dir", default=None, help="Directory to write read config files. If unset do not write config files.")
 @module_option(FASTQ_MODULE_NAMES, use_default=False)
 @ignore_errors_option
 @alt_id_option
@@ -396,6 +462,7 @@ def cli_download_fastqs(state,
                         yes,
                         first,
                         download,
+                        config_dir,
                         module_name,
                         ignore_errors,
                         alt_sample_id,
@@ -455,24 +522,12 @@ def cli_download_fastqs(state,
 
     result_files_with_names = []
     for sample in samples:
-        for read_type, folder in sample.get_all_fastqs().items():
-            if module_name and module_name != read_type:
-                continue
-            for folder_name, result_files in folder.items():
-                for result_file in result_files:
-                    if read_type in ["short_read::paired_end"]:
-                        result_files_with_names.append(
-                            (result_file[0], result_file[0].get_referenced_filename())
-                        )
-                        result_files_with_names.append(
-                            (result_file[1], result_file[1].get_referenced_filename())
-                        )
-                    else:
-                        result_files_with_names.append(
-                            (result_file, result_file.get_referenced_filename())
-                        )
-                if first:
-                    break
+        try:
+            result_files_with_names += _get_sample_result_files_with_names(sample, module_name, first)
+        except Exception as e:
+            logger.error(f"Error fetching fastq files for sample {sample.name}: {e}")
+            if not ignore_errors:
+                raise e
 
     if len(result_files_with_names) == 0:
         click.echo("No suitable fastq files found.")
@@ -484,8 +539,8 @@ def cli_download_fastqs(state,
         log_level=state.log_level,
         progress_tracker_factory=PBarManager().get_new_bar,
     )
-    for result_file, filename in result_files_with_names:
-        download_manager.add_download(result_file, join(target_dir, filename))
+    for result_file, filename, key in result_files_with_names:
+        download_manager.add_download(result_file, join(target_dir, filename), key=key)
     if not download:
         print(download_manager.get_url_string(), file=state.outfile)
     else:
@@ -493,5 +548,6 @@ def cli_download_fastqs(state,
         if not yes:
             click.confirm('Continue?', abort=True)
         logger.info(f'Downloading {len(download_manager)} files to {target_dir}')
-        download_manager.download_files()
-
+        download_results = download_manager.download_files()
+        if config_dir:
+            _make_read_configs(download_results, config_dir)

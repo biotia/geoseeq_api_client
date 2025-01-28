@@ -200,7 +200,6 @@ class Sample(RemoteObject):
         """
         url = f"data/samples/{self.uuid}/all-fastqs"
         blob = self.knex.get(url)
-        print(blob)
         files = {}
         for read_type, folders in blob.items():
             files[read_type] = {}

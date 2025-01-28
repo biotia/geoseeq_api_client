@@ -138,7 +138,7 @@ def _download_one_file(args):
         local_path = download_url(url, filename=file_path, progress_tracker=pbar, head=head)
     try:
         if callback is not None:
-            callback_result = callback(local_path)
+            callback_result = callback(key, local_path)
         else:
             callback_result = None
         return local_path, key, callback_result
@@ -205,7 +205,7 @@ class GeoSeeqDownloadManager:
         If no key was provided the key is None
         If no callback was provided with the file callback result is None
         """
-        self._convert_result_files_to_urls()
+        # self._convert_result_files_to_urls()
         download_args = [(
             url, file_path, key, callback,
             self.progress_tracker_factory(file_path),

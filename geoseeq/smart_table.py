@@ -13,6 +13,16 @@ from geoseeq.remote_object import RemoteObject
 from geoseeq.result.result_folder import ProjectResultFolder, SampleResultFolder
 
 
+def convert_pandas_col_type_to_geoseeq_type(col_type: str):
+    if col_type == "int64":
+        return "number"
+    elif col_type == "float64":
+        return "number"
+    elif col_type == "category":
+        return None
+    return None
+
+
 class SmartTable(RemoteObject):
     remote_fields = [
         "uuid",
@@ -34,7 +44,7 @@ class SmartTable(RemoteObject):
 
     def create(
         self,
-        result_folder: SampleResultFolder | ProjectResultFolder,
+        result_folder,
         description="",
         without_default_columns=True,
     ):
@@ -82,11 +92,17 @@ class SmartTable(RemoteObject):
         self.refetch()  # columns attribute has to be updated
 
     def import_dataframe(self, df: pd.DataFrame, column_types={}):
+        df_column_types = {
+            col_name: convert_pandas_col_type_to_geoseeq_type(col_type)
+            for col_name, col_type in df.dtypes.items()
+            if convert_pandas_col_type_to_geoseeq_type(col_type) is not None
+        }
+        my_column_types = {**df_column_types, **column_types}
         df_dict = df.to_dict(orient="split")
         self.import_data(
             column_names=df_dict["columns"],
             rows=df_dict["data"],
-            column_types=column_types,
+            column_types=my_column_types,
         )
 
     def import_csv(self, file_path, column_types={}, **kwargs):
