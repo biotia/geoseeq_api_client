@@ -53,11 +53,12 @@ class SmartTable(RemoteObject):
 
         without_default_columns: if False the server creates 3 example columns.
         """
-
+        if description:
+            self.description = description
         data = {
             "name": self.name,
             "folder_id": result_folder.uuid,
-            "description": description,
+            "description": self.description,
         }
         url = f"table?without_default_columns={without_default_columns}"
         blob = self.knex.post(url, json=data)

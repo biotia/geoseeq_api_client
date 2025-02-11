@@ -6,7 +6,7 @@ from .upload_reads import (
     _make_in_process_logger,
     _get_regex,
     _group_files,
-    flatten_list_of_fastqs,
+    flatten_list_of_fastxs,
 )
 
 from multiprocessing import Pool, current_process
@@ -84,7 +84,7 @@ def cli_find_urls_for_reads(state, cores, overwrite, yes, regex, private, module
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, yes, private)
-    filepaths = {basename(line): line for line in flatten_list_of_fastqs(fastq_files)}
+    filepaths = {basename(line): line for line in flatten_list_of_fastxs(fastq_files)}
     click.echo(f'Found {len(filepaths)} files to upload.', err=True)
     regex = _get_regex(knex, filepaths, module_name, proj, regex)
     groups = _group_files(knex, filepaths, module_name, regex, yes)

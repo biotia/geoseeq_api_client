@@ -379,10 +379,10 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
 
 
 def _get_sample_result_files_with_names(sample, module_name=None, first=False):
+    result_files_with_names = []
     for read_type, folder in sample.get_all_fastqs().items():
         if module_name and module_name != read_type:
             continue
-        result_files_with_names = []
         for folder_name, result_files in folder.items():
             for lane_num, result_file in enumerate(result_files):
                 lane_num = lane_num + 1  # 1 indexed

@@ -107,7 +107,9 @@ def download_url(url, kind='guess', filename=None, head=None, progress_tracker=N
     elif kind == 'ftp':
         return download_ftp(url, filename, head=head)
     elif kind == 'http':
-        # for http[s] files we care about head is often respected in practice (e.g. by the ENA) 
+        # for http[s] files we care about head is often respected in practice (e.g. by the ENA)
+        if not url.startswith("http"):
+            url = "https://" + url
         return _download_head(url, filename, head=head, progress_tracker=progress_tracker)
     else:
         raise ValueError(f"Unknown download kind: {kind}")
@@ -179,7 +181,7 @@ class ResultFileDownload:
 
         url = self.get_download_url()
         filepath = download_url(
-            url, blob_type, filename,
+            url, kind=blob_type, filename=filename,
             head=head, progress_tracker=progress_tracker,
         )
         if cache and flag_suffix:

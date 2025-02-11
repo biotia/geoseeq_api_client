@@ -118,11 +118,19 @@ def _is_fastq(path, fq_exts=['.fastq', '.fq'], compression_exts=['.gz', '.bz2', 
     return False
 
 
-def flatten_list_of_fastqs(filepaths):
+def _is_fasta(path, fa_exts=['.fasta', '.fa', '.fna', '.faa'], compression_exts=['.gz', '.bz2', '']):
+    for fa_ext in fa_exts:
+        for compression_ext in compression_exts:
+            if path.endswith(fa_ext + compression_ext):
+                return True
+    return False
+
+
+def flatten_list_of_fastxs(filepaths):
     """Turn a list of fastq filepaths and txt files containing fastq filepaths into a single list of fastq filepaths."""
     flattened = []
     for path in filepaths:
-        if _is_fastq(path):
+        if _is_fastq(path) or _is_fasta(path):
             flattened.append(path)
         else:
             with open(path) as f:
@@ -218,7 +226,7 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     """
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, yes, private)
-    filepaths = {basename(line): line for line in flatten_list_of_fastqs(fastq_files)}
+    filepaths = {basename(line): line for line in flatten_list_of_fastxs(fastq_files)}
     click.echo(f'Found {len(filepaths)} files to upload.', err=True)
     regex = _get_regex(knex, filepaths, module_name, proj, regex)
     groups = _group_files(knex, filepaths, module_name, regex, yes)
@@ -281,9 +289,9 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     [FILES...] can be paths to BAM files or a file containing a list of paths, or a mix of both.
     Example: "path/to/bam/files
     """
-    knex = state.get_knex()
-    proj = handle_project_id(knex, project_id, yes, private)
-    filepaths = {basename(line): line for line in flatten_list_of_bams(files)}
-    click.echo(f'Found {len(filepaths)} files to upload.', err=True)
-    groups = _group_files(knex, filepaths, 'bam::bam', regex, yes)
-    _do_upload(groups, 'bam::bam', link_type, proj, filepaths, overwrite, no_new_versions, cores, state)
+    # knex = state.get_knex()
+    # proj = handle_project_id(knex, project_id, yes, private)
+    # filepaths = {basename(line): line for line in flatten_list_of_bams(files)}
+    # click.echo(f'Found {len(filepaths)} files to upload.', err=True)
+    # groups = _group_files(knex, filepaths, 'bam::bam', regex, yes)
+    # _do_upload(groups, 'bam::bam', link_type, proj, filepaths, overwrite, no_new_versions, cores, state)

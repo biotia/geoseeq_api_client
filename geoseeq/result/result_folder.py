@@ -225,6 +225,10 @@ class SampleResultFolder(ResultFolder, SampleBioInfoFolder):
 
     def get_fields(self, *args, **kwargs):
         return self.get_result_files(*args, **kwargs)
+    
+    @property
+    def project(self):
+        return self.sample.project
 
     def __str__(self):
         return f"<Geoseeq::SampleResultFolder {self.module_name} {self.replicate} {self.uuid} />"
@@ -288,6 +292,10 @@ class ProjectResultFolder(ResultFolder):
 
     def get_fields(self, *args, **kwargs):
         return self.get_result_files(*args, **kwargs)
+    
+    @property
+    def project(self):
+        return self.grp
 
     def __str__(self):
         return f"<Geoseeq::ProjectResultFolder {self.module_name} {self.replicate} {self.uuid} />"

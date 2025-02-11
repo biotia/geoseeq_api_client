@@ -4,6 +4,8 @@ from .upload import (
     cli_upload_file,
     cli_upload_folder,
     cli_metadata,
+    cli_upload_smart_table,
+    cli_upload_smart_tree,
 )
 from .upload_reads import cli_upload_reads_wizard
 from .upload_advanced import cli_find_urls_for_reads
@@ -17,6 +19,8 @@ cli_upload.add_command(cli_upload_reads_wizard)
 cli_upload.add_command(cli_upload_file)
 cli_upload.add_command(cli_upload_folder)
 cli_upload.add_command(cli_metadata)
+cli_upload.add_command(cli_upload_smart_table)
+cli_upload.add_command(cli_upload_smart_tree)
 
 @click.group('upload')
 def cli_upload_advanced():

@@ -18,9 +18,10 @@ from geoseeq.knex import GeoseeqOtherError
 from .utils import *
 from .file_upload import ResultFileUpload
 from .file_download import ResultFileDownload
+from .smart_objects import ResultFileSmartObjects
 
 
-class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload):
+class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload, ResultFileSmartObjects):
     remote_fields = [
         "uuid",
         "created_at",

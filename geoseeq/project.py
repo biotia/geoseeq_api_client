@@ -170,20 +170,19 @@ class Project(RemoteObject):
         Alias for result_folder."""
         return self.result_folder(*args, **kwargs)
 
-    def get_samples(self, cache=True, error_handler=None):
+    def get_samples(self, cache=True, error_handler=None, fetch=True):
         """Yield samples fetched from the server."""
         if cache and self._get_sample_cache:
             for sample in self._get_sample_cache:
                 yield sample
             return
-        url = f"sample_groups/{self.uuid}/samples"
+        url = f"sample_groups/{self.uuid}/samples-list?page=1&page_size=100"
         for sample_blob in paginated_iterator(self.knex, url, error_handler=error_handler):
             sample = self.sample(sample_blob["name"])
-            sample.load_blob(sample_blob)
-            sample.cache_blob(sample_blob)
-            # We just fetched from the server so we change the RemoteObject
-            # meta properties to reflect that
-            sample._already_fetched = True
+            sample.uuid = sample_blob["uuid"]
+            sample.metadata = sample_blob["metadata"]
+            if fetch:
+                sample.get()
             sample._modified = False
             if cache:
                 self._get_sample_cache.append(sample)
@@ -199,7 +198,7 @@ class Project(RemoteObject):
             for sample in self._get_sample_cache:
                 yield sample.uuid
             return
-        url = f"sample_groups/{self.uuid}/samples"
+        url = f"sample_groups/{self.uuid}/samples-list?page=1"
         for sample_blob in paginated_iterator(self.knex, url, error_handler=error_handler):
             yield sample_blob['uuid']
 

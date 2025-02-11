@@ -2,7 +2,13 @@ from os import environ
 from os.path import join
 
 FIVE_MB = 5 * (1024 ** 2)
-FASTQ_MODULE_NAMES = ['short_read::paired_end', 'short_read::single_end', 'long_read::nanopore', 'raw::raw_reads']
+FASTQ_MODULE_NAMES = [
+    'short_read::paired_end',
+    'short_read::single_end',
+    'long_read::nanopore',
+    'raw::raw_reads',
+    'genome::fasta',
+]
 DEFAULT_ENDPOINT = "https://backend.geoseeq.com"
 
 CONFIG_FOLDER = environ.get("XDG_CONFIG_HOME", join(environ["HOME"], ".config"))

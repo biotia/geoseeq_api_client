@@ -263,3 +263,117 @@ def cli_metadata(state, overwrite, yes, private, create, index_col, encoding, pr
             sample.metadata = new_meta
             sample.idem()
     click.echo(f'Wrote metadata for {len(samples)} samples')
+
+
+@click.command('smart-table')
+@use_common_state
+@overwrite_option
+@yes_option
+@private_option
+@click.option('-n', '--geoseeq-file-name', default=None,
+              help='Specify a different name for the file on GeoSeeq than the local file name.',
+              show_default=True)
+@folder_id_arg
+@click.argument('file_path', type=click.Path(exists=True), nargs=1)
+def cli_upload_smart_table(state, overwrite, yes, private, folder_id, geoseeq_file_name, file_path):
+    """Upload a smart table to GeoSeeq.
+
+    This command uploads a smart table to a project or sample on GeoSeeq. It can be used to upload
+    a single file to a folder at once.
+    
+    ---
+
+    Example Usage:
+
+    \b
+    # Upload a smart table from a file
+    $ geoseeq upload smart-table "My Org/My Project/My Sample/My Folder" /path/to/my_table.csv
+
+    \b
+    # Upload a smart table from a file but name it "My Smart Table" on GeoSeeq
+    $ geoseeq upload smart-table "My Org/My Project/My Sample/My Folder" /path/to/my_table.csv -n "My Smart Table"
+
+    ---
+
+    Command Arguments:
+
+    [FOLDER_ID] Can be a folder UUID, GeoSeeq Resource Number (GRN), or an
+    names for an org, project, sample, folder separated by a slash. Can exclude
+    the sample name if the folder is for a project.
+
+    [FILE_PATH] A path to a file on your local machine.
+
+    ---
+    """
+    knex = state.get_knex()
+    result_folder = handle_folder_id(knex, folder_id, yes=yes, private=private)
+    
+    if not geoseeq_file_name:
+        geoseeq_file_name = basename(file_path)
+    
+    if not overwrite and result_folder.result_file(geoseeq_file_name).exists():
+        raise click.UsageError(f'{geoseeq_file_name} already exists in {result_folder}. Use --overwrite to overwrite it.')
+
+    result_file = result_folder.result_file(geoseeq_file_name)
+    smart_table = result_file.as_smart_table()
+    smart_table.import_csv(file_path)
+
+
+@click.command('smart-tree')
+@use_common_state
+@click.option('-m/-nm', '--make-name-map/--no-name-map', default=True, help="Create a sample name map with all samples currently in the project.")
+@overwrite_option
+@yes_option
+@private_option
+@click.option('-n', '--geoseeq-file-name', default=None,
+              help='Specify a different name for the file on GeoSeeq than the local file name.',
+              show_default=True)
+@folder_id_arg
+@click.argument('newick_file_path', type=click.Path(exists=True), nargs=1)
+def cli_upload_smart_tree(state, make_name_map, overwrite, yes, private, folder_id, geoseeq_file_name, newick_file_path):
+    """Upload a smart tree to GeoSeeq.
+
+    This command uploads a smart tree to a project or sample on GeoSeeq. It can be used to upload
+    a single file to a folder at once.
+    
+    ---
+
+    Example Usage:
+
+    \b
+    # Upload a smart tree from a file
+    $ geoseeq upload smart-tree "My Org/My Project/My Sample/My Folder" /path/to/my_tree.nwk
+
+    \b
+    # Upload a smart tree from a file but name it "My Smart Tree" on GeoSeeq
+    $ geoseeq upload smart-tree "My Org/My Project/My Sample/My Folder" /path/to/my_tree.nwk -n "My Smart Tree"
+
+    ---
+
+    Command Arguments:
+
+    [FOLDER_ID] Can be a folder UUID, GeoSeeq Resource Number (GRN), or an
+    names for an org, project, sample, folder separated by a slash. Can exclude
+    the sample name if the folder is for a project.
+
+    [NEWICK_FILE_PATH] A path to a newick file on your local machine.
+
+    ---
+    """
+    knex = state.get_knex()
+    result_folder = handle_folder_id(knex, folder_id, yes=yes, private=private)
+    
+    if not geoseeq_file_name:
+        geoseeq_file_name = basename(newick_file_path)
+    
+    if not overwrite and result_folder.result_file(geoseeq_file_name).exists():
+        raise click.UsageError(f'{geoseeq_file_name} already exists in {result_folder}. Use --overwrite to overwrite it.')
+
+    result_file = result_folder.result_file(geoseeq_file_name)
+    smart_tree = result_file.as_smart_tree()
+    with open(newick_file_path) as f:
+        newick_str = f.read()
+    smart_tree.create_from_newick(newick_str)
+    if make_name_map:
+        smart_tree.add_all_samples_to_map(result_folder.project)
+    smart_tree.idem()
