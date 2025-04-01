@@ -2,7 +2,7 @@ import logging
 import click
 import requests
 from os.path import basename
-
+import pandas as pd
 from multiprocessing import Pool, current_process
 
 from geoseeq.cli.constants import *
@@ -67,8 +67,12 @@ def _get_regex(knex, filepaths, module_name, lib, regex):
     return regex
 
 
-def _group_files(knex, filepaths, module_name, regex, yes):
+def _group_files(knex, filepaths, module_name, regex, yes, name_map):
     """Group the files into samples, confirm, and return the groups."""
+    if name_map is not None:
+        name_map_filename, cur_col, new_col = name_map
+        name_map = pd.read_csv(name_map_filename)[[cur_col, new_col]]
+        name_map = name_map.set_index(cur_col).to_dict()
     seq_length, seq_type = module_name.split('::')[:2]
     groups = knex.post('bulk_upload/group_files', json={
         'filenames': list(filepaths.keys()),
@@ -76,7 +80,11 @@ def _group_files(knex, filepaths, module_name, regex, yes):
         'regex': regex
     })
     for group in groups:
-        click.echo(f'sample_name: {group["sample_name"]}', err=True)
+        sample_name = group["sample_name"]
+        if name_map:
+            sample_name = name_map.get(sample_name, sample_name)
+            group["sample_name"] = sample_name
+        click.echo(f'sample_name: {sample_name}', err=True)
         click.echo(f'  module_name: {module_name}', err=True)
         for field_name, filename in group['fields'].items():
             path = filepaths[filename]
@@ -173,10 +181,11 @@ def flatten_list_of_bams(filepaths):
 @private_option
 @link_option
 @no_new_versions_option
+@click.option('--name-map', default=None, nargs=3, help="A file to use for converting names. Takes three arguments: a file name, a column name for current names, and a column name for new names.")
 @module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
 @click.argument('fastq_files', type=click.Path(exists=True), nargs=-1)
-def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, no_new_versions, module_name, project_id, fastq_files):
+def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, no_new_versions, name_map, module_name, project_id, fastq_files):
     """Upload fastq read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number
