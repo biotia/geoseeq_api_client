@@ -1,4 +1,5 @@
 import uuid
+from geoseeq.constants import OBJECT_TYPE_STR
 
 
 def is_grn(el):
@@ -27,6 +28,22 @@ def is_name(el):
         # if the name has no slash and is not a grn or uuid, it's a name
         return True
     return False
+
+
+def is_abs_name(el, object_type_str: OBJECT_TYPE_STR) -> bool:
+    """Return True if `el` is an absolute name for the given object type."""
+    if is_grn_or_uuid(el):
+        return False
+    n_required_slashes = {
+        'org': 0,
+        'project': 1,
+        'sample': 2,
+        'sample_result_folder': 3,
+        'sample_result_file': 4,
+        'project_result_folder': 2,
+        'project_result_file': 3,
+    }[object_type_str]
+    return el.count('/') == n_required_slashes
 
 
 def is_grn_or_uuid(el):

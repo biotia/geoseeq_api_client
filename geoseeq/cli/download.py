@@ -414,7 +414,7 @@ def _make_read_configs(download_results, config_dir="."):
         "reads_1": ["small.fq.gz"],
         "reads_2": [],
         "fastq_checksum": "",
-        "data_type": "short-read",
+        "data_type": "single",
         "bdx_result_dir": "results",
         "geoseeq_uuid": "05bf22e9-9d25-42db-af25-31bc538a7006"
     }
@@ -428,7 +428,7 @@ def _make_read_configs(download_results, config_dir="."):
                 "reads_1": [],
                 "reads_2": [],
                 "fastq_checksum": "",
-                "data_type": "short-read",
+                "data_type": read_type,
                 "bdx_result_dir": "results",
                 "geoseeq_uuid": sample.uuid,
             }

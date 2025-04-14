@@ -77,8 +77,17 @@ class GeoSeeqUploadManager:
         self.chunk_size_mb = chunk_size_mb
         self.use_atomic_upload = use_atomic_upload
 
-    def add_result_file(self, result_file, local_path):
-        self._result_files.append((result_file, local_path))
+    def add_result_file(self, result_file, local_path, link_type=None):
+        """Add a result file to be uploaded or linked.
+        
+        Args:
+            result_file: A ResultFile object to upload to or link
+            local_path: Path to local file or URL to link
+            link_type: One of 'upload', 's3', 'ftp', 'azure', 'sra', 'http'
+        """
+        if link_type is None:
+            link_type = self.link_type
+        self._result_files.append((result_file, local_path, link_type))
 
     def add_local_file_to_result_folder(self, result_folder, local_path, geoseeq_file_name=None):
         if not geoseeq_file_name:
@@ -96,19 +105,20 @@ class GeoSeeqUploadManager:
 
     def get_preview_string(self):
         out = ["Upload Preview:"]
-        for result_file, local_path in self._result_files:
-            out.append(f"{local_path} -> {result_file}")
+        for result_file, local_path, link_type in self._result_files:
+            action = "link" if link_type != 'upload' else "upload"
+            out.append(f"{local_path} -> {result_file} ({action})")
         return "\n".join(out)
 
     def upload_files(self):
         upload_args = [(
                 result_file, local_path,
                 self.session, self.progress_tracker_factory(local_path),
-                self.link_type, self.overwrite, self.log_level,
+                link_type, self.overwrite, self.log_level,
                 self.n_parallel_uploads > 1, self.use_cache, self.no_new_versions,
                 self.threads_per_upload, self.num_retries, self.ignore_errors,
                 self.chunk_size_mb, self.use_atomic_upload
-            ) for result_file, local_path in self._result_files
+            ) for result_file, local_path, link_type in self._result_files
         ]
         out = []
         if self.n_parallel_uploads == 1:
