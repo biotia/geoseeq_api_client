@@ -55,7 +55,7 @@ def version():
     Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
     Run `geoseeq eula show` to view the EULA.
     """
-    click.echo('0.7.0')  # remember to update pyproject.toml
+    click.echo('0.7.1')  # remember to update pyproject.toml
 
 
 @main.group('advanced')

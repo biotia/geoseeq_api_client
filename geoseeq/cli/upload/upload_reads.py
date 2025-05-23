@@ -238,7 +238,7 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     filepaths = {basename(line): line for line in flatten_list_of_fastxs(fastq_files)}
     click.echo(f'Found {len(filepaths)} files to upload.', err=True)
     regex = _get_regex(knex, filepaths, module_name, proj, regex)
-    groups = _group_files(knex, filepaths, module_name, regex, yes)
+    groups = _group_files(knex, filepaths, module_name, regex, yes, name_map)
     _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state)
 
 
