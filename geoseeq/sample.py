@@ -13,17 +13,19 @@ class Sample(RemoteObject):
         "metadata",
         "library",
         "description",
+        "dashboards"
     ]
     parent_field = "lib"
     url_prefix = "samples"
 
-    def __init__(self, knex, lib, name, metadata={}):
+    def __init__(self, knex, lib, name, metadata={}, dashboards=[]):
         super().__init__(self)
         self.knex = knex
         self.lib = lib
         self.new_lib = None
         self.name = name
         self.metadata = metadata
+        self.dashboards = dashboards
         self._get_result_cache = []
 
     @property
@@ -227,6 +229,57 @@ class Sample(RemoteObject):
         blob = self.knex.get(url)
         file = self._grn_to_file(blob["grn"])
         return file, blob["read_type"]
+    
+    def get_or_create_dashboard(self, title, default=False):
+        """Create a dashboard for this sample."""
+
+        try:
+            dashboard = [
+                dashboard
+                for dashboard in self.dashboards
+                if dashboard["title"] == title
+            ][0]
+            return dashboard
+        except IndexError:
+            url = f"samples/{self.uuid}/dashboards"
+            data = {
+                "title": title,
+                "default": default,
+                "sample": self.uuid,
+            }
+            blob = self.knex.post(url, json=data)
+            self.dashboards.append(blob)
+            return blob
+
+    def get_or_create_default_dashboard(self):
+        """Returns the default dashboard if exists, if not the first. If there are no dashboards create a default one."""
+
+        if not self.dashboards:
+            dashboard = self.get_or_create_dashboard(
+                title="Main Dashboard",
+                default=True,
+            )
+            return dashboard
+        for dashboard in self.dashboards:
+            if dashboard.get("default", False):
+                return dashboard
+        return self.dashboards[0]
+
+    def add_tile_to_dashboard(
+        self, dashboard_id: str, file: SampleResultFile, title="", width="full"
+    ):
+        """Add a tile to the specified dashboard."""
+
+        title = title or file.name
+        url = f"samples/dashboards/{dashboard_id}/tiles"
+        data = {
+            "dashboard": dashboard_id,
+            "title": title,
+            "field": file.uuid,
+            "width": width,
+        }
+        blob = self.knex.post(url, json=data)
+        return blob
 
     def __str__(self):
         return f"<Geoseeq::Sample {self.name} {self.uuid} />"
