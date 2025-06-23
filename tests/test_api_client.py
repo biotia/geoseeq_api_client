@@ -281,3 +281,76 @@ class TestGeoseeqApiClient(TestCase):
         result_file.create()
         manifest = samp.get_manifest()
         self.assertTrue(manifest)
+
+    def test_modify_project_metadata(self):
+        """Test that we can modify a project's metadata after creation."""
+        key = random_str()
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"my_client_test_project_modify {key}")
+        proj.create()
+        self.assertTrue(proj.uuid)
+        self.assertTrue(proj._already_fetched)
+        self.assertFalse(proj._modified)
+        
+        # Modify the project's description and privacy level
+        new_description = f"Updated description {key}"
+        proj.description = new_description
+        proj.privacy_level = "private"
+        self.assertTrue(proj._modified)
+        
+        proj.save()
+        self.assertTrue(proj._already_fetched)
+        self.assertFalse(proj._modified)
+        
+        # Retrieve the project and verify the changes
+        retrieved = org.project(f"my_client_test_project_modify {key}").get()
+        self.assertEqual(retrieved.description, new_description)
+        self.assertEqual(retrieved.privacy_level, "private")
+
+    def test_delete_project(self):
+        """Test that we can delete a project and it no longer appears in organization projects."""
+        key = random_str()
+        org = Organization(self.knex, self.org_name)
+        proj_name = f"my_client_test_project_delete {key}"
+        proj = org.project(proj_name)
+        proj.create()
+        self.assertTrue(proj.uuid)
+        
+        # Verify the project exists in the organization's projects
+        project_names = {p.name for p in org.get_projects()}
+        self.assertIn(proj_name, project_names)
+        
+        # Delete the project
+        proj.delete()
+        
+        # Verify the project no longer appears in the organization's projects
+        project_names_after_delete = {p.name for p in org.get_projects()}
+        self.assertNotIn(proj_name, project_names_after_delete)
+
+    def test_list_organization_projects(self):
+        """Test that we can list all projects in an organization and newly created 
+        project appears."""
+        key = random_str()
+        org = Organization(self.knex, self.org_name)
+        
+        # Get the initial list of projects
+        initial_projects = list(org.get_projects())
+        initial_project_names = {p.name for p in initial_projects}
+        
+        # Create a new project
+        new_proj_name = f"my_client_test_project_list {key}"
+        new_proj = org.project(new_proj_name)
+        new_proj.create()
+        self.assertTrue(new_proj.uuid)
+        
+        # Get the updated list of projects
+        updated_projects = list(org.get_projects())
+        updated_project_names = {p.name for p in updated_projects}
+        
+        # Verify the new project appears in the list
+        self.assertIn(new_proj_name, updated_project_names)
+        # Verify we have one more project than before
+        self.assertEqual(len(updated_projects), len(initial_projects) + 1)
+        # Verify all original projects are still there
+        for name in initial_project_names:
+            self.assertIn(name, updated_project_names)
