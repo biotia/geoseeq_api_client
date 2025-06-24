@@ -1,29 +1,29 @@
 """Test suite for plotting library."""
-import random
-from os import environ
-from os.path import dirname, join
-from unittest import TestCase, skip
+from unittest import TestCase
 
 from geoseeq.plotting.map import Map
 
 
 class TestGeoseeqPlotting(TestCase):
-    """Test suite for packet building."""
+    """Test basic map creation."""
 
     def test_make_map_complex(self):
-        """Test that we can create a map and turn it into a dict."""
-        map = Map()\
-            .set_center(0, 0)\
-            .set_zoom(2)\
-            .add_light_base_map()\
-            .add_administrative_overlay()\
+        """Map with multiple layers converts to dict."""
+        map_obj = (
+            Map()
+            .set_center(0, 0)
+            .set_zoom(2)
+            .add_light_base_map()
+            .add_administrative_overlay()
             .add_places_overlay()
-        map.to_dict()
+        )
+        d = map_obj.to_dict()
+        self.assertIn("baseLayers", d)
+        self.assertGreaterEqual(len(d["baseLayers"]), 1)
 
     def test_make_map_simple(self):
-        """Test that we can create a map and turn it into a dict."""
-        map = Map()\
-            .add_light_base_map()
-        map.to_dict()
-        
-        
+        """Simple map converts to dict."""
+        map_obj = Map().add_light_base_map()
+        d = map_obj.to_dict()
+        self.assertIn("baseLayers", d)
+        self.assertEqual(len(d["baseLayers"]), 1)
