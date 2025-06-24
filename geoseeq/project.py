@@ -358,4 +358,9 @@ class Project(RemoteObject):
     def grn(self):
         return f"grn::project:{self.uuid}"
 
+    def set_description(self, description):
+        self.description = description
+        self._modified = True
+        return self
+
 SampleGroup = Project  # alias for backwards compatibility

@@ -128,9 +128,9 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
     )
     for geoseeq_file_name, file_path in name_pairs:
         if isfile(file_path):
-            upload_manager.add_local_file_to_result_folder(result_folder, file_path)
+            upload_manager.add_local_file_to_result_folder(result_folder, file_path, geoseeq_file_name=geoseeq_file_name)
         elif isdir(file_path) and recursive:
-            upload_manager.add_local_folder_to_result_folder(result_folder, file_path, recursive=recursive, hidden_files=hidden, prefix=file_path)
+            upload_manager.add_local_folder_to_result_folder(result_folder, file_path, recursive=recursive, hidden_files=hidden, prefix=file_path, geoseeq_file_name=geoseeq_file_name)
         elif isdir(file_path) and not recursive:
             raise click.UsageError('Cannot upload a folder without --recursive')
     click.echo(upload_manager.get_preview_string(), err=True)

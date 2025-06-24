@@ -281,3 +281,49 @@ class TestGeoseeqApiClient(TestCase):
         result_file.create()
         manifest = samp.get_manifest()
         self.assertTrue(manifest)
+
+    def test_update_project_name_and_description(self):
+        """Test updating a project's name and description."""
+        key = random_str()
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"update_test_proj_{key}")
+        proj.create()
+        old_uuid = proj.uuid
+        # Update name and description
+        proj.name = f"updated_proj_{key}"
+        # Use set_description to set description
+        proj.set_description(f"Updated description {key}")
+        proj.save()
+        # Fetch again to verify
+        updated_proj = org.project(f"updated_proj_{key}").get()
+        self.assertEqual(updated_proj.name, f"updated_proj_{key}")
+        self.assertEqual(getattr(updated_proj, "description", None), f"Updated description {key}")
+        self.assertEqual(updated_proj.uuid, old_uuid)
+
+    def test_change_project_org(self):
+        """Test changing a project's organization."""
+        key = random_str()
+        org1 = Organization(self.knex, self.org_name)
+        proj = org1.project(f"org_change_proj_{key}")
+        proj.create()
+        # Create a new org
+        org2 = Organization(self.knex, f"org2_{key}")
+        org2.create()
+        proj.change_org(org2)
+        proj.save()
+        # Fetch from new org
+        moved_proj = org2.project(f"org_change_proj_{key}").get()
+        self.assertEqual(moved_proj.name, f"org_change_proj_{key}")
+        self.assertEqual(moved_proj.org.uuid, org2.uuid)
+
+    def test_update_project_metadata(self):
+        """Test updating a project's metadata."""
+        key = random_str()
+        org = Organization(self.knex, self.org_name)
+        proj = org.project(f"meta_update_proj_{key}", metadata={"foo": "bar"})
+        proj.create()
+        # Update metadata
+        proj.metadata["foo"] = "baz"
+        proj.save()
+        updated_proj = org.project(f"meta_update_proj_{key}").get()
+        self.assertEqual(updated_proj.metadata["foo"], "baz")
