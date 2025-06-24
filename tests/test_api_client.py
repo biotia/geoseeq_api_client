@@ -3,6 +3,7 @@ import random
 import sys
 from os import environ
 from unittest import TestCase, skip
+import pytest
 
 from geoseeq import (
     Knex,
@@ -13,7 +14,13 @@ from geoseeq import (
 from requests.exceptions import ConnectionError
 
 ENDPOINT = environ.get("GEOSEEQ_API_TESTING_ENDPOINT", "http://127.0.0.1:8000")
-TOKEN = environ.get("GEOSEEQ_API_TOKEN", "<no_token>")
+TOKEN = environ.get("GEOSEEQ_API_TOKEN")
+
+if not TOKEN:
+    pytest.skip(
+        "GeoSeeq integration tests require GEOSEEQ_API_TOKEN to be set",
+        allow_module_level=True,
+    )
 
 
 def random_str(len=12):

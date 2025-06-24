@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+import pytest
 from pathlib import Path
 from geoseeq.knex import Knex
 from geoseeq.organization import Organization
@@ -14,7 +15,9 @@ class TestDownload(unittest.TestCase):
         cls.test_org_name = os.getenv("GEOSEEQ_TEST_ORG", "API Client Test Organization")
         cls.test_api_token = os.getenv("GEOSEEQ_TEST_API_TOKEN")
         if not cls.test_api_token:
-            raise ValueError("GEOSEEQ_TEST_API_TOKEN environment variable must be set")
+            pytest.skip(
+                "GeoSeeq integration tests require GEOSEEQ_TEST_API_TOKEN", allow_module_level=True
+            )
 
     def setUp(self):
         # Set up test environment
