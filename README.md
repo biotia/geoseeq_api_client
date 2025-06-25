@@ -20,7 +20,7 @@ Download this directory and run `python setup.py install`
 
 ---
 
-## Using the Command Line 
+## Using the Command Line
 
 Run the command line by typing `geoseeq` into a terminal prompt. See available options by adding `--help`
 
@@ -36,7 +36,7 @@ Once you have a token you will need to configure GeoSeeq to use it. Run `geoseeq
 
 ```
 $ geoseeq config
-Set custom profile name? (Leave blank for default) []: 
+Set custom profile name? (Leave blank for default) []:
 Enter the URL to use for GeoSeeq (Most users can use the default) [https://backend.geoseeq.com]:
 Enter your GeoSeeq API token:
 Profile configured.
@@ -58,11 +58,11 @@ $ geoseeq download files --extension fastq.gz "GeoSeeq/Example CLI Project"
 
 #### Uploading sequencing data
 
-GeoSeeq can automatically group fastq files into samples according to their 
+GeoSeeq can automatically group fastq files into samples according to their
 sample name, read number, and lane number. It supports paired end, single end,
 and nanopore reads.
 
-Assume you have data from a single ended sequencing run stored as fastq files: 
+Assume you have data from a single ended sequencing run stored as fastq files:
  - Sample1_L1_R1.fastq.gz
  - Sample1_L1_R2.fastq.gz
  - Sample1_L2_R1.fastq.gz
@@ -95,7 +95,12 @@ Note: You will need to have an API token set to use this command (see above)
 
 ## Using the Python API in a program
 
+
 Please see `geoseeq_api/cli/download.py` for examples of how to download data using the Python API directly.
+
+## Development in GitHub Codespaces
+
+This repository includes a `.devcontainer` configuration so it can be opened directly in [GitHub Codespaces](https://docs.github.com/codespaces). When the codespace is created the development dependencies are installed and `pre-commit` hooks are set up automatically.
 
 ---
 
