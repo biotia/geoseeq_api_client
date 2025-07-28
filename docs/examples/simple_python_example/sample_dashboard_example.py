@@ -6,11 +6,11 @@ from geoseeq.id_constructors.from_uuids import (
 )
 
 
-endpoint = "http://localhost:8000"
-token = "4924161176692280fa1407bed43e4148c74d40412b56b41a1bd1b940v0"
-sample_id = "e0baa5bf-3487-493c-9af7-fa171e88adb1"
-file_id = "4414c6b4-9685-46ac-a2f1-4c9838204d31"
-file2_id = "dbfb6e4c-3a0d-4be3-b595-50a43843ef6c"
+endpoint = ""
+token = ""
+sample_id = ""
+file_id = ""
+file2_id = ""
 
 
 knex = Knex(endpoint)
