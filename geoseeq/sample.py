@@ -1,5 +1,4 @@
 import urllib
-
 from .remote_object import RemoteObject
 from .result import SampleResultFile, SampleResultFolder
 
@@ -32,7 +31,7 @@ class Sample(RemoteObject):
 
     @property
     def brn(self):
-        return f'brn:{self.knex.instance_code()}:sample:{self.uuid}'
+        return f"brn:{self.knex.instance_code()}:sample:{self.uuid}"
 
     def nested_url(self):
         escaped_name = urllib.parse.quote(self.name, safe="")
@@ -63,15 +62,19 @@ class Sample(RemoteObject):
             self.load_blob(blob, allow_overwrite=allow_overwrite)
 
     def get_post_data(self):
-        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
+        data = {
+            field: getattr(self, field)
+            for field in self.remote_fields
+            if hasattr(self, field)
+        }
         data["library"] = self.lib.uuid
         if self.new_lib:
             if isinstance(self.new_lib, RemoteObject):
                 data["library"] = self.new_lib.uuid
             else:
                 data["library"] = self.new_lib
-        if data['uuid'] is None:
-            data.pop('uuid')
+        if data["uuid"] is None:
+            data.pop("uuid")
         return data
 
     def _create(self):
@@ -96,10 +99,10 @@ class Sample(RemoteObject):
 
     def analysis_result(self, *args, **kwargs):
         """Return a SampleResultFolder for this sample.
-        
+
         This is an alias for result_folder."""
         return self.result_folder(*args, **kwargs)
-    
+
     def get_result_folders(self, cache=True):
         """Yield sample analysis results fetched from the server."""
         self.get()
@@ -107,7 +110,7 @@ class Sample(RemoteObject):
             for ar in self._get_result_cache:
                 yield ar
             return
-        url =  f"sample_ars?sample_id={self.uuid}"
+        url = f"sample_ars?sample_id={self.uuid}"
         result = self.knex.get(url)
         for result_blob in result["results"]:
             result = self.analysis_result(result_blob["module_name"])
@@ -126,7 +129,7 @@ class Sample(RemoteObject):
 
     def get_analysis_results(self, cache=True):
         """Yield sample analysis results fetched from the server.
-        
+
         This is an alias for get_result_folders.
         """
         return self.get_result_folders(cache=cache)
@@ -135,14 +138,15 @@ class Sample(RemoteObject):
         """Return a manifest for this sample."""
         url = f"samples/{self.uuid}/manifest"
         return self.knex.get(url)
-    
+
     def _grn_to_file(self, grn):
         from geoseeq.id_constructors.from_blobs import sample_result_file_from_blob
+
         file_uuid = grn.split(":")[-1]
         file_blob = self.knex.get(f"sample_ar_fields/{file_uuid}")
         file = sample_result_file_from_blob(self.knex, file_blob)
         return file
-    
+
     def get_one_fastq(self):
         """Return a 2-ple, a fastq ResultFile and a string with the read type.
 
@@ -152,10 +156,10 @@ class Sample(RemoteObject):
         blob = self.knex.get(url)
         file = self._grn_to_file(blob["grn"])
         return file, blob["read_type"]
-    
+
     def get_one_fastq_folder(self, preference_order=None):
         """Return a 3-ple, <read_type:str>, <folder_name:str>, a list with reads.
-        
+
         If the read type is paired end, the list will contain 2-ples with reads.
 
         Default preference order is:
@@ -175,7 +179,7 @@ class Sample(RemoteObject):
                 for folder_name, reads in all_fastqs[read_type].items():
                     return read_type, folder_name, reads
         raise ValueError("No suitable fastq found")
-    
+
     def get_all_fastqs(self):
         """Return a dict with the following structure:
 
@@ -217,7 +221,7 @@ class Sample(RemoteObject):
                         self._grn_to_file(file_grns[0])
                     )
         return files
-    
+
     def get_one_fasta(self):
         """Return a 2-ple, a fasta ResultFile and a string with the read type.
 
@@ -227,6 +231,70 @@ class Sample(RemoteObject):
         blob = self.knex.get(url)
         file = self._grn_to_file(blob["grn"])
         return file, blob["read_type"]
+
+    def create_dashboard(self, title="Default dashboard", default=False):
+        from geoseeq.dashboard.dashboard import SampleDashboard
+
+        post_data = {
+            "title": title,
+            "sample": self.uuid,
+            "default": default,
+        }
+        blob = self.knex.post(f"samples/{self.uuid}/dashboards", json=post_data)
+        dashboard = SampleDashboard(
+            self.knex, self, title=blob["title"], default=blob["default"]
+        )
+        dashboard.uuid = blob["uuid"]
+        dashboard._already_fetched = True
+        return dashboard
+
+    def get_default_dashbaord(self):
+        from geoseeq.dashboard.dashboard import SampleDashboard
+
+        dashboard_resp = self.knex.get(f"samples/{self.uuid}/dashboards")
+        try:
+            blob = [
+                dashboard_blob
+                for dashboard_blob in dashboard_resp["results"]
+                if dashboard_blob["default"] == True
+            ][0]
+            dashboard = SampleDashboard.from_blob(self, blob)
+            dashboard.get()  # Tiles are not in the blob
+            return dashboard
+        except IndexError:
+            pass
+        return None
+
+    def get_or_create_default_dashbaord(self):
+        default_dashboard = self.get_default_dashbaord()
+        if default_dashboard:
+            return default_dashboard
+        else:
+            return self.create_dashboard(default=True)
+
+    def get_dashbaord_by_title(self, title):
+        from geoseeq.dashboard.dashboard import SampleDashboard
+
+        dashboard_resp = self.knex.get(f"samples/{self.uuid}/dashboards")
+        try:
+            blob = [
+                dashboard_blob
+                for dashboard_blob in dashboard_resp["results"]
+                if dashboard_blob["title"] == title
+            ][0]
+            dashboard = SampleDashboard.from_blob(self, blob)
+            dashboard.get()  # Tiles are not in the blob
+            return dashboard
+        except IndexError:
+            pass
+        return None
+
+    def get_or_create_dashbaord_by_title(self, title):
+        default_dashboard = self.get_dashbaord_by_title(title)
+        if default_dashboard:
+            return default_dashboard
+        else:
+            return self.create_dashboard(title=title)
 
     def __str__(self):
         return f"<Geoseeq::Sample {self.name} {self.uuid} />"
