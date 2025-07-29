@@ -344,6 +344,70 @@ class Project(RemoteObject):
             'input_parameters': input_parameters,
         }
         self.knex.post(f"sample_groups/{self.uuid}/run_app", json=params, json_response=False)
+    
+    def create_dashboard(self, title="Default dashboard", default=False):
+        from geoseeq.dashboard.dashboard import Dashboard
+
+        post_data = {
+            "title": title,
+            "project": self.uuid,
+            "default": default,
+        }
+        blob = self.knex.post(f"sample_groups/{self.uuid}/dashboard", json=post_data)
+        dashboard = Dashboard(
+            self.knex, self, title=blob["title"], default=blob["default"]
+        )
+        dashboard.uuid = blob["uuid"]
+        dashboard._already_fetched = True
+        return dashboard
+
+    def get_default_dashboard(self):
+        from geoseeq.dashboard.dashboard import Dashboard
+
+        dashboard_resp = self.knex.get(f"sample_groups/{self.uuid}/dashboard")
+        try:
+            blob = [
+                dashboard_blob
+                for dashboard_blob in dashboard_resp["results"]
+                if dashboard_blob["default"] == True
+            ][0]
+            dashboard = Dashboard.from_blob(self, blob)
+            dashboard.get()  # Tiles are not in the blob
+            return dashboard
+        except IndexError:
+            pass
+        return None
+
+    def get_or_create_default_dashboard(self):
+        default_dashboard = self.get_default_dashboard()
+        if default_dashboard:
+            return default_dashboard
+        else:
+            return self.create_dashboard(default=True)
+
+    def get_dashboard_by_title(self, title):
+        from geoseeq.dashboard.dashboard import Dashboard
+
+        dashboard_resp = self.knex.get(f"sample_groups/{self.uuid}/dashboard")
+        try:
+            blob = [
+                dashboard_blob
+                for dashboard_blob in dashboard_resp["results"]
+                if dashboard_blob["title"] == title
+            ][0]
+            dashboard = Dashboard.from_blob(self, blob)
+            dashboard.get()  # Tiles are not in the blob
+            return dashboard
+        except IndexError:
+            pass
+        return None
+
+    def get_or_create_dashboard_by_title(self, title):
+        default_dashboard = self.get_dashboard_by_title(title)
+        if default_dashboard:
+            return default_dashboard
+        else:
+            return self.create_dashboard(title=title)
 
     def __str__(self):
         return f"<Geoseeq::Project {self.name} {self.uuid} />"

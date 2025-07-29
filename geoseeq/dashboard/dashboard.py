@@ -11,63 +11,95 @@ logger = logging.getLogger("geoseeq_api")
 
 class Dashboard(RemoteObject):
     parent_field = "project"
-    remote_fields = ["is_default"]
+    remote_fields = ["uuid", "title", "default", "created_at", "updated_at"]
 
-    def __init__(self, knex, project, name="Default dashboard", is_default=False):
+    def __init__(self, knex, project, title="Default dashboard", default=False):
         super().__init__(self)
         self.knex = knex
         self.project = project
-        self._name = name
+        self.title = title
         self.tiles = []
-        self.is_default = is_default
+        self.default = default
 
     def _get(self, allow_overwrite=False):
-        blob = self.knex.get(f"sample_groups/{self.project.uuid}/dashboard-list")
-        blob = blob["dashboard_data"][self.name]
-        for tile_blob in blob["tiles"]:
-            tile = DashboardTile.from_blob(self, tile_blob)
-            self.tiles.append(tile)
-        blob.pop("tiles")
+        blob = self.knex.get(f"sample_groups/{self.project.uuid}/dashboards")
+        try:
+            blob = [
+                dashboard_blob
+                for dashboard_blob in blob["results"]
+                if dashboard_blob["title"] == self.title
+            ][0]
+        except IndexError:
+            raise ValueError(f"There is no existing dashboard with title {self.title}")
+
         self.load_blob(blob, allow_overwrite=allow_overwrite)
 
+        # Load tiles
+        tiles_res = self.knex.get(f"sample_groups/dashboards/{self.uuid}/tiles")
+        for tile_blob in tiles_res["results"]:
+            tile = DashboardTile.from_blob(self, tile_blob)
+            self.tiles.append(tile)
+
     def save(self):
+        data = self._get_post_data()
+        url = f"sample_groups/{self.project.uuid}/dashboard/{self.name}"
+        self.knex.put(url, json=data)
         self.save_tiles()
 
     def save_tiles(self):
         post_data = {"tiles": [tile._get_post_data() for tile in self.tiles]}
-        blob = self.knex.post(
+        blob = self.knex.put(
             f"sample_groups/{self.project.uuid}/dashboard/{self.name}/tiles",
             json=post_data,
             json_response=False,
         )
-        print(blob)
+
+    def delete(self):
+        self.knex.delete(f"sample_groups/{self.project.uuid}/dashboard/{self.name}")
+        self._already_fetched = False
+        self._deleted = True
 
     def _create(self):
-        post_data = {"name": self.name, "is_default": self.is_default}
+        post_data = {
+            "title": self.title,
+            "project": self.project.uuid,
+            "default": self.default
+            }
         blob = self.knex.post(
             f"sample_groups/{self.project.uuid}/dashboard", json=post_data
         )
         self.load_blob(blob)
 
-    def tile(
-        self,
-        title,
-        result_file,
-        style: Literal["col-span-1", "col-span-2"] = "col-span-1",
-    ):
-        result_file.get()
-        tile = DashboardTile(self.knex, self, title, result_file, style=style)
-        self.tiles.append(tile)
-        self._modified = True
-        return tile
+    def _get_post_data(self):
+        out = {
+            "project": self.project.uuid,
+            "title": self.title,
+            "default": self.default,
+        }
+        return out
 
-    def add_tile(self, tile):
+    def add_tile(self, result_file, title, width="half", order=None):
+        result_file.get()
+        tile = DashboardTile(
+            self.knex, self, title, result_file, width=width, order=order
+        )
         self.tiles.append(tile)
         self._modified = True
+
+    @classmethod
+    def from_blob(cls, project, blob):
+        instance = cls(
+            project.knex,
+            project,
+            blob["title"],
+            blob["default"],
+        )
+        instance.uuid = blob["uuid"]
+        return instance
 
     @property
     def name(self):
-        return self._name
+        return self.title
 
     def __str__(self):
         return f'<Geoseeq Dashboard: {self.project.grn} "{self.name}"/>'
@@ -84,30 +116,34 @@ class Dashboard(RemoteObject):
 
 
 class DashboardTile:
-    def __init__(self, knex, dashboard, title, result_file, style="col-span-1"):
+    def __init__(self, knex, dashboard, title, result_file, width="half", order=None):
         self.knex = knex
         self.dashboard = dashboard
         self.title = title
-        self.style = style
+        self.width = width
         self.result_file = result_file
+        self.order = order
 
     def _get_post_data(self):
         out = {
-            "field_uuid": self.result_file.uuid,
-            "field_type": (
-                "group" if isinstance(self.result_file, ProjectResultFile) else "sample"
-            ),
-            "style": self.style,
+            "field": self.result_file.uuid,
+            "dashboard": self.dashboard.uuid,
+            "width": self.width,
             "title": self.title,
-            "has_related_field": False,
+            "order": self.order,
         }
         return out
 
     @classmethod
     def from_blob(cls, dashboard, blob):
-        result_file = result_file_from_blob(dashboard.knex, blob["viz_field"])
+        result_file = result_file_from_id(dashboard.knex, blob["field_obj"]["uuid"])
         return cls(
-            dashboard.knex, dashboard, blob["title"], result_file, style=blob["style"]
+            dashboard.knex,
+            dashboard,
+            blob["title"],
+            result_file,
+            width=blob["width"],
+            order=blob["order"],
         )
 
     def __str__(self) -> str:
