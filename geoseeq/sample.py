@@ -233,6 +233,7 @@ class Sample(RemoteObject):
         return file, blob["read_type"]
 
     def create_dashboard(self, title="Default dashboard", default=False):
+        "Create a new dashboard for the sample"
         from geoseeq.dashboard.dashboard import SampleDashboard
 
         post_data = {
@@ -249,6 +250,7 @@ class Sample(RemoteObject):
         return dashboard
 
     def get_default_dashbaord(self):
+        """Get the default dashboard for this sample."""
         from geoseeq.dashboard.dashboard import SampleDashboard
 
         dashboard_resp = self.knex.get(f"samples/{self.uuid}/dashboards")
@@ -266,6 +268,7 @@ class Sample(RemoteObject):
         return None
 
     def get_or_create_default_dashbaord(self):
+        """Get the default dashboard for this sample or create it if does not exist."""
         default_dashboard = self.get_default_dashbaord()
         if default_dashboard:
             return default_dashboard
@@ -273,6 +276,7 @@ class Sample(RemoteObject):
             return self.create_dashboard(default=True)
 
     def get_dashbaord_by_title(self, title):
+        """Get dashboard by title for this sample."""
         from geoseeq.dashboard.dashboard import SampleDashboard
 
         dashboard_resp = self.knex.get(f"samples/{self.uuid}/dashboards")
@@ -290,6 +294,7 @@ class Sample(RemoteObject):
         return None
 
     def get_or_create_dashbaord_by_title(self, title):
+        """Get dashboard by title for this sample or create it if does not exist."""
         default_dashboard = self.get_dashbaord_by_title(title)
         if default_dashboard:
             return default_dashboard
