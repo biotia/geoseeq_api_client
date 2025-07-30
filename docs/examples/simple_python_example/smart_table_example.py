@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 
 from geoseeq import Knex
@@ -7,8 +8,8 @@ from geoseeq.id_constructors.from_uuids import (
 )
 from geoseeq.smart_table import SmartTable
 
-endpoint = "https://backend.geoseeq.com"
-token = ""
+endpoint = os.environ.get("GEOSEEQ_ENDPOINT", "")
+token = os.environ.get("GEOSEEQ_API_TOKEN", "")
 folder_id = ""
 
 knex = Knex(endpoint)

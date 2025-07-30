@@ -3,6 +3,7 @@ import urllib
 
 import pandas as pd
 
+
 from .pipeline import Pipeline
 from .remote_object import RemoteObject
 from .result import ProjectResultFolder
@@ -59,11 +60,23 @@ class Project(RemoteObject):
         self._modified = True
 
     def get_post_data(self):
-        data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
+        data = {
+            field: getattr(self, field)
+            for field in self.remote_fields
+            if hasattr(self, field)
+        }
         data["organization"] = self.org.uuid
-        data['description'] = self.description if hasattr(self, 'description') and self.description else self.name
-        data['privacy_level'] = self.privacy_level if hasattr(self, 'privacy_level') and self.privacy_level else 'private'
-        data['storage_provider_name'] = self.storage_provider
+        data["description"] = (
+            self.description
+            if hasattr(self, "description") and self.description
+            else self.name
+        )
+        data["privacy_level"] = (
+            self.privacy_level
+            if hasattr(self, "privacy_level") and self.privacy_level
+            else "private"
+        )
+        data["storage_provider_name"] = self.storage_provider
         if self.new_org:
             if isinstance(self.new_org, RemoteObject):
                 data["organization"] = self.new_org.uuid
@@ -90,7 +103,9 @@ class Project(RemoteObject):
             url = f"sample_groups/{self.uuid}/samples"
             chunk_size = 100
             for i in range(0, len(sample_uuids), chunk_size):
-                self.knex.post(url, json={"sample_uuids": sample_uuids[i : i + chunk_size]})
+                self.knex.post(
+                    url, json={"sample_uuids": sample_uuids[i : i + chunk_size]}
+                )
         self._sample_cache = []
 
     def _delete_sample_list(self):
@@ -126,7 +141,7 @@ class Project(RemoteObject):
             json=post_data,
         )
         self.load_blob(blob)
-    
+
     def add_sample_uuids(self, sample_uuids):
         """Return this group and add a sample to this group.
 
@@ -166,7 +181,7 @@ class Project(RemoteObject):
 
     def analysis_result(self, *args, **kwargs):
         """Return a ProjectResultFolder object for this project.
-        
+
         Alias for result_folder."""
         return self.result_folder(*args, **kwargs)
 
@@ -177,7 +192,9 @@ class Project(RemoteObject):
                 yield sample
             return
         url = f"sample_groups/{self.uuid}/samples-list?page=1&page_size=100"
-        for sample_blob in paginated_iterator(self.knex, url, error_handler=error_handler):
+        for sample_blob in paginated_iterator(
+            self.knex, url, error_handler=error_handler
+        ):
             sample = self.sample(sample_blob["name"])
             sample.uuid = sample_blob["uuid"]
             sample.metadata = sample_blob["metadata"]
@@ -199,12 +216,16 @@ class Project(RemoteObject):
                 yield sample.uuid
             return
         url = f"sample_groups/{self.uuid}/samples-list?page=1"
-        for sample_blob in paginated_iterator(self.knex, url, error_handler=error_handler):
-            yield sample_blob['uuid']
+        for sample_blob in paginated_iterator(
+            self.knex, url, error_handler=error_handler
+        ):
+            yield sample_blob["uuid"]
 
     def _batch_sample_uuids(self, batch_size, input_sample_uuids=[]):
         """Yield batches of sample uuids."""
-        uuids_to_batch = input_sample_uuids if input_sample_uuids else self.get_sample_uuids()
+        uuids_to_batch = (
+            input_sample_uuids if input_sample_uuids else self.get_sample_uuids()
+        )
         sample_uuids = []
         for sample_uuid in uuids_to_batch:
             sample_uuids.append(sample_uuid)
@@ -216,7 +237,7 @@ class Project(RemoteObject):
 
     def get_analysis_results(self, cache=True):
         """Yield ProjectResultFolder objects for this project fetched from the server.
-        
+
         Alias for get_result_folders."""
         return self.get_result_folders(cache=cache)
 
@@ -262,24 +283,25 @@ class Project(RemoteObject):
             rows.extend(blob["results"])
             url = blob["next"]
         return pd.DataFrame(rows)
-    
-    
+
     @property
     def n_samples(self):
         """Return the number of samples in this project."""
-        if hasattr(self, 'samples_count') and self.samples_count is not None:
+        if hasattr(self, "samples_count") and self.samples_count is not None:
             return self.samples_count
         return len(list(self.get_sample_uuids()))
-    
-    def bulk_find_files(self,
-                        sample_uuids=[],
-                        sample_name_includes=[],
-                        folder_types="all",
-                        folder_names=[],
-                        file_names=[],
-                        extensions=[],
-                        with_versions=False,
-                        use_batches_cutoff=500):
+
+    def bulk_find_files(
+        self,
+        sample_uuids=[],
+        sample_name_includes=[],
+        folder_types="all",
+        folder_names=[],
+        file_names=[],
+        extensions=[],
+        with_versions=False,
+        use_batches_cutoff=500,
+    ):
         """Return a dict with links to download files that match the given criteria.
 
         Options:
@@ -291,36 +313,48 @@ class Project(RemoteObject):
         - extensions: list of strings; finds files with these file extensions
         - with_versions: bool; if True, include all versions of files in results
         """
+
         def _my_bulk_find(sample_uuids=None):  # curry to save typing
-            return self._bulk_find_files_batch(sample_uuids=sample_uuids or [],
-                                             sample_name_includes=sample_name_includes,
-                                             folder_types=folder_types,
-                                             folder_names=folder_names,
-                                             file_names=file_names,
-                                             extensions=extensions,
-                                             with_versions=with_versions)
+            return self._bulk_find_files_batch(
+                sample_uuids=sample_uuids or [],
+                sample_name_includes=sample_name_includes,
+                folder_types=folder_types,
+                folder_names=folder_names,
+                file_names=file_names,
+                extensions=extensions,
+                with_versions=with_versions,
+            )
+
         n_samples = len(sample_uuids) if sample_uuids else self.n_samples
         if n_samples < use_batches_cutoff:
             logger.debug(f"Using single batch bulk_find for {n_samples} samples")
             return _my_bulk_find(sample_uuids=sample_uuids)
         else:
             logger.debug(f"Using multi batch bulk_find for {n_samples} samples")
-            merged_response = {'file_size_bytes': 0, 'links': {}, 'no_size_info_count': 0}
-            for batch in self._batch_sample_uuids(use_batches_cutoff - 1, input_sample_uuids=sample_uuids):
+            merged_response = {
+                "file_size_bytes": 0,
+                "links": {},
+                "no_size_info_count": 0,
+            }
+            for batch in self._batch_sample_uuids(
+                use_batches_cutoff - 1, input_sample_uuids=sample_uuids
+            ):
                 response = _my_bulk_find(sample_uuids=batch)
-                merged_response['file_size_bytes'] += response['file_size_bytes']
-                merged_response['links'].update(response['links'])
-                merged_response['no_size_info_count'] += response['no_size_info_count']
+                merged_response["file_size_bytes"] += response["file_size_bytes"]
+                merged_response["links"].update(response["links"])
+                merged_response["no_size_info_count"] += response["no_size_info_count"]
             return merged_response
-                
-    def _bulk_find_files_batch(self,
-                               sample_uuids=None,
-                               sample_name_includes=None,
-                               folder_types=None,
-                               folder_names=None,
-                               file_names=None,
-                               extensions=None,
-                               with_versions=False):
+
+    def _bulk_find_files_batch(
+        self,
+        sample_uuids=None,
+        sample_name_includes=None,
+        folder_types=None,
+        folder_names=None,
+        file_names=None,
+        extensions=None,
+        with_versions=False,
+    ):
         data = {
             "sample_uuids": sample_uuids or [],
             "sample_names": sample_name_includes or [],
@@ -328,22 +362,105 @@ class Project(RemoteObject):
             "folder_names": folder_names or [],
             "file_names": file_names or [],
             "extensions": extensions or [],
-            "with_versions": with_versions
+            "with_versions": with_versions,
         }
         url = f"sample_groups/{self.uuid}/download"
         response = self.knex.post(url, data)
         return response
-    
+
     def run_app(self, app: Pipeline, input_parameters=None):
         """Run an app on this group."""
         if not input_parameters:
             input_parameters = app.get_input_parameters()
         params = {
-            'pipeline_id': app.uuid,
-            'sample_uuids': list(self.get_sample_uuids()),
-            'input_parameters': input_parameters,
+            "pipeline_id": app.uuid,
+            "sample_uuids": list(self.get_sample_uuids()),
+            "input_parameters": input_parameters,
         }
-        self.knex.post(f"sample_groups/{self.uuid}/run_app", json=params, json_response=False)
+        self.knex.post(
+            f"sample_groups/{self.uuid}/run_app", json=params, json_response=False
+        )
+
+    def create_dashboard(self, title="Default dashboard", default=False):
+        """Create a dashboard for this project."""
+        from geoseeq.dashboard.dashboard import Dashboard
+
+        post_data = {"name": title, "is_default": default}
+        self.knex.post(f"sample_groups/{self.uuid}/dashboard-list", json=post_data)
+
+        return Dashboard(knex=self.knex, project=self, title=title, default=default)
+
+    def get_default_dashbaord(self):
+        """Get the default dashboard for this project."""
+        from geoseeq.dashboard.dashboard import Dashboard, DashboardTile
+
+        resp = self.knex.get(f"sample_groups/{self.uuid}/dashboard-list")
+        try:
+            dashboard_name = [
+                name
+                for name, data in resp["dashboard_data"].items()
+                if data["is_default"] == True
+            ][0]
+            blob = resp["dashboard_data"][dashboard_name]
+            tiles = []
+            for tile_blob in blob["tiles"]:
+                tile = DashboardTile.from_blob(self, tile_blob)
+                tiles.append(tile)
+            dashboard = Dashboard(
+                self.knex,
+                project=self,
+                title=dashboard_name,
+                default=blob["is_default"],
+                tiles=tiles,
+            )
+            return dashboard
+        except IndexError:
+            logger.warning("Default dashboard not found.")
+            pass
+        return None
+
+    def get_or_create_default_dashbaord(self):
+        """Get the default dashboard for this project or create it if does not exist."""
+        default_dashboard = self.get_default_dashbaord()
+        if default_dashboard:
+            return default_dashboard
+        else:
+            return self.create_dashboard(default=True)
+
+    def get_dashbaord_by_title(self, title):
+        """Get dashboard for this project by the title of the dashboard."""
+        from geoseeq.dashboard.dashboard import Dashboard, DashboardTile
+
+        resp = self.knex.get(f"sample_groups/{self.uuid}/dashboard-list")
+        try:
+            dashboard_name = [
+                name for name in resp["dashboard_data"].keys() if name == title
+            ][0]
+            blob = resp["dashboard_data"][dashboard_name]
+            tiles = []
+            for tile_blob in blob["tiles"]:
+                tile = DashboardTile.from_blob(self, tile_blob)
+                tiles.append(tile)
+            dashboard = Dashboard(
+                knex=self.knex,
+                project=self,
+                title=dashboard_name,
+                default=blob["is_default"],
+                tiles=tiles,
+            )
+            return dashboard
+        except IndexError:
+            logger.warning(f"Dashboard {title} not found.")
+            pass
+        return None
+
+    def get_or_create_dashbaord_by_title(self, title: str):
+        """Get dashboard by title for this project or create it if does not exist."""
+        default_dashboard = self.get_dashbaord_by_title(title)
+        if default_dashboard:
+            return default_dashboard
+        else:
+            return self.create_dashboard(title=title, default=False)
 
     def __str__(self):
         return f"<Geoseeq::Project {self.name} {self.uuid} />"
@@ -353,7 +470,7 @@ class Project(RemoteObject):
 
     def pre_hash(self):
         return "PROJ" + self.name + self.org.pre_hash()
-    
+
     @property
     def grn(self):
         return f"grn::project:{self.uuid}"
@@ -362,5 +479,6 @@ class Project(RemoteObject):
         self.description = description
         self._modified = True
         return self
+
 
 SampleGroup = Project  # alias for backwards compatibility

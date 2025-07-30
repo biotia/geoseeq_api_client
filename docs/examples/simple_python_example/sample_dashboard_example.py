@@ -1,3 +1,4 @@
+import os
 from geoseeq import Knex
 from geoseeq.dashboard.dashboard import SampleDashboard
 from geoseeq.id_constructors.from_uuids import (
@@ -6,8 +7,8 @@ from geoseeq.id_constructors.from_uuids import (
 )
 
 
-endpoint = ""
-token = ""
+endpoint = os.environ.get("GEOSEEQ_ENDPOINT", "")
+token = os.environ.get("GEOSEEQ_API_TOKEN", "")
 sample_id = ""
 file_id = ""
 file2_id = ""
