@@ -249,7 +249,7 @@ class Sample(RemoteObject):
         dashboard._already_fetched = True
         return dashboard
 
-    def get_default_dashbaord(self):
+    def get_default_dashboard(self):
         """Get the default dashboard for this sample."""
         from geoseeq.dashboard.dashboard import SampleDashboard
 
@@ -267,15 +267,15 @@ class Sample(RemoteObject):
             pass
         return None
 
-    def get_or_create_default_dashbaord(self):
+    def get_or_create_default_dashboard(self):
         """Get the default dashboard for this sample or create it if does not exist."""
-        default_dashboard = self.get_default_dashbaord()
+        default_dashboard = self.get_default_dashboard()
         if default_dashboard:
             return default_dashboard
         else:
             return self.create_dashboard(default=True)
 
-    def get_dashbaord_by_title(self, title):
+    def get_dashboard_by_title(self, title):
         """Get dashboard by title for this sample."""
         from geoseeq.dashboard.dashboard import SampleDashboard
 
@@ -293,9 +293,9 @@ class Sample(RemoteObject):
             pass
         return None
 
-    def get_or_create_dashbaord_by_title(self, title):
+    def get_or_create_dashboard_by_title(self, title):
         """Get dashboard by title for this sample or create it if does not exist."""
-        default_dashboard = self.get_dashbaord_by_title(title)
+        default_dashboard = self.get_dashboard_by_title(title)
         if default_dashboard:
             return default_dashboard
         else:
