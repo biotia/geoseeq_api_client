@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geoseeq"
-version = "0.7.3dev2"
+version = "0.7.3dev3"
 authors = [
   { name="David C. Danko", email="dcdanko@biotia.io" },
 ]
