@@ -390,7 +390,7 @@ class Project(RemoteObject):
 
         return Dashboard(knex=self.knex, project=self, title=title, default=default)
 
-    def get_default_dashbaord(self):
+    def get_default_dashboard(self):
         """Get the default dashboard for this project."""
         from geoseeq.dashboard.dashboard import Dashboard, DashboardTile
 
@@ -419,15 +419,15 @@ class Project(RemoteObject):
             pass
         return None
 
-    def get_or_create_default_dashbaord(self):
+    def get_or_create_default_dashboard(self):
         """Get the default dashboard for this project or create it if does not exist."""
-        default_dashboard = self.get_default_dashbaord()
+        default_dashboard = self.get_default_dashboard()
         if default_dashboard:
             return default_dashboard
         else:
             return self.create_dashboard(default=True)
 
-    def get_dashbaord_by_title(self, title):
+    def get_dashboard_by_title(self, title):
         """Get dashboard for this project by the title of the dashboard."""
         from geoseeq.dashboard.dashboard import Dashboard, DashboardTile
 
@@ -454,9 +454,9 @@ class Project(RemoteObject):
             pass
         return None
 
-    def get_or_create_dashbaord_by_title(self, title: str):
+    def get_or_create_dashboard_by_title(self, title: str):
         """Get dashboard by title for this project or create it if does not exist."""
-        default_dashboard = self.get_dashbaord_by_title(title)
+        default_dashboard = self.get_dashboard_by_title(title)
         if default_dashboard:
             return default_dashboard
         else:
