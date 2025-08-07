@@ -19,7 +19,7 @@ knex.add_api_token(token)
 
 
 project = project_from_uuid(knex, project_id)
-dashboard = project.get_or_create_default_dashbaord()
+dashboard = project.get_or_create_default_dashboard()
 
 # Rename dashboard
 dashboard.title = "My default dashboard"
@@ -41,7 +41,7 @@ dashboard.add_tile(file2, title="Tile title 2", width="half")
 dashboard.save()
 
 
-dashboard2 = project.get_or_create_dashbaord_by_title(title="Dashboard Dix")
+dashboard2 = project.get_or_create_dashboard_by_title(title="Dashboard 2")
 dashboard2.title = "Renamed dashboard"
 
 # Set dashboard to default

@@ -387,8 +387,9 @@ class Project(RemoteObject):
 
         post_data = {"name": title, "is_default": default}
         self.knex.post(f"sample_groups/{self.uuid}/dashboard-list", json=post_data)
-
-        return Dashboard(knex=self.knex, project=self, title=title, default=default)
+        return Dashboard(
+            knex=self.knex, project=self, title=title, default=default, tiles=[]
+        )
 
     def get_default_dashboard(self):
         """Get the default dashboard for this project."""
@@ -456,9 +457,9 @@ class Project(RemoteObject):
 
     def get_or_create_dashboard_by_title(self, title: str):
         """Get dashboard by title for this project or create it if does not exist."""
-        default_dashboard = self.get_dashboard_by_title(title)
-        if default_dashboard:
-            return default_dashboard
+        dashboard = self.get_dashboard_by_title(title)
+        if dashboard:
+            return dashboard
         else:
             return self.create_dashboard(title=title, default=False)
 
