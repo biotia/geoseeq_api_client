@@ -1,9 +1,10 @@
+# pylint: disable=line-too-long
 import logging
 import click
 import requests
 from os.path import basename
 import pandas as pd
-from multiprocessing import Pool, current_process
+from multiprocessing import current_process
 
 from geoseeq.cli.constants import *
 from geoseeq.cli.shared_params import (
@@ -46,10 +47,10 @@ def _upload_one_file(args):
 
 def _get_regex(knex, filepaths, module_name, lib, regex):
     """Return a regex that will group the files into samples
-    
+
     Tell the user how many files did could not be matched using the regex.
     """
-    seq_length, seq_type = module_name.split('::')[:2]
+    _, seq_type = module_name.split('::')[:2]
     args = {
         'filenames': list(filepaths.keys()),
         'sequence_type': seq_type,
@@ -181,7 +182,13 @@ def flatten_list_of_bams(filepaths):
 @private_option
 @link_option
 @no_new_versions_option
-@click.option('--name-map', default=None, nargs=3, help="A file to use for converting names. Takes three arguments: a file name, a column name for current names, and a column name for new names.")
+@click.option(
+    '--name-map',
+    default=None,
+    nargs=3,
+    required=False,
+    help='Optional CSV and column names used to map existing names to new ones. Provide: <file> <current_name_col> <new_name_col>.'
+)
 @module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
 @click.argument('fastq_files', type=click.Path(exists=True), nargs=-1)
@@ -214,15 +221,23 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     $ ls -1 path/to/fastq/files/*.fastq.gz > file_list.txt
     $ geoseeq upload reads --yes --overwrite "GeoSeeq/Example CLI Project" file_list.txt
 
+    \b
+    # Remap sample names using a CSV file with current and new names
+    $ geoseeq upload reads --name-map sample_map.csv current_name new_name "GeoSeeq/Example CLI Project" fastq_files.txt
+
     ---
 
+    The optional ``--name-map`` flag takes three values: a CSV filename,
+    the column containing current names and the column containing new names.
+    When provided, sample names will be translated during upload.
+
     Command Arguments:
-    
+
     [PROJECT_ID] Can be a project UUID, GeoSeeq Resource Number (GRN), or an
     organization name and project name separated by a slash.
 
     \b
-    Examples: 
+    Examples:
      - Name pair: "GeoSeeq/Example CLI Project"
      - UUID: "ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
      - GRN: "grn:gs1:project:ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
@@ -284,12 +299,12 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     ---
 
     Command Arguments:
-    
+
     [PROJECT_ID] Can be a project UUID, GeoSeeq Resource Number (GRN), or an
     organization name and project name separated by a slash.
 
     \b
-    Examples: 
+    Examples:
      - Name pair: "GeoSeeq/Example CLI Project"
      - UUID: "ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
      - GRN: "grn:gs1:project:ed59b913-91ec-489b-a1b9-4ea137a6e5cf"
@@ -303,4 +318,14 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     # filepaths = {basename(line): line for line in flatten_list_of_bams(files)}
     # click.echo(f'Found {len(filepaths)} files to upload.', err=True)
     # groups = _group_files(knex, filepaths, 'bam::bam', regex, yes)
-    # _do_upload(groups, 'bam::bam', link_type, proj, filepaths, overwrite, no_new_versions, cores, state)
+    # _do_upload(
+    #     groups,
+    #     'bam::bam',
+    #     link_type,
+    #     proj,
+    #     filepaths,
+    #     overwrite,
+    #     no_new_versions,
+    #     cores,
+    #     state,
+    # )

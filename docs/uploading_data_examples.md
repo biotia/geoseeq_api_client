@@ -16,11 +16,11 @@ $ export GEOSEEQ_API_TOKEN=<your token from the geoseeq app>
 
 ## Uploading sequencing data
 
-GeoSeeq can automatically group fastq files into samples according to their 
+GeoSeeq can automatically group fastq files into samples according to their
 sample name, read number, and lane number. It supports paired end, single end,
-and nanopore reads.
+nanopore, and pacbio reads.
 
-Assume you have data from a single ended sequencing run stored as fastq files: 
+Assume you have data from a single ended sequencing run stored as fastq files:
  - Sample1_L1_R1.fastq.gz
  - Sample1_L1_R2.fastq.gz
  - Sample1_L2_R1.fastq.gz
@@ -47,13 +47,20 @@ Uploading Sample: Sample1
 
 GeoSeeq will automatically create a new sample named `Sample1` if it does not already exist.
 
+To rename samples during upload, provide a CSV with current and new names
+using `--name-map`:
+
+```
+$ geoseeq upload reads --name-map sample_map.csv current_name new_name "Example GeoSeeq Org/Example CLI Project" fastq_files.txt
+```
+
 Note: You will need to have an API token set to use this command (see above)
 
 ### Linking reads from S3, Wasabi, FTP, Azure, and other cloud storage services
 
 GeoSeeq allows you to link files stored on other cloud storage services without moving the files.
 
-Assume you have data from a single ended sequencing run stored as fastq files on an s3 bucket: 
+Assume you have data from a single ended sequencing run stored as fastq files on an s3 bucket:
  - `https://s3.wasabisys.com/mybucketname/Sample1_L1_R1.fastq.gz`
  - `https://s3.wasabisys.com/mybucketname/Sample1_L1_R2.fastq.gz`
  - `https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz`

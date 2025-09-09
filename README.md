@@ -60,7 +60,7 @@ $ geoseeq download files --extension fastq.gz "GeoSeeq/Example CLI Project"
 
 GeoSeeq can automatically group fastq files into samples according to their
 sample name, read number, and lane number. It supports paired end, single end,
-and nanopore reads.
+nanopore, and pacbio reads.
 
 Assume you have data from a single ended sequencing run stored as fastq files:
  - Sample1_L1_R1.fastq.gz
@@ -90,6 +90,12 @@ Uploading Sample: Sample1
 GeoSeeq will automatically create a new sample named `Sample1` if it does not already exist.
 
 This command would upload data [to this project.](https://portal.geoseeq.com/sample-groups/ed59b913-91ec-489b-a1b9-4ea137a6e5cf/samples). Since only organization members can upload data, you will need to replace `GeoSeeq` with your organization name.
+
+To rename samples on the fly, provide a CSV file with current and new names using the `--name-map` option:
+
+```
+$ geoseeq upload reads --name-map sample_map.csv current_name new_name "GeoSeeq/Example CLI Project" fastq_files.txt
+```
 
 Note: You will need to have an API token set to use this command (see above)
 
