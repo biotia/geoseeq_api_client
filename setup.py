@@ -5,7 +5,8 @@ import setuptools
 
 setuptools.setup(
     name='geoseeq',
-    version='0.5.6a7',  # DEPRECATED see pyproject.toml remember to update version string in CLI as well
+    version='0.7.4',  # DEPRECATED see pyproject.toml
+    # remember to update version string in CLI as well
     author="David C. Danko",
     author_email='dcdanko@biotia.io',
     description=open('README.md').read(),

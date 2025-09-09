@@ -1,6 +1,6 @@
 import urllib
 from .remote_object import RemoteObject
-from .result import SampleResultFile, SampleResultFolder
+from .result import SampleResultFolder
 
 
 class Sample(RemoteObject):
@@ -166,12 +166,14 @@ class Sample(RemoteObject):
             "short_read::paired_end"
             "short_read::single_end"
             "long_read::nanopore"
+            "long_read::pacbio"
         """
         if preference_order is None:
             preference_order = [
                 "short_read::paired_end",
                 "short_read::single_end",
                 "long_read::nanopore",
+                "long_read::pacbio",
             ]
         all_fastqs = self.get_all_fastqs()
         for read_type in preference_order:
