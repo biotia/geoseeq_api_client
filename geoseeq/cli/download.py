@@ -602,7 +602,7 @@ def cli_download_fastqs(state,
         samples = list(tqdm(proj.get_samples(), total=proj.samples_count, desc="Fetching Sample Info"))
 
     result_files_with_names = []
-    for sample in samples:
+    for sample in tqdm(samples, desc="Finding Fastq Files in Samples"):
         try:
             result_files_with_names += _get_sample_result_files_with_names(sample, module_name, which_fastqs_mode, file_name_mode)
         except Exception as e:
@@ -621,7 +621,7 @@ def cli_download_fastqs(state,
         progress_tracker_factory=PBarManager().get_new_bar,
         head=head,
     )
-    for result_file, filename, key in result_files_with_names:
+    for result_file, filename, key in tqdm(result_files_with_names, desc="Adding Fastq Files to Download Manager"):
         callback = None
         if head:
             callback = _trim_fastq_to_complete_reads
