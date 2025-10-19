@@ -202,10 +202,6 @@ class Project(RemoteObject):
                 sample = self.sample(sample_blob["name"])
                 sample_blob["library"] = sample_blob["owner_project"]["uuid"]
                 sample.load_blob(sample_blob)
-                # sample.uuid = sample_blob["uuid"]
-                # sample.metadata = sample_blob["metadata"]
-                # if fetch:
-                #     sample.get()
                 sample._modified = False
                 sample._already_fetched = True
                 if cache:

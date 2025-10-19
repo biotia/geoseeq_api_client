@@ -428,7 +428,7 @@ def _get_sample_result_files_with_names(sample, module_name=None, which_fastqs_m
     return result_files_with_names
 
 
-def _make_read_configs(download_results, config_dir="."):
+def _make_read_configs(download_results, config_dir=".", name_mode="name"):
     """Make JSON config files that look like this.
     
     {
@@ -441,12 +441,14 @@ def _make_read_configs(download_results, config_dir="."):
         "geoseeq_uuid": "05bf22e9-9d25-42db-af25-31bc538a7006"
     }
     """
+    
     config_blobs = {}  # sample ids -> config_blobs
     download_results = sorted(download_results, key=lambda x: x[1][3])  # sort by lane number
     for local_path, (sample, read_type, read_num, lane_num), _ in download_results:
         if sample.name not in config_blobs:
-            config_blobs[sample.name] = {
-                "sample_name": sample.name,
+            sample_name = sample.name if name_mode == "name" else sample.uuid
+            config_blobs[sample_name] = {
+                "sample_name": sample_name,
                 "reads_1": [],
                 "reads_2": [],
                 "fastq_checksum": "",
@@ -455,9 +457,9 @@ def _make_read_configs(download_results, config_dir="."):
                 "geoseeq_uuid": sample.uuid,
             }
         if read_num == 1:
-            config_blobs[sample.name]["reads_1"].append(local_path)  # sorted by lane number
+            config_blobs[sample_name]["reads_1"].append(local_path)  # sorted by lane number
         else:
-            config_blobs[sample.name]["reads_2"].append(local_path)
+            config_blobs[sample_name]["reads_2"].append(local_path)
 
     # make config dir
     makedirs(config_dir, exist_ok=True)
@@ -635,4 +637,5 @@ def cli_download_fastqs(state,
         logger.info(f'Downloading {len(download_manager)} files to {target_dir}')
         download_results = download_manager.download_files()
         if config_dir:
-            _make_read_configs(download_results, config_dir)
+            name_mode = "name" if file_name_mode != "sample-uuid" else "uuid"
+            _make_read_configs(download_results, config_dir, name_mode=name_mode)
