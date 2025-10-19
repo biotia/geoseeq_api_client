@@ -21,6 +21,7 @@ from .shared_params import (
     ignore_errors_option,
     folder_ids_arg,
 )
+from tqdm import tqdm
 from geoseeq.result.file_download import download_url
 from geoseeq.utils import download_ftp
 from geoseeq.id_constructors import (
@@ -598,7 +599,7 @@ def cli_download_fastqs(state,
         samples = handle_multiple_sample_ids(knex, sample_ids, proj=proj, alternate_id_col=alt_sample_id)
     else:
         logger.info("Fetching info for all samples in project.")
-        samples = proj.get_samples()
+        samples = list(tqdm(proj.get_samples(), total=proj.samples_count, desc="Fetching Sample Info"))
 
     result_files_with_names = []
     for sample in samples:

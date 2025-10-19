@@ -191,23 +191,26 @@ class Project(RemoteObject):
             for sample in self._get_sample_cache:
                 yield sample
             return
+        from geoseeq.id_constructors import sample_from_uuid
         url = f"sample_groups/{self.uuid}/samples-list?page=1&page_size=100"
         for sample_blob in paginated_iterator(
             self.knex, url, error_handler=error_handler
         ):
-            sample = self.sample(sample_blob["name"])
-            sample.uuid = sample_blob["uuid"]
-            sample.metadata = sample_blob["metadata"]
-            if fetch:
-                sample.get()
-            sample._modified = False
-            if cache:
-                self._get_sample_cache.append(sample)
+            if sample_blob["owner_project"]["uuid"] != self.uuid:
+                sample = sample_from_uuid(self.knex, sample_blob["uuid"])  # fetch from elsewhere
             else:
-                yield sample
-        if cache:
-            for sample in self._get_sample_cache:
-                yield sample
+                sample = self.sample(sample_blob["name"])
+                sample_blob["library"] = sample_blob["owner_project"]["uuid"]
+                sample.load_blob(sample_blob)
+                # sample.uuid = sample_blob["uuid"]
+                # sample.metadata = sample_blob["metadata"]
+                # if fetch:
+                #     sample.get()
+                sample._modified = False
+                sample._already_fetched = True
+                if cache:
+                    self._get_sample_cache.append(sample)
+            yield sample
 
     def get_sample_uuids(self, cache=True, error_handler=None):
         """Yield samples uuids fetched from the server."""
