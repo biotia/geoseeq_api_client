@@ -619,7 +619,6 @@ def cli_download_fastqs(state,
         callback = None
         if head:
             callback = _trim_fastq_to_complete_reads
-            key = key + (head,)  # append head bytes to key
         download_manager.add_download(result_file, join(target_dir, filename), key=key, callback=callback)
     if not download:
         print(download_manager.get_url_string(), file=state.outfile)
