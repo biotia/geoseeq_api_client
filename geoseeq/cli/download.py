@@ -458,10 +458,14 @@ def _make_read_configs(download_results, config_dir="."):
         else:
             config_blobs[sample.name]["reads_2"].append(local_path)
 
+    # make config dir
+    makedirs(config_dir, exist_ok=True)
+
     for sample_name, config_blob in config_blobs.items():
         config_path = join(config_dir, f"{sample_name}.config.json")
         with open(config_path, "w") as f:
             json.dump(config_blob, f, indent=4)
+
 
 def _open_maybe_gzip(local_path):
     """Open a file that may be gzipped. Do not rely on file extension."""
@@ -484,7 +488,10 @@ def _trim_fastq_to_complete_reads(key, local_path):
         while True:
             read_lines = []
             for _ in range(4):
-                line = infile.readline()
+                try:
+                    line = infile.readline()
+                except Exception:  # ignore errors reading line, assume end of file
+                    break
                 if not line:
                     break
                 read_lines.append(line)
