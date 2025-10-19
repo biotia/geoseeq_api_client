@@ -3,6 +3,7 @@ import logging
 from os import makedirs
 from os.path import dirname, join
 
+import gzip
 import click
 import pandas as pd
 from multiprocessing import Pool
@@ -32,6 +33,7 @@ from .utils import convert_size
 from geoseeq.constants import FASTQ_MODULE_NAMES
 from geoseeq.result import ResultFile
 from geoseeq.upload_download_manager import GeoSeeqDownloadManager
+import os
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -378,7 +380,27 @@ def cli_download_ids(state, cores, target_dir, file_name, yes, download, head, i
         download_manager.download_files()
 
 
-def _get_sample_result_files_with_names(sample, module_name=None, first=False):
+def _get_local_filename_for_fastq(sample, result_file, read_type, read_num, lane_num, file_name_mode):
+    """Return a local filename for a fastq file based on the specified naming mode."""
+    if file_name_mode == "original":
+        return result_file.get_stored_data_filename()
+    elif file_name_mode == "geoseeq":
+        sname = sample.name.replace(".", "-").replace(" ", "_").lower()
+        rtype = read_type.replace("::", "__").replace(".", "-").replace(" ", "_").lower()
+        filename = f"{sname}.{rtype}.R{read_num}.L{lane_num}.fastq.gz"
+        return filename
+    elif file_name_mode == "sample-uuid":
+        filename = f"{sample.uuid}.R{read_num}.L{lane_num}.fastq.gz"
+        return filename
+    elif file_name_mode == "file-uuid":
+        filename = f"{result_file.uuid}.fastq.gz"
+        return filename
+    else:
+        raise ValueError(f"Unknown file name mode: {file_name_mode}")
+
+
+def _get_sample_result_files_with_names(sample, module_name=None, which_fastqs_mode='all', file_name_mode='original'):
+    """Return list of (result_file, filename, key) tuples for all fastq files in a sample."""
     result_files_with_names = []
     for read_type, folder in sample.get_all_fastqs().items():
         if module_name and module_name != read_type:
@@ -388,19 +410,18 @@ def _get_sample_result_files_with_names(sample, module_name=None, first=False):
                 lane_num = lane_num + 1  # 1 indexed
                 if read_type in ["short_read::paired_end"]:
                     key = (sample, read_type, 1, lane_num)  # sample name, read type, read number, lane number
-                    result_files_with_names.append(
-                        (result_file[0], result_file[0].get_referenced_filename(), key)
-                    )
+                    fname = _get_local_filename_for_fastq(sample, result_file[0], read_type, 1, lane_num, file_name_mode)
+                    result_files_with_names.append((result_file[0], fname, key))
+                    if which_fastqs_mode == "first-r1":
+                        break
                     key = (sample, read_type, 2, lane_num)
-                    result_files_with_names.append(
-                        (result_file[1], result_file[1].get_referenced_filename(), key)
-                    )
+                    fname = _get_local_filename_for_fastq(sample, result_file[1], read_type, 2, lane_num, file_name_mode)
+                    result_files_with_names.append((result_file[1], fname, key))
                 else:
                     key = (sample, read_type, 1, lane_num)
-                    result_files_with_names.append(
-                        (result_file, result_file.get_referenced_filename(), key)
-                    )
-            if first:
+                    fname = _get_local_filename_for_fastq(sample, result_file, read_type, 1, lane_num, file_name_mode)
+                    result_files_with_names.append((result_file, fname, key))
+            if which_fastqs_mode in ["first-all", "first-r1"]:
                 break
 
     return result_files_with_names
@@ -442,14 +463,52 @@ def _make_read_configs(download_results, config_dir="."):
         with open(config_path, "w") as f:
             json.dump(config_blob, f, indent=4)
 
+def _open_maybe_gzip(local_path):
+    """Open a file that may be gzipped. Do not rely on file extension."""
+    with open(local_path, "rb") as f:
+        magic_number = f.read(2)
+    if magic_number == b'\x1f\x8b':
+        return gzip.open(local_path, "rt")
+    else:
+        return open(local_path, "r")
+
+
+def _trim_fastq_to_complete_reads(key, local_path):
+    """Trim a fastq file to the nearest complete read boundary under head_bytes.
+    
+    Write the output as a gzipped file regardless of input compression.
+    """
+    temp_path = local_path + ".tmp"
+    with _open_maybe_gzip(local_path) as infile, gzip.open(temp_path, "wt") as outfile:
+        lines_written = 0
+        while True:
+            read_lines = []
+            for _ in range(4):
+                line = infile.readline()
+                if not line:
+                    break
+                read_lines.append(line)
+            if len(read_lines) < 4:
+                break  # end of file
+            if infile.tell() > key[4]:  # key[4] is head_bytes
+                break  # reached head limit
+            for line in read_lines:
+                outfile.write(line)
+            lines_written += 4
+    # Replace original file with trimmed file
+    
+    os.replace(temp_path, local_path)
+
 
 @cli_download.command("fastqs")
 @use_common_state
 @cores_option
 @click.option("--target-dir", default=".")
 @yes_option
-@click.option("--first/--all", default=False, help="Download only the first folder of fastq files for each sample.")
+@click.option('--file-name-mode', type=click.Choice(['original', 'geoseeq', 'sample-uuid', 'file-uuid']), help="Choose how the downloaded fastq files are named.", default='original')
+@click.option("--which-fastqs-mode", type=click.Choice(["first-all", "first-r1", "all"]), default="all", help="Choose which fastq files to download per sample. ")
 @click.option("--download/--urls-only", default=True, help="Download files or just print urls")
+@head_option
 @click.option("--config-dir", default=None, help="Directory to write read config files. If unset do not write config files.")
 @module_option(FASTQ_MODULE_NAMES, use_default=False)
 @ignore_errors_option
@@ -460,8 +519,10 @@ def cli_download_fastqs(state,
                         cores,
                         target_dir,
                         yes,
-                        first,
+                        file_name_mode,
+                        which_fastqs_mode,
                         download,
+                        head,
                         config_dir,
                         module_name,
                         ignore_errors,
@@ -473,6 +534,20 @@ def cli_download_fastqs(state,
 
     This command will download fastq files from a GeoSeeq project. You can filter
     files by sample name and by specific fastq read types.
+
+    The filenames of the downloaded fastq files can be controlled using the --file-name-mode option:
+    - original: Use the original filename as uploaded to GeoSeeq (default)
+    - geoseeq: Use a normalized GeoSeeq generated filename that includes the sample name, read type, read number, and lane number.
+    - sample-uuid: Use the GeoSeeq UUID of the sample along with lane number and read number.
+    - file-uuid: Use the GeoSeeq UUID of the result file only.
+
+    If the --head option is used to only download the first N bytes of each fastq file, this command
+    will automatically clip the fastq files at the nearest complete read boundary to avoid incomplete reads.
+
+    The --which-fastqs-mode option controls which fastq files are downloaded per sample:
+    - first-all: Download all fastq files but from the first fastq folder only.
+    - first-r1: Download only the first read (R1) fastq file from the first fastq folder.
+    - all: Download all fastq files from all folders.
 
     ---
 
@@ -523,7 +598,7 @@ def cli_download_fastqs(state,
     result_files_with_names = []
     for sample in samples:
         try:
-            result_files_with_names += _get_sample_result_files_with_names(sample, module_name, first)
+            result_files_with_names += _get_sample_result_files_with_names(sample, module_name, which_fastqs_mode, file_name_mode)
         except Exception as e:
             logger.error(f"Error fetching fastq files for sample {sample.name}: {e}")
             if not ignore_errors:
@@ -538,9 +613,14 @@ def cli_download_fastqs(state,
         ignore_errors=ignore_errors,
         log_level=state.log_level,
         progress_tracker_factory=PBarManager().get_new_bar,
+        head=head,
     )
     for result_file, filename, key in result_files_with_names:
-        download_manager.add_download(result_file, join(target_dir, filename), key=key)
+        callback = None
+        if head:
+            callback = _trim_fastq_to_complete_reads
+            key = key + (head,)  # append head bytes to key
+        download_manager.add_download(result_file, join(target_dir, filename), key=key, callback=callback)
     if not download:
         print(download_manager.get_url_string(), file=state.outfile)
     else:

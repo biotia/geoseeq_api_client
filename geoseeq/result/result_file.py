@@ -103,6 +103,18 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload, ResultFileS
         # except TypeError:
         #     return basename(self.get_blob_filename())
 
+    def get_stored_data_filename(self):
+        """Return the filename that is stored in the stored_data field.
+        
+        This is typically the filename that was originally uploaded to create this result file.
+        """
+        try:
+            key = [k for k in ["filename", "uri", "url"] if k in self.stored_data][0]
+        except IndexError:
+            raise TypeError("Cannot make a reference filename for a BLOB type result field.")
+        filepath = self.stored_data[key]
+        return basename(filepath)
+
     def _save(self):
         data = {field: getattr(self, field) for field in self.remote_fields if hasattr(self, field)}
         data["analysis_result"] = self.parent.uuid
