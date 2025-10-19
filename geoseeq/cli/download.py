@@ -474,7 +474,7 @@ def _open_maybe_gzip(local_path):
 
 
 def _trim_fastq_to_complete_reads(key, local_path):
-    """Trim a fastq file to the nearest complete read boundary under head_bytes.
+    """Trim a fastq file to the nearest complete read boundary.
     
     Write the output as a gzipped file regardless of input compression.
     """
@@ -490,8 +490,6 @@ def _trim_fastq_to_complete_reads(key, local_path):
                 read_lines.append(line)
             if len(read_lines) < 4:
                 break  # end of file
-            if infile.tell() > key[4]:  # key[4] is head_bytes
-                break  # reached head limit
             for line in read_lines:
                 outfile.write(line)
             lines_written += 4
