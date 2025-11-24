@@ -70,10 +70,11 @@ def _get_regex(knex, filepaths, module_name, lib, regex):
 
 def _group_files(knex, filepaths, module_name, regex, yes, name_map):
     """Group the files into samples, confirm, and return the groups."""
+    name_map_lookup = None
     if name_map is not None:
         name_map_filename, cur_col, new_col = name_map
-        name_map = pd.read_csv(name_map_filename)[[cur_col, new_col]]
-        name_map = name_map.set_index(cur_col).to_dict()
+        name_map_lookup = pd.read_csv(name_map_filename)[[cur_col, new_col]]
+        name_map_lookup = name_map_lookup.set_index(cur_col)[new_col].to_dict()
     seq_length, seq_type = module_name.split('::')[:2]
     groups = knex.post('bulk_upload/group_files', json={
         'filenames': list(filepaths.keys()),
@@ -82,8 +83,8 @@ def _group_files(knex, filepaths, module_name, regex, yes, name_map):
     })
     for group in groups:
         sample_name = group["sample_name"]
-        if name_map:
-            sample_name = name_map.get(sample_name, sample_name)
+        if name_map_lookup:
+            sample_name = name_map_lookup.get(sample_name, sample_name)
             group["sample_name"] = sample_name
         click.echo(f'sample_name: {sample_name}', err=True)
         click.echo(f'  module_name: {module_name}', err=True)
