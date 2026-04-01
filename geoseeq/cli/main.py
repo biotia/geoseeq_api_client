@@ -12,6 +12,7 @@ from .find_grn import cli_find_grn
 from .get_eula import cli_eula
 from .manage import cli_manage
 from .run import cli_app
+from .s3 import cli_s3
 from .search import cli_search
 from .shared_params.opts_and_args import overwrite_option, yes_option
 from .upload import cli_upload, cli_upload_advanced
@@ -39,6 +40,7 @@ def main():
 main.add_command(cli_download)
 main.add_command(cli_upload)
 main.add_command(cli_manage)
+main.add_command(cli_s3)
 main.add_command(cli_view)
 main.add_command(cli_search)
 main.add_command(cli_app)
