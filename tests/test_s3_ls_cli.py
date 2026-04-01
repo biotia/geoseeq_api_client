@@ -10,12 +10,10 @@ from click.testing import CliRunner
 from geoseeq.cli.s3 import _format_ls_row, cli_s3
 from geoseeq.knex import GeoseeqNotFoundError
 
-# Click 8.2 removed the mix_stderr parameter (stderr is always separated).
-_RUNNER_KWARGS = (
-    {"mix_stderr": False}
-    if "mix_stderr" in inspect.signature(CliRunner.__init__).parameters
-    else {}
-)
+# Click 8.2 removed the mix_stderr parameter; on 8.2+ stderr is mixed into
+# output and cannot be captured separately.
+_CAN_SEPARATE_STDERR = "mix_stderr" in inspect.signature(CliRunner.__init__).parameters
+_RUNNER_KWARGS = {"mix_stderr": False} if _CAN_SEPARATE_STDERR else {}
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +141,10 @@ class TestS3LsCommand:
         )
 
         assert result.exit_code == 0
-        assert "--all-users is not yet supported" in result.stderr
+        if _CAN_SEPARATE_STDERR:
+            assert "--all-users is not yet supported" in result.stderr
+        else:
+            assert "--all-users is not yet supported" in result.output
         # And the file still appears
         assert "staging/abc/file.fastq.gz" in result.output
 
@@ -155,8 +156,11 @@ class TestS3LsCommand:
         )
 
         assert result.exit_code != 0
-        assert "Error listing staged files" in result.stderr
-        assert result.output.strip() == ""
+        if _CAN_SEPARATE_STDERR:
+            assert "Error listing staged files" in result.stderr
+            assert result.output.strip() == ""
+        else:
+            assert "Error listing staged files" in result.output
 
     def test_correct_endpoint_called(self, runner):
         """The GET call targets the expected URL path."""

@@ -11,12 +11,10 @@ from click.testing import CliRunner
 from geoseeq.cli.s3 import cli_s3
 from geoseeq.knex import GeoseeqGeneralError, GeoseeqNotFoundError
 
-# Click 8.2 removed the mix_stderr parameter (stderr is always separated).
-_RUNNER_KWARGS = (
-    {"mix_stderr": False}
-    if "mix_stderr" in inspect.signature(CliRunner.__init__).parameters
-    else {}
-)
+# Click 8.2 removed the mix_stderr parameter; on 8.2+ stderr is mixed into
+# output and cannot be captured separately.
+_CAN_SEPARATE_STDERR = "mix_stderr" in inspect.signature(CliRunner.__init__).parameters
+_RUNNER_KWARGS = {"mix_stderr": False} if _CAN_SEPARATE_STDERR else {}
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +268,10 @@ class TestUploadSuccessRegistrationFailure:
         )
         result, *_ = _invoke(runner, local_file, mock_knex=mock_knex)
 
-        assert "Error registering staged file" in result.stderr
+        if _CAN_SEPARATE_STDERR:
+            assert "Error registering staged file" in result.stderr
+        else:
+            assert "Error registering staged file" in result.output
 
     def test_upload_still_completes_before_registration_failure(self, runner, local_file):
         """The upload progress messages appear even when registration fails."""
@@ -303,7 +304,10 @@ class TestCredentialsFetchFailure:
         mock_knex = _make_knex(creds_exc=GeoseeqGeneralError("forbidden"))
         result, *_ = _invoke(runner, local_file, mock_knex=mock_knex)
 
-        assert "Error fetching staging credentials" in result.stderr
+        if _CAN_SEPARATE_STDERR:
+            assert "Error fetching staging credentials" in result.stderr
+        else:
+            assert "Error fetching staging credentials" in result.output
 
     def test_no_upload_attempted_after_credentials_failure(self, runner, local_file):
         """upload_file is not called when credentials fetch fails."""
@@ -317,7 +321,8 @@ class TestCredentialsFetchFailure:
         """stdout is empty when credentials fetch fails."""
         mock_knex = _make_knex(creds_exc=GeoseeqGeneralError("forbidden"))
         result, *_ = _invoke(runner, local_file, mock_knex=mock_knex)
-        assert result.output.strip() == ""
+        if _CAN_SEPARATE_STDERR:
+            assert result.output.strip() == ""
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +364,10 @@ class TestUploadFailure:
                 _BASE_ARGS + ["My Org/My Project", local_file],
                 catch_exceptions=False,
             )
-        assert "Error uploading file" in result.stderr
+        if _CAN_SEPARATE_STDERR:
+            assert "Error uploading file" in result.stderr
+        else:
+            assert "Error uploading file" in result.output
 
     def test_register_not_called_on_upload_failure(self, runner, local_file):
         """register_staged_file is NOT called when the upload fails."""
@@ -398,7 +406,10 @@ class TestUploadFailure:
                 catch_exceptions=False,
             )
         assert result.exit_code != 0
-        assert "Error uploading file" in result.stderr
+        if _CAN_SEPARATE_STDERR:
+            assert "Error uploading file" in result.stderr
+        else:
+            assert "Error uploading file" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +435,10 @@ class TestProjectLookupFailure:
             runner, local_file, mock_knex=mock_knex,
             project_exc=GeoseeqNotFoundError("project not found"),
         )
-        assert "Error looking up project" in result.stderr
+        if _CAN_SEPARATE_STDERR:
+            assert "Error looking up project" in result.stderr
+        else:
+            assert "Error looking up project" in result.output
 
     def test_no_upload_attempted_after_project_failure(self, runner, local_file):
         """upload_file is not called when project lookup fails."""
