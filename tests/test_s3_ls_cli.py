@@ -1,5 +1,6 @@
 """Unit tests for ``geoseeq s3 ls``."""
 
+import inspect
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +9,13 @@ from click.testing import CliRunner
 
 from geoseeq.cli.s3 import _format_ls_row, cli_s3
 from geoseeq.knex import GeoseeqNotFoundError
+
+# Click 8.2 removed the mix_stderr parameter (stderr is always separated).
+_RUNNER_KWARGS = (
+    {"mix_stderr": False}
+    if "mix_stderr" in inspect.signature(CliRunner.__init__).parameters
+    else {}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +77,8 @@ class TestFormatLsRow:
 
 @pytest.fixture
 def runner():
-    """Click test runner."""
-    return CliRunner(mix_stderr=False)
+    """Click test runner with separated stderr."""
+    return CliRunner(**_RUNNER_KWARGS)
 
 
 def _invoke_ls(runner, project_id, extra_args=None, api_response=None, api_exc=None):

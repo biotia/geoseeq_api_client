@@ -1,5 +1,6 @@
 """Unit tests for ``geoseeq s3 register``."""
 
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,6 +8,13 @@ from click.testing import CliRunner
 
 from geoseeq.cli.s3 import _normalize_staged_path, cli_s3
 from geoseeq.knex import GeoseeqGeneralError, GeoseeqNotFoundError
+
+# Click 8.2 removed the mix_stderr parameter (stderr is always separated).
+_RUNNER_KWARGS = (
+    {"mix_stderr": False}
+    if "mix_stderr" in inspect.signature(CliRunner.__init__).parameters
+    else {}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +82,7 @@ def _invoke_register(runner, project_id, staged_path, extra_args=None,
 @pytest.fixture
 def runner():
     """Click test runner with separated stdout/stderr."""
-    return CliRunner(mix_stderr=False)
+    return CliRunner(**_RUNNER_KWARGS)
 
 
 # ---------------------------------------------------------------------------

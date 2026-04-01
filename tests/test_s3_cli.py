@@ -1,5 +1,6 @@
 """Unit tests for the `geoseeq s3` CLI command group."""
 
+import inspect
 import json
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,13 @@ from geoseeq.knex import (
     GeoseeqOtherError,
 )
 
+# Click 8.2 removed the mix_stderr parameter (stderr is always separated).
+_RUNNER_KWARGS = (
+    {"mix_stderr": False}
+    if "mix_stderr" in inspect.signature(CliRunner.__init__).parameters
+    else {}
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -20,8 +28,8 @@ from geoseeq.knex import (
 
 @pytest.fixture()
 def runner():
-    """Return a Click test runner with mixed I/O."""
-    return CliRunner(mix_stderr=False)
+    """Return a Click test runner with separated stderr."""
+    return CliRunner(**_RUNNER_KWARGS)
 
 
 def _fake_creds(**overrides):
