@@ -164,6 +164,7 @@ class Sample(RemoteObject):
 
         Default preference order is:
             "short_read::paired_end"
+            "short_read::paired_end::interleaved"
             "short_read::single_end"
             "long_read::nanopore"
             "long_read::pacbio"
@@ -171,6 +172,7 @@ class Sample(RemoteObject):
         if preference_order is None:
             preference_order = [
                 "short_read::paired_end",
+                "short_read::paired_end::interleaved",
                 "short_read::single_end",
                 "long_read::nanopore",
                 "long_read::pacbio",
@@ -187,7 +189,7 @@ class Sample(RemoteObject):
 
         ```
         {
-            "<read_type (paired end)>": {
+            "<read_type (short_read::paired_end)>": {
                 "<folder_name_1>": [
                     [
                         <ResultFile uuid=f12822f5-8801-49e0-9871-9647beae2cb7>,
@@ -195,11 +197,16 @@ class Sample(RemoteObject):
                     ]
                 ],
             },
-            "<read_type (single end)>": {
+             "<read_type (short_read::paired_end::interleaved)>": {
                 "<folder_name_1>": [
                         <ResultFile uuid=eaaaf0c4-883f-4e7b-89c0-8b57552596ea>
                 ],
-        }
+            },
+            "<read_type (short_read::single_end)>": {
+                "<folder_name_1>": [
+                        <ResultFile uuid=eaaaf0c4-883f-4e7b-89c0-8b57552596ea>
+                ],
+            }
         ```
 
         Does not download the files.
