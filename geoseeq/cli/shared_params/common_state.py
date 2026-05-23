@@ -18,6 +18,7 @@ class State(object):
         self.log_level = 20
         self._knex = None
         self.use_cache = True
+        self.profile = ""  # name of the active auth profile (empty string = default)
 
     def get_knex(self):
         logger.setLevel(self.log_level)
@@ -77,6 +78,7 @@ def profile_option(f):
         endpoint, token = None, None
         if value:
             endpoint, token = load_auth_profile(value)
+            state.profile = value
         else:
             try:
                 endpoint, token = load_auth_profile()  # load default profile, if it exists

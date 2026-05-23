@@ -16,8 +16,12 @@ def _find_read_file(files: dict, read_tag: str) -> Optional[str]:
     return None
 
 
-def _build_sample_config(sample_name: str, folder, repo_config) -> dict:
-    """Build the pipeline config dict for a single sample's reads folder."""
+def _build_sample_config(sample_name: str, sample_uuid: str, folder, repo_config) -> dict:
+    """Build the pipeline config dict for a single sample's reads folder.
+
+    *sample_uuid* is the UUID of the sample itself (not the reads folder) and
+    is written to the ``geoseeq_uuid`` field per the pipeline config spec.
+    """
     files = folder.files
 
     r1_name = _find_read_file(files, "_R1") or _find_read_file(files, "_1")
@@ -35,7 +39,7 @@ def _build_sample_config(sample_name: str, folder, repo_config) -> dict:
         "reads_2": reads_2,
         "fastq_checksum": checksum,
         "bdx_result_dir": "samples/",
-        "geoseeq_uuid": folder.uuid,
+        "geoseeq_uuid": sample_uuid,
         "geoseeq_endpoint": repo_config.server_url,
         "metadata": {},
     }
@@ -56,7 +60,7 @@ def write_pipeline_configs(repo: GeoSeeqRepo) -> None:
         if reads_folder is None:
             continue
 
-        sample_config = _build_sample_config(sample_name, reads_folder, repo.config)
+        sample_config = _build_sample_config(sample_name, sample.uuid, reads_folder, repo.config)
         sample_config["metadata"] = sample.metadata
 
         out_path = config_dir / f"{sample_name}.json"

@@ -63,7 +63,7 @@ def clone(state, project_name, path):
 
     _create_repo_directories(clone_path)
     _git_clone(git_remote_url, geoseeq_dir, state.api_token, server_url)
-    _write_config(geoseeq_dir, proj.uuid, server_url, state.profile if hasattr(state, 'profile') else "", git_remote_url)
+    _write_config(geoseeq_dir, proj.uuid, server_url, state.profile, git_remote_url)
     _ensure_config_gitignored(geoseeq_dir)
 
     repo = GeoSeeqRepo(clone_path)
@@ -88,6 +88,13 @@ def _build_authenticated_url(remote_url: str, token: str) -> str:
     return authed.geturl()
 
 
+def _scrub_token(text: str, token: str | None) -> str:
+    """Replace the API token in *text* with *** to prevent credential leaks."""
+    if token:
+        text = text.replace(f"x:{token}@", "x:***@")
+    return text
+
+
 def _git_clone(remote_url: str, geoseeq_dir: Path, token: str | None, server_url: str) -> None:
     """Run git clone to initialise the .geoseeq/ sub-repository."""
     clone_url = remote_url
@@ -103,8 +110,9 @@ def _git_clone(remote_url: str, geoseeq_dir: Path, token: str | None, server_url
         env=env,
     )
     if result.returncode != 0:
+        safe_stderr = _scrub_token(result.stderr, token)
         raise click.ClickException(
-            f"git clone failed:\n{result.stderr}"
+            f"git clone failed:\n{safe_stderr}"
         )
 
 

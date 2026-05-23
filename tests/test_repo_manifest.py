@@ -11,6 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from geoseeq.cli.main import main
+from geoseeq.cli.repo import _scrub_token
 from geoseeq.repo import (
     GeoSeeqRepo,
     Manifest,
@@ -336,7 +337,7 @@ def test_write_pipeline_configs_produces_correct_json(tmp_path_with_repo):
     assert config["reads_2"] == "samples/Sample1/reads/Sample1_R2.fastq.gz"
     assert config["fastq_checksum"] == "md5:abc123"
     assert config["bdx_result_dir"] == "samples/"
-    assert config["geoseeq_uuid"] == "folder-uuid-1"
+    assert config["geoseeq_uuid"] == "sample-uuid-1"
     assert config["geoseeq_endpoint"] == "https://backend.geoseeq.com"
     assert config["metadata"] == {"location": "NYC"}
 
@@ -493,6 +494,51 @@ def test_clone_fails_if_repo_already_exists(tmp_path):
 
     assert result.exit_code != 0
     assert "already contains a geoseeq repo" in result.output
+
+
+def test_scrub_token_removes_credential_from_url():
+    """_scrub_token replaces x:<token>@ with x:***@ in error strings."""
+    token = "secret123"
+    text = "fatal: repository 'https://x:secret123@host/repo.git/' not found"
+    scrubbed = _scrub_token(text, token)
+    assert "secret123" not in scrubbed
+    assert "x:***@" in scrubbed
+
+
+def test_scrub_token_noop_when_token_is_none():
+    """_scrub_token is a no-op when no token is provided."""
+    text = "some error text"
+    assert _scrub_token(text, None) == text
+
+
+def test_clone_git_error_does_not_leak_token(tmp_path):
+    """clone surfaces git errors without including the API token."""
+    clone_path = tmp_path / "TestProject"
+    runner = CliRunner()
+
+    with (
+        patch(
+            "geoseeq.cli.repo.handle_project_id",
+            return_value=_make_fake_project(),
+        ),
+        patch(
+            "geoseeq.cli.repo._build_authenticated_url",
+            return_value="https://x:secret-token@host/repo.git",
+        ),
+        patch("subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stderr="fatal: repository 'https://x:secret-token@host/repo.git' not found",
+        )
+        result = runner.invoke(
+            main,
+            ["repo", "clone", "TestOrg/TestProject", str(clone_path)],
+            env={"GEOSEEQ_API_TOKEN": "secret-token"},
+        )
+
+    assert result.exit_code != 0
+    assert "secret-token" not in result.output
 
 
 def test_clone_default_path_is_last_component(tmp_path):

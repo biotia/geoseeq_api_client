@@ -62,7 +62,12 @@ class GeoSeeqRepo:
             candidate = parent
 
     def commit(self, message: str) -> None:
-        """Stage manifest.json and create a git commit inside .geoseeq/."""
+        """Stage manifest.json and create a git commit inside .geoseeq/.
+
+        Uses check=True so subprocess.CalledProcessError propagates to the
+        caller intentionally — no special error type is defined for commit
+        failures.
+        """
         geoseeq_dir = self.root / ".geoseeq"
         subprocess.run(
             ["git", "-C", str(geoseeq_dir), "add", "manifest.json"],
@@ -94,7 +99,12 @@ class GeoSeeqRepo:
             )
 
     def git_pull(self) -> None:
-        """Run git pull --rebase origin main inside .geoseeq/."""
+        """Run git pull --rebase origin main inside .geoseeq/.
+
+        Uses check=True so subprocess.CalledProcessError propagates to the
+        caller intentionally — no special error type is defined for pull
+        failures (unlike push, which raises NonFastForwardError).
+        """
         geoseeq_dir = self.root / ".geoseeq"
         subprocess.run(
             ["git", "-C", str(geoseeq_dir), "pull", "--rebase", "origin", "main"],
