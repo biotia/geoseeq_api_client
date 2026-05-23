@@ -562,3 +562,61 @@ def test_clone_default_path_is_last_component(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "TestProject" in result.output
+
+
+def test_clone_stores_auth_profile_in_config(tmp_path):
+    """clone stores the active auth_profile name in config.json."""
+    clone_path = tmp_path / "TestProject"
+    runner = CliRunner()
+
+    with (
+        patch(
+            "geoseeq.cli.repo.handle_project_id",
+            return_value=_make_fake_project(),
+        ),
+        patch(
+            "geoseeq.cli.repo._git_clone",
+            side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
+                geoseeq_dir.parent
+            ),
+        ),
+        patch(
+            "geoseeq.cli.shared_params.common_state.load_auth_profile",
+            return_value=("https://backend.geoseeq.com", "tok"),
+        ),
+    ):
+        # --profile is a per-command option (applied to clone via use_common_state)
+        result = runner.invoke(
+            main,
+            ["repo", "clone", "--profile", "myprofile", "TestOrg/TestProject", str(clone_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake-token"},
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0, result.output
+    config = RepoConfig.load(clone_path / ".geoseeq" / "config.json")
+    assert config.auth_profile == "myprofile"
+
+
+def test_ensure_config_gitignored_appends_to_existing_gitignore(tmp_path):
+    """_ensure_config_gitignored appends config.json when .gitignore already exists."""
+    from geoseeq.cli.repo import _ensure_config_gitignored
+
+    geoseeq_dir = tmp_path / ".geoseeq"
+    geoseeq_dir.mkdir()
+    gitignore_path = geoseeq_dir / ".gitignore"
+    gitignore_path.write_text("*.pyc\n")  # existing entries, no config.json
+
+    _ensure_config_gitignored(geoseeq_dir)
+
+    content = gitignore_path.read_text()
+    assert "config.json" in content
+    assert "*.pyc" in content  # original entry preserved
+
+
+def test_repo_help_lists_clone_subcommand():
+    """geoseeq repo --help lists clone as a subcommand (smoke test)."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["repo", "--help"])
+    assert result.exit_code == 0
+    assert "clone" in result.output
