@@ -123,8 +123,7 @@ def log(state, limit, offset, as_json, path):
 
     knex = state.get_knex()
     response = knex.sess.get(url)
-    response.raise_for_status()
-    data = response.json()
+    data = knex._handle_response(response, json_response=False).json()
 
     if as_json:
         click.echo(json.dumps(data, indent=2))
@@ -248,9 +247,9 @@ def _iter_manifest_files(repo, sample_filter=None, file_filter=None):
 
 
 @cli_repo.command("status")
+@use_common_state
 @click.option("--sample", "-s", default=None, help="Filter to one sample")
 @click.argument("path", default=".", required=False)
-@use_common_state
 def status_cmd(state, path, sample):
     """Show sync status of a local project repo.
 
@@ -318,10 +317,10 @@ def status_cmd(state, path, sample):
 
 
 @cli_repo.command("pull")
+@use_common_state
 @click.option("--sample", "-s", default=None, help="Filter to one sample")
 @click.option("--file", "-f", "file_filter", default=None, help="Filter to files whose path contains this string")
 @click.argument("path", default=".", required=False)
-@use_common_state
 def pull(state, path, sample, file_filter):
     """Pull latest manifest from server and download newly-appeared files.
 
@@ -384,11 +383,11 @@ def pull(state, path, sample, file_filter):
 
 
 @cli_repo.command("download")
+@use_common_state
 @click.option("--sample", "-s", default=None, help="Filter to one sample")
 @click.option("--file", "-f", "file_filter", default=None, help="Filter to files whose path contains this string")
 @click.option("--all", "download_all", is_flag=True, help="Re-download files even if already present on disk")
 @click.argument("path", default=".", required=False)
-@use_common_state
 def download_cmd(state, path, sample, file_filter, download_all):
     """Download absent files from the manifest.
 
@@ -446,10 +445,10 @@ def download_cmd(state, path, sample, file_filter, download_all):
 
 
 @cli_repo.command("offload")
+@use_common_state
 @click.option("--sample", "-s", default=None, help="Filter to one sample")
 @click.option("--file", "-f", "file_filter", default=None, help="Filter to files whose path contains this string")
 @click.argument("path", default=".", required=False)
-@use_common_state
 def offload_cmd(state, path, sample, file_filter):
     """Remove local file copies while keeping manifest entries.
 

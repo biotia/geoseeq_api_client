@@ -1,9 +1,10 @@
 """Download and offload operations for files tracked in a GeoSeeqRepo manifest."""
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from .manifest import _md5
 
 if TYPE_CHECKING:
     from .repo import GeoSeeqRepo
@@ -12,15 +13,6 @@ if TYPE_CHECKING:
 
 class ChecksumError(Exception):
     """Raised when a downloaded file's checksum does not match the manifest."""
-
-
-def _md5(path: Path) -> str:
-    """Return the hex MD5 digest of the file at *path*."""
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def download_file(repo: "GeoSeeqRepo", manifest_file: "ManifestFile", knex) -> None:

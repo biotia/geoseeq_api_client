@@ -1,10 +1,11 @@
 """Filesystem status comparison against the manifest for a GeoSeeqRepo."""
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, List
+
+from .manifest import _md5
 
 if TYPE_CHECKING:
     from .repo import GeoSeeqRepo
@@ -26,15 +27,6 @@ class RepoStatus:
     absent: List[str] = field(default_factory=list)
     new_local: List[str] = field(default_factory=list)
     modified_local: List[str] = field(default_factory=list)
-
-
-def _md5(path: Path) -> str:
-    """Return the hex MD5 digest of the file at *path*."""
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def compute_status(repo: "GeoSeeqRepo") -> RepoStatus:
