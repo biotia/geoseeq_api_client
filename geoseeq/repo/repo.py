@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from .config import RepoConfig
-from .manifest import Manifest
+from .manifest import Manifest, ManifestSample
 
 
 class NonFastForwardError(Exception):
@@ -97,6 +97,28 @@ class GeoSeeqRepo:
             raise subprocess.CalledProcessError(
                 result.returncode, result.args, result.stderr
             )
+
+    def create_sample(self, name: str, metadata: dict, knex) -> str:
+        """Create a sample on the server and add it to the local manifest.
+
+        Fetches the project via its UUID, creates a new sample with *name* and
+        *metadata*, and saves it to the server.  Then inserts a ManifestSample
+        entry into ``self.manifest.samples``.
+
+        Returns the new sample UUID.  Does NOT commit — the caller is
+        responsible for calling ``repo.commit()`` after updating the manifest.
+        """
+        from geoseeq.id_constructors.from_uuids import project_from_uuid
+
+        project = project_from_uuid(knex, self.manifest.project_uuid)
+        sample = project.sample(name, metadata=metadata).idem()
+
+        self.manifest.samples[name] = ManifestSample(
+            uuid=sample.uuid,
+            metadata=metadata,
+            result_folders={},
+        )
+        return sample.uuid
 
     def git_pull(self) -> None:
         """Run git pull --rebase origin main inside .geoseeq/.

@@ -8,12 +8,15 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+import shutil
+
 import click
 
-from geoseeq.repo import GeoSeeqRepo
+from geoseeq.repo import GeoSeeqRepo, ManifestFile, ManifestResultFolder
 from geoseeq.repo.config import RepoConfig
 from geoseeq.repo.pipeline_config import write_pipeline_configs
-from geoseeq.repo.repo import NotARepoError
+from geoseeq.repo.repo import NonFastForwardError, NotARepoError
+from geoseeq.repo.sync import upload_file
 
 from .shared_params import use_common_state
 from .shared_params.id_handlers import handle_project_id
@@ -503,3 +506,213 @@ def offload_cmd(state, path, sample, file_filter):
         count += 1
 
     click.echo(f"Offloaded {count} file(s).")
+
+
+@cli_repo.command("push")
+@use_common_state
+@click.option("--sample", "-s", default=None, help="Limit push to one sample")
+@click.option("--message", "-m", default=None, help="Optional commit message suffix")
+@click.argument("path", default=".", required=False)
+def push(state, sample, message, path):
+    """Upload new-local and modified-local files to GeoSeeq.
+
+    Scans the repo status, uploads every file that is new or modified locally
+    (optionally filtered to --sample), updates the manifest in memory, commits,
+    then git-pushes to the remote.  Non-fast-forward rejections print a
+    friendly error rather than a Python traceback.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Push all new/modified files
+    $ geoseeq repo push
+
+    \b
+    # Push only files for a specific sample
+    $ geoseeq repo push --sample MySample
+
+    \b
+    # Push with a custom commit message
+    $ geoseeq repo push --message "add baseline sequencing run"
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    from geoseeq.repo.status import compute_status
+
+    try:
+        repo = GeoSeeqRepo.find(Path(path))
+    except NotARepoError:
+        raise click.ClickException("Error: not inside a GeoSeeq project directory")
+
+    knex = state.get_knex().set_auth_required()
+    repo_status = compute_status(repo)
+
+    candidates = repo_status.new_local + repo_status.modified_local
+    if sample:
+        candidates = [
+            p for p in candidates
+            if f"/{sample}/" in p or p.startswith(f"{sample}/")
+        ]
+
+    if not candidates:
+        click.echo("Nothing to push.")
+        return
+
+    sample_names = set()
+    for rel_path_str in candidates:
+        local_path = repo.root / rel_path_str
+        parts = Path(rel_path_str).parts
+        # Expected structure: samples/<sample_name>/<folder_name>/<file_name>
+        if len(parts) < 4 or parts[0] != "samples":
+            click.echo(f"Skipping {rel_path_str}: unexpected path structure.")
+            continue
+
+        s_name = parts[1]
+        f_name = parts[2]
+        file_name = "/".join(parts[3:])
+
+        mfile = upload_file(repo, local_path, s_name, f_name, file_name, knex)
+
+        manifest_sample = repo.manifest.samples[s_name]
+        if f_name not in manifest_sample.result_folders:
+            # The folder was just created on the server; record a placeholder UUID.
+            # A full manifest refresh (pull) will update this with the real UUID.
+            from geoseeq.id_constructors.from_uuids import sample_from_uuid
+            srv_sample = sample_from_uuid(knex, manifest_sample.uuid)
+            srv_folder = srv_sample.result_folder(f_name).idem()
+            manifest_sample.result_folders[f_name] = ManifestResultFolder(
+                uuid=srv_folder.uuid,
+                files={},
+            )
+
+        manifest_sample.result_folders[f_name].files[file_name] = mfile
+        sample_names.add(s_name)
+
+    if not sample_names:
+        click.echo("Nothing to push.")
+        return
+
+    n = len(candidates)
+    names_str = ", ".join(sorted(sample_names))
+    commit_msg = f"push: uploaded {n} files for {names_str}"
+    if message:
+        commit_msg += f" — {message}"
+
+    repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
+    repo.commit(commit_msg)
+
+    try:
+        repo.git_push()
+    except NonFastForwardError:
+        raise click.ClickException(
+            "Error: Remote manifest has been updated. Run 'geoseeq repo pull' first."
+        )
+
+    click.echo(f"Pushed {n} files for {names_str}")
+
+
+@cli_repo.command("new-sample")
+@use_common_state
+@click.option(
+    "--metadata-file",
+    "metadata_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to a JSON file with sample metadata",
+)
+@click.argument("name")
+@click.argument("path", default=".", required=False)
+def new_sample(state, name, metadata_file, path):
+    """Create a new sample in a GeoSeeq project.
+
+    Creates the sample on the server and adds it to the local manifest.  A
+    sample directory is also created under samples/<name>/ in the repo root.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Add a sample with no metadata
+    $ geoseeq repo new-sample "My Sample"
+
+    \b
+    # Add a sample with metadata from a file
+    $ geoseeq repo new-sample "My Sample" --metadata-file meta.json
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    try:
+        repo = GeoSeeqRepo.find(Path(path))
+    except NotARepoError:
+        raise click.ClickException("Error: not inside a GeoSeeq project directory")
+
+    metadata = {}
+    if metadata_file:
+        with open(metadata_file, "r") as fh:
+            metadata = json.load(fh)
+
+    knex = state.get_knex().set_auth_required()
+    repo.create_sample(name, metadata, knex)
+
+    sample_dir = repo.root / "samples" / name
+    sample_dir.mkdir(parents=True, exist_ok=True)
+
+    repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
+    repo.commit(f"new-sample: added {name}")
+
+    click.echo(f"Created sample '{name}'")
+
+
+@cli_repo.command("rm")
+@use_common_state
+@click.argument("path", default=".", required=False)
+def rm(state, path):
+    """Remove a local geoseeq repo directory.
+
+    Refuses to remove the repo if any local files are out of sync (new-local or
+    modified-local) to prevent accidental data loss.  Run 'geoseeq repo status'
+    to see what is out of sync, then push or discard the changes before removing.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Remove the repo in the current directory
+    $ geoseeq repo rm
+
+    \b
+    # Remove a repo at a specific path
+    $ geoseeq repo rm /path/to/my-project
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    from geoseeq.repo.status import compute_status
+
+    try:
+        repo = GeoSeeqRepo.find(Path(path))
+    except NotARepoError:
+        raise click.ClickException("Error: not inside a GeoSeeq project directory")
+
+    repo_status = compute_status(repo)
+    if repo_status.new_local or repo_status.modified_local:
+        raise click.ClickException(
+            "Error: project is not fully synced. "
+            "Run 'geoseeq repo status' to see what's out of sync."
+        )
+
+    root = repo.root
+    shutil.rmtree(root)
+    click.echo(f"Removed local repo at {root}")
