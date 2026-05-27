@@ -128,6 +128,7 @@ def test_push_uploads_new_local_files(tmp_path):
 
     runner = CliRunner()
     with (
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch("geoseeq.cli.repo.upload_file", side_effect=_fake_upload_file),
         patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull") as mock_pull,
         patch(
@@ -176,6 +177,7 @@ def test_push_does_not_write_git_commits(tmp_path):
 
     runner = CliRunner()
     with (
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch("geoseeq.cli.repo.upload_file", return_value=fake_mfile),
         patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull") as mock_pull,
         patch(
@@ -211,12 +213,13 @@ def test_push_nothing_to_push(tmp_path):
     disk_path.write_bytes(content)
 
     runner = CliRunner()
-    result = runner.invoke(
-        main,
-        ["repo", "push", str(tmp_path)],
-        env={"GEOSEEQ_API_TOKEN": "fake"},
-        catch_exceptions=False,
-    )
+    with patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"):
+        result = runner.invoke(
+            main,
+            ["repo", "push", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake"},
+            catch_exceptions=False,
+        )
 
     assert result.exit_code == 0, result.output
     assert "Nothing to push." in result.output
@@ -243,6 +246,7 @@ def test_new_sample_creates_server_and_directory(tmp_path):
 
     runner = CliRunner()
     with (
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch("geoseeq.cli.repo.GeoSeeqRepo.create_sample", _fake_create_sample),
         patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull") as mock_pull,
     ):
@@ -279,6 +283,7 @@ def test_new_sample_loads_metadata_from_file(tmp_path):
 
     runner = CliRunner()
     with (
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch("geoseeq.cli.repo.GeoSeeqRepo.create_sample", _fake_create_sample),
         patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull"),
     ):

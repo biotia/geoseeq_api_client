@@ -18,7 +18,7 @@ class RepoConfig:
     server_url: str
     auth_profile: str
     git_remote_url: str
-    audit_trail_mode: str = "off"
+    audit_trail_mode: str = "on"
 
     def to_dict(self) -> dict:
         """Serialize to a dict for JSON output."""
@@ -38,7 +38,7 @@ class RepoConfig:
             server_url=data["server_url"],
             auth_profile=data.get("auth_profile", ""),
             git_remote_url=data["git_remote_url"],
-            audit_trail_mode=data.get("audit_trail_mode", "off"),
+            audit_trail_mode=data.get("audit_trail_mode", "on"),
         )
 
     @classmethod

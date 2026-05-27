@@ -119,8 +119,12 @@ class TestRepoConfigAuditTrailMode:
         data = json.loads(path.read_text())
         assert data["audit_trail_mode"] == "off"
 
-    def test_config_defaults_to_off_for_old_files(self, tmp_path):
-        """Loading a config without audit_trail_mode defaults to 'off'."""
+    def test_config_defaults_to_on_for_old_files(self, tmp_path):
+        """Loading a config without audit_trail_mode defaults to 'on'.
+
+        An absent field means the server predates the feature, so git
+        operations (the original behaviour) should still work.
+        """
         old_config = {
             "project_uuid": "p-uuid",
             "server_url": "https://example.com",
@@ -131,7 +135,7 @@ class TestRepoConfigAuditTrailMode:
         path.write_text(json.dumps(old_config))
 
         loaded = RepoConfig.load(path)
-        assert loaded.audit_trail_mode == "off"
+        assert loaded.audit_trail_mode == "on"
 
     def test_config_round_trip_on(self, tmp_path):
         """audit_trail_mode='on' survives a save/load round trip."""
@@ -317,6 +321,48 @@ class TestPullAuditTrailDisabled:
         )
         assert config_data["audit_trail_mode"] == "off"
 
+    def test_pull_downloads_new_files_when_off(self, tmp_path):
+        """pull with mode='off' still downloads newly-appeared files.
+
+        The download loop must execute regardless of audit trail mode;
+        only the manifest-fetch mechanism changes (API instead of git).
+        """
+        new_file_info = {
+            "checksum": "md5:abc123",
+            "local_path": "samples/Sample1/reads/new.fastq.gz",
+        }
+        initial_md = _make_manifest_dict({"Sample1": {}})
+        updated_md = _make_manifest_dict({
+            "Sample1": {
+                "reads": {
+                    "new.fastq.gz": new_file_info,
+                },
+            },
+        })
+        _build_repo(tmp_path, initial_md, audit_trail_mode="off")
+
+        runner = CliRunner()
+        with (
+            patch(
+                "geoseeq.cli.repo._fetch_audit_trail_mode", return_value="off",
+            ),
+            patch(
+                "geoseeq.cli.repo._fetch_manifest_from_api",
+                return_value=updated_md,
+            ),
+            patch("geoseeq.repo.sync.download_file") as mock_download,
+        ):
+            result = runner.invoke(
+                main,
+                ["repo", "pull", str(tmp_path)],
+                env={"GEOSEEQ_API_TOKEN": "fake"},
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert mock_download.call_count == 1
+        assert "Pulled 1 new files" in result.output
+
 
 # ---------------------------------------------------------------------------
 # push tests — audit trail disabled
@@ -354,6 +400,9 @@ class TestPushAuditTrailDisabled:
 
         runner = CliRunner()
         with (
+            patch(
+                "geoseeq.cli.repo._fetch_audit_trail_mode", return_value="off",
+            ),
             patch("geoseeq.cli.repo.upload_file", return_value=fake_mfile),
             patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull") as mock_pull,
             patch(
@@ -397,6 +446,9 @@ class TestNewSampleAuditTrailDisabled:
 
         runner = CliRunner()
         with (
+            patch(
+                "geoseeq.cli.repo._fetch_audit_trail_mode", return_value="off",
+            ),
             patch(
                 "geoseeq.cli.repo.GeoSeeqRepo.create_sample",
                 _fake_create_sample,

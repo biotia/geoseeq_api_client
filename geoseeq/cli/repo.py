@@ -35,11 +35,17 @@ def _warn_audit_trail_disabled() -> None:
 def _fetch_audit_trail_mode(knex, project_uuid: str) -> str:
     """Fetch the audit_trail_mode for a project from the API.
 
-    Returns ``"on"`` or ``"off"``.  Defaults to ``"off"`` if the server
-    response does not include the field (backward compatibility).
+    Returns ``"on"`` or ``"off"``.  Defaults to ``"on"`` when the field
+    is absent — an absent field means the server predates the feature, so
+    we preserve existing behaviour (git operations work).
+
+    Note: this makes a dedicated ``GET sample_groups/{uuid}`` call rather
+    than reusing the project object from ``handle_project_id`` because
+    that object's ``remote_fields`` do not include ``audit_trail_mode``
+    and its ``.blob`` may not be populated at the point we need the value.
     """
     blob = knex.get(f"sample_groups/{project_uuid}")
-    return blob.get("audit_trail_mode", "off")
+    return blob.get("audit_trail_mode", "on")
 
 
 def _fetch_manifest_from_api(knex, project_uuid: str) -> dict:
@@ -102,7 +108,7 @@ def clone(state, project_name, path):
     if audit_mode == "on":
         _git_clone(git_remote_url, geoseeq_dir, state.api_token, server_url)
     else:
-        geoseeq_dir.mkdir(parents=True, exist_ok=True)
+        geoseeq_dir.mkdir(exist_ok=True)
         manifest_data = _fetch_manifest_from_api(knex, proj.uuid)
         _write_manifest(geoseeq_dir, manifest_data)
         _warn_audit_trail_disabled()
@@ -266,7 +272,7 @@ def _write_config(
     server_url: str,
     auth_profile: str,
     git_remote_url: str,
-    audit_trail_mode: str = "off",
+    audit_trail_mode: str = "on",
 ) -> None:
     """Write config.json into the .geoseeq/ directory."""
     config = RepoConfig(
@@ -613,6 +619,10 @@ def push(state, sample, path):
         raise click.ClickException("Error: not inside a GeoSeeq project directory")
 
     knex = state.get_knex().set_auth_required()
+
+    audit_mode = _fetch_audit_trail_mode(knex, repo.config.project_uuid)
+    _update_config_audit_mode(repo, audit_mode)
+
     repo_status = compute_status(repo)
 
     candidates = repo_status.new_local + repo_status.modified_local
@@ -664,7 +674,7 @@ def push(state, sample, path):
     names_str = ", ".join(sorted(sample_names))
     repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
 
-    if repo.config.audit_trail_mode == "on":
+    if audit_mode == "on":
         repo.git_pull()
     else:
         _warn_audit_trail_disabled()
@@ -717,6 +727,10 @@ def new_sample(state, name, metadata_file, path):
             metadata = json.load(fh)
 
     knex = state.get_knex().set_auth_required()
+
+    audit_mode = _fetch_audit_trail_mode(knex, repo.config.project_uuid)
+    _update_config_audit_mode(repo, audit_mode)
+
     repo.create_sample(name, metadata, knex)
 
     sample_dir = repo.root / "samples" / name
@@ -724,7 +738,7 @@ def new_sample(state, name, metadata_file, path):
 
     repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
 
-    if repo.config.audit_trail_mode == "on":
+    if audit_mode == "on":
         repo.git_pull()
     else:
         _warn_audit_trail_disabled()
