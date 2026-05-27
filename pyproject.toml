@@ -43,3 +43,9 @@ geoseeq = "geoseeq.cli:main"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=geoseeq"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-cov>=5.0.0",
+]
