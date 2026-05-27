@@ -65,7 +65,7 @@ def _make_manifest_dict(samples: dict | None = None) -> dict:
     }
 
 
-def _build_repo(tmp_path: Path, manifest_dict: dict) -> GeoSeeqRepo:
+def _build_repo(tmp_path: Path, manifest_dict: dict, audit_trail_mode: str = "on") -> GeoSeeqRepo:
     """Create a minimal geoseeq repo under *tmp_path* and return a GeoSeeqRepo handle."""
     geoseeq_dir = tmp_path / ".geoseeq"
     geoseeq_dir.mkdir()
@@ -75,6 +75,7 @@ def _build_repo(tmp_path: Path, manifest_dict: dict) -> GeoSeeqRepo:
         server_url="https://backend.geoseeq.com",
         auth_profile="default",
         git_remote_url="https://backend.geoseeq.com/api/v1/projects/proj-uuid/git",
+        audit_trail_mode=audit_trail_mode,
     )
     config.save(geoseeq_dir / "config.json")
 

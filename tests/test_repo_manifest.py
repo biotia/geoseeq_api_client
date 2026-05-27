@@ -371,6 +371,7 @@ def test_clone_creates_directory_structure(tmp_path):
             "geoseeq.cli.repo.handle_project_id",
             return_value=_make_fake_project(),
         ),
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch(
             "geoseeq.cli.repo._git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
@@ -399,6 +400,7 @@ def test_clone_writes_config_json(tmp_path):
             "geoseeq.cli.repo.handle_project_id",
             return_value=_make_fake_project(),
         ),
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch(
             "geoseeq.cli.repo._git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
@@ -426,6 +428,7 @@ def test_clone_gitignores_config_json(tmp_path):
             "geoseeq.cli.repo.handle_project_id",
             return_value=_make_fake_project(),
         ),
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch(
             "geoseeq.cli.repo._git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
@@ -446,9 +449,12 @@ def test_clone_fails_if_repo_already_exists(tmp_path):
     (clone_path / ".geoseeq").mkdir(parents=True)
     runner = CliRunner()
 
-    with patch(
-        "geoseeq.cli.repo.handle_project_id",
-        return_value=_make_fake_project(),
+    with (
+        patch(
+            "geoseeq.cli.repo.handle_project_id",
+            return_value=_make_fake_project(),
+        ),
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
     ):
         result = runner.invoke(
             main,
@@ -485,6 +491,7 @@ def test_clone_git_error_does_not_leak_token(tmp_path):
             "geoseeq.cli.repo.handle_project_id",
             return_value=_make_fake_project(),
         ),
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch(
             "geoseeq.cli.repo._build_authenticated_url",
             return_value="https://x:secret-token@host/repo.git",
@@ -515,6 +522,7 @@ def test_clone_default_path_is_last_component(tmp_path):
             "geoseeq.cli.repo.handle_project_id",
             return_value=_make_fake_project(),
         ),
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch(
             "geoseeq.cli.repo._git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
@@ -538,6 +546,7 @@ def test_clone_stores_auth_profile_in_config(tmp_path):
             "geoseeq.cli.repo.handle_project_id",
             return_value=_make_fake_project(),
         ),
+        patch("geoseeq.cli.repo._fetch_audit_trail_mode", return_value="on"),
         patch(
             "geoseeq.cli.repo._git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
