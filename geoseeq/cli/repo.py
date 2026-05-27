@@ -511,9 +511,8 @@ def offload_cmd(state, path, sample, file_filter):
 @cli_repo.command("push")
 @use_common_state
 @click.option("--sample", "-s", default=None, help="Limit push to one sample")
-@click.option("--message", "-m", default=None, help="Optional commit message suffix")
 @click.argument("path", default=".", required=False)
-def push(state, sample, message, path):
+def push(state, sample, path):
     """Upload new-local and modified-local files to GeoSeeq.
 
     Scans the repo status, uploads every file that is new or modified locally
@@ -531,10 +530,6 @@ def push(state, sample, message, path):
     \b
     # Push only files for a specific sample
     $ geoseeq repo push --sample MySample
-
-    \b
-    # Push with a custom commit message
-    $ geoseeq repo push --message "add baseline sequencing run"
 
     ---
 
@@ -598,10 +593,6 @@ def push(state, sample, message, path):
 
     n = len(candidates)
     names_str = ", ".join(sorted(sample_names))
-    commit_msg = f"push: uploaded {n} files for {names_str}"
-    if message:
-        commit_msg += f" — {message}"
-
     repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
     repo.git_pull()
 

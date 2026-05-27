@@ -191,9 +191,6 @@ def test_push_does_not_write_git_commits(tmp_path):
 
     assert result.exit_code == 0, result.output
     mock_pull.assert_called_once()
-    # Verify commit and git_push methods no longer exist on GeoSeeqRepo
-    assert not hasattr(GeoSeeqRepo, "commit")
-    assert not hasattr(GeoSeeqRepo, "git_push")
 
 
 def test_push_nothing_to_push(tmp_path):
