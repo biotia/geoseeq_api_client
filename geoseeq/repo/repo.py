@@ -8,10 +8,6 @@ from .config import RepoConfig
 from .manifest import Manifest, ManifestSample
 
 
-class NonFastForwardError(Exception):
-    """Raised when a git push is rejected because it is not a fast-forward."""
-
-
 class NotARepoError(Exception):
     """Raised when no .geoseeq/config.json is found in the directory tree."""
 
@@ -61,43 +57,6 @@ class GeoSeeqRepo:
                 )
             candidate = parent
 
-    def commit(self, message: str) -> None:
-        """Stage manifest.json and create a git commit inside .geoseeq/.
-
-        Uses check=True so subprocess.CalledProcessError propagates to the
-        caller intentionally — no special error type is defined for commit
-        failures.
-        """
-        geoseeq_dir = self.root / ".geoseeq"
-        subprocess.run(
-            ["git", "-C", str(geoseeq_dir), "add", "manifest.json"],
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(geoseeq_dir), "commit", "-m", message],
-            check=True,
-        )
-
-    def git_push(self) -> None:
-        """Push to origin main.
-
-        Raises NonFastForwardError if the push is rejected as non-fast-forward.
-        Raises subprocess.CalledProcessError for other failures.
-        """
-        geoseeq_dir = self.root / ".geoseeq"
-        result = subprocess.run(
-            ["git", "-C", str(geoseeq_dir), "push", "origin", "main"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            if "non-fast-forward" in result.stderr or "rejected" in result.stderr:
-                raise NonFastForwardError(result.stderr)
-            raise subprocess.CalledProcessError(
-                result.returncode, result.args, result.stderr
-            )
-
     def create_sample(self, name: str, metadata: dict, knex) -> str:
         """Create a sample on the server and add it to the local manifest.
 
@@ -105,8 +64,7 @@ class GeoSeeqRepo:
         *metadata*, and saves it to the server.  Then inserts a ManifestSample
         entry into ``self.manifest.samples``.
 
-        Returns the new sample UUID.  Does NOT commit — the caller is
-        responsible for calling ``repo.commit()`` after updating the manifest.
+        Returns the new sample UUID.
         """
         from geoseeq.id_constructors.from_uuids import project_from_uuid
 
@@ -124,8 +82,7 @@ class GeoSeeqRepo:
         """Run git pull --rebase origin main inside .geoseeq/.
 
         Uses check=True so subprocess.CalledProcessError propagates to the
-        caller intentionally — no special error type is defined for pull
-        failures (unlike push, which raises NonFastForwardError).
+        caller intentionally.
         """
         geoseeq_dir = self.root / ".geoseeq"
         subprocess.run(

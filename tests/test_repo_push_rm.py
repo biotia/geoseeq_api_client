@@ -16,7 +16,6 @@ from geoseeq.repo import (
     ManifestFile,
     ManifestResultFolder,
     ManifestSample,
-    NonFastForwardError,
     RepoConfig,
 )
 from geoseeq.repo.status import RepoStatus
@@ -94,7 +93,7 @@ def _build_repo(tmp_path: Path, manifest_dict: dict) -> GeoSeeqRepo:
 
 
 def test_push_uploads_new_local_files(tmp_path):
-    """push uploads new-local files, updates the manifest, and calls repo.commit."""
+    """push uploads new-local files, updates the manifest, and calls git_pull."""
     content = b"new data"
     checksum = f"md5:{_md5_hex(content)}"
     local_path_str = "samples/Sample1/reads/newfile.fastq.gz"
@@ -126,16 +125,10 @@ def test_push_uploads_new_local_files(tmp_path):
     mock_srv_sample = MagicMock()
     mock_srv_sample.result_folder.return_value.idem.return_value = mock_srv_folder
 
-    committed = []
-
-    def _fake_commit(msg):
-        committed.append(msg)
-
     runner = CliRunner()
     with (
         patch("geoseeq.cli.repo.upload_file", side_effect=_fake_upload_file),
-        patch("geoseeq.cli.repo.GeoSeeqRepo.commit", side_effect=_fake_commit),
-        patch("geoseeq.cli.repo.GeoSeeqRepo.git_push"),
+        patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull") as mock_pull,
         patch(
             "geoseeq.id_constructors.from_uuids.sample_from_uuid",
             return_value=mock_srv_sample,
@@ -151,13 +144,12 @@ def test_push_uploads_new_local_files(tmp_path):
     assert result.exit_code == 0, result.output
     assert len(uploaded) == 1
     assert uploaded[0] == ("Sample1", "reads", "newfile.fastq.gz")
-    assert len(committed) == 1
-    assert "Sample1" in committed[0]
+    mock_pull.assert_called_once()
     assert "Pushed" in result.output
 
 
-def test_push_non_fast_forward_error(tmp_path):
-    """push prints the exact friendly error string on NonFastForwardError."""
+def test_push_does_not_write_git_commits(tmp_path):
+    """push never calls commit() or git_push() — the server is sole commit authority."""
     content = b"data"
     local_path_str = "samples/Sample1/reads/file.fastq.gz"
 
@@ -184,11 +176,7 @@ def test_push_non_fast_forward_error(tmp_path):
     runner = CliRunner()
     with (
         patch("geoseeq.cli.repo.upload_file", return_value=fake_mfile),
-        patch("geoseeq.cli.repo.GeoSeeqRepo.commit"),
-        patch(
-            "geoseeq.cli.repo.GeoSeeqRepo.git_push",
-            side_effect=NonFastForwardError("rejected"),
-        ),
+        patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull") as mock_pull,
         patch(
             "geoseeq.id_constructors.from_uuids.sample_from_uuid",
             return_value=mock_srv_sample,
@@ -201,9 +189,11 @@ def test_push_non_fast_forward_error(tmp_path):
             catch_exceptions=False,
         )
 
-    assert result.exit_code != 0
-    assert "Remote manifest has been updated" in result.output
-    assert "geoseeq repo pull" in result.output
+    assert result.exit_code == 0, result.output
+    mock_pull.assert_called_once()
+    # Verify commit and git_push methods no longer exist on GeoSeeqRepo
+    assert not hasattr(GeoSeeqRepo, "commit")
+    assert not hasattr(GeoSeeqRepo, "git_push")
 
 
 def test_push_nothing_to_push(tmp_path):
@@ -240,14 +230,9 @@ def test_push_nothing_to_push(tmp_path):
 
 
 def test_new_sample_creates_server_and_directory(tmp_path):
-    """new-sample calls create_sample, creates the local directory, and commits."""
+    """new-sample calls create_sample, creates the local directory, and calls git_pull."""
     md = _make_manifest_dict({})
     repo = _build_repo(tmp_path, md)
-
-    committed = []
-
-    def _fake_commit(msg):
-        committed.append(msg)
 
     def _fake_create_sample(self, name, metadata, knex):
         """Stub create_sample: add a ManifestSample entry."""
@@ -261,7 +246,7 @@ def test_new_sample_creates_server_and_directory(tmp_path):
     runner = CliRunner()
     with (
         patch("geoseeq.cli.repo.GeoSeeqRepo.create_sample", _fake_create_sample),
-        patch("geoseeq.cli.repo.GeoSeeqRepo.commit", side_effect=_fake_commit),
+        patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull") as mock_pull,
     ):
         result = runner.invoke(
             main,
@@ -273,8 +258,7 @@ def test_new_sample_creates_server_and_directory(tmp_path):
     assert result.exit_code == 0, result.output
     assert "Created sample 'MySample'" in result.output
     assert (tmp_path / "samples" / "MySample").is_dir()
-    assert len(committed) == 1
-    assert "MySample" in committed[0]
+    mock_pull.assert_called_once()
 
 
 def test_new_sample_loads_metadata_from_file(tmp_path):
@@ -298,7 +282,7 @@ def test_new_sample_loads_metadata_from_file(tmp_path):
     runner = CliRunner()
     with (
         patch("geoseeq.cli.repo.GeoSeeqRepo.create_sample", _fake_create_sample),
-        patch("geoseeq.cli.repo.GeoSeeqRepo.commit"),
+        patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull"),
     ):
         result = runner.invoke(
             main,

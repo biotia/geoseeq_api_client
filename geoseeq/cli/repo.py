@@ -15,7 +15,7 @@ import click
 from geoseeq.repo import GeoSeeqRepo, ManifestFile, ManifestResultFolder
 from geoseeq.repo.config import RepoConfig
 from geoseeq.repo.pipeline_config import write_pipeline_configs
-from geoseeq.repo.repo import NonFastForwardError, NotARepoError
+from geoseeq.repo.repo import NotARepoError
 from geoseeq.repo.sync import upload_file
 
 from .shared_params import use_common_state
@@ -517,9 +517,8 @@ def push(state, sample, message, path):
     """Upload new-local and modified-local files to GeoSeeq.
 
     Scans the repo status, uploads every file that is new or modified locally
-    (optionally filtered to --sample), updates the manifest in memory, commits,
-    then git-pushes to the remote.  Non-fast-forward rejections print a
-    friendly error rather than a Python traceback.
+    (optionally filtered to --sample), updates the manifest, then pulls the
+    server's updated commit.
 
     ---
 
@@ -604,14 +603,7 @@ def push(state, sample, message, path):
         commit_msg += f" — {message}"
 
     repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
-    repo.commit(commit_msg)
-
-    try:
-        repo.git_push()
-    except NonFastForwardError:
-        raise click.ClickException(
-            "Error: Remote manifest has been updated. Run 'geoseeq repo pull' first."
-        )
+    repo.git_pull()
 
     click.echo(f"Pushed {n} files for {names_str}")
 
@@ -667,7 +659,7 @@ def new_sample(state, name, metadata_file, path):
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
-    repo.commit(f"new-sample: added {name}")
+    repo.git_pull()
 
     click.echo(f"Created sample '{name}'")
 

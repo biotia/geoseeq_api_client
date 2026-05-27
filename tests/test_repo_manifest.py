@@ -18,7 +18,6 @@ from geoseeq.repo import (
     ManifestFile,
     ManifestResultFolder,
     ManifestSample,
-    NonFastForwardError,
     NotARepoError,
     RepoConfig,
 )
@@ -267,41 +266,6 @@ def test_geoseeq_repo_config_lazy_load(tmp_path_with_repo):
 # ---------------------------------------------------------------------------
 # GeoSeeqRepo git operations tests (subprocess mocked)
 # ---------------------------------------------------------------------------
-
-
-def test_geoseeq_repo_commit(tmp_path_with_repo):
-    """GeoSeeqRepo.commit() calls git add and git commit."""
-    repo = GeoSeeqRepo(tmp_path_with_repo)
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0)
-        repo.commit("test commit message")
-
-    calls = mock_run.call_args_list
-    assert len(calls) == 2
-    assert "add" in calls[0][0][0]
-    assert "manifest.json" in calls[0][0][0]
-    assert "commit" in calls[1][0][0]
-    assert "test commit message" in calls[1][0][0]
-
-
-def test_geoseeq_repo_git_push_success(tmp_path_with_repo):
-    """GeoSeeqRepo.git_push() succeeds when git returns 0."""
-    repo = GeoSeeqRepo(tmp_path_with_repo)
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0, stderr="")
-        repo.git_push()  # should not raise
-
-
-def test_geoseeq_repo_git_push_non_fast_forward(tmp_path_with_repo):
-    """GeoSeeqRepo.git_push() raises NonFastForwardError on rejected push."""
-    repo = GeoSeeqRepo(tmp_path_with_repo)
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stderr="error: failed to push some refs (non-fast-forward)",
-        )
-        with pytest.raises(NonFastForwardError):
-            repo.git_push()
 
 
 def test_geoseeq_repo_git_pull(tmp_path_with_repo):
