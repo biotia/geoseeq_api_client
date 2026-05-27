@@ -21,6 +21,35 @@ from geoseeq.repo.sync import upload_file
 from .shared_params import use_common_state
 from .shared_params.id_handlers import handle_project_id
 
+_AUDIT_TRAIL_DISABLED_MSG = (
+    "Note: Audit trail is disabled for this project. "
+    "Git history is not available."
+)
+
+
+def _warn_audit_trail_disabled() -> None:
+    """Print a notice to stderr that audit trail is disabled."""
+    click.echo(_AUDIT_TRAIL_DISABLED_MSG, err=True)
+
+
+def _fetch_audit_trail_mode(knex, project_uuid: str) -> str:
+    """Fetch the audit_trail_mode for a project from the API.
+
+    Returns ``"on"`` or ``"off"``.  Defaults to ``"off"`` if the server
+    response does not include the field (backward compatibility).
+    """
+    blob = knex.get(f"sample_groups/{project_uuid}")
+    return blob.get("audit_trail_mode", "off")
+
+
+def _fetch_manifest_from_api(knex, project_uuid: str) -> dict:
+    """Fetch the current manifest dict for a project from the API.
+
+    Used when the audit trail is disabled and there is no git repo to
+    clone/pull from.
+    """
+    return knex.get(f"v1/projects/{project_uuid}/manifest/")
+
 
 @click.group("repo")
 def cli_repo():
@@ -57,6 +86,7 @@ def clone(state, project_name, path):
     knex = state.get_knex().set_auth_required()
 
     proj = handle_project_id(knex, project_name, create=False)
+    audit_mode = _fetch_audit_trail_mode(knex, proj.uuid)
 
     server_url = state.endpoint.rstrip("/")
     git_remote_url = f"{server_url}/api/v1/projects/{proj.uuid}/git"
@@ -68,8 +98,19 @@ def clone(state, project_name, path):
         raise click.ClickException("Directory already contains a geoseeq repo.")
 
     _create_repo_directories(clone_path)
-    _git_clone(git_remote_url, geoseeq_dir, state.api_token, server_url)
-    _write_config(geoseeq_dir, proj.uuid, server_url, state.profile, git_remote_url)
+
+    if audit_mode == "on":
+        _git_clone(git_remote_url, geoseeq_dir, state.api_token, server_url)
+    else:
+        geoseeq_dir.mkdir(parents=True, exist_ok=True)
+        manifest_data = _fetch_manifest_from_api(knex, proj.uuid)
+        _write_manifest(geoseeq_dir, manifest_data)
+        _warn_audit_trail_disabled()
+
+    _write_config(
+        geoseeq_dir, proj.uuid, server_url, state.profile,
+        git_remote_url, audit_trail_mode=audit_mode,
+    )
     _ensure_config_gitignored(geoseeq_dir)
 
     repo = GeoSeeqRepo(clone_path)
@@ -116,6 +157,10 @@ def log(state, limit, offset, as_json, path):
         repo = GeoSeeqRepo.find(Path(path))
     except NotARepoError:
         raise click.ClickException("Error: not inside a GeoSeeq project directory")
+
+    if repo.config.audit_trail_mode == "off":
+        click.echo("Audit trail is disabled for this project.")
+        return
 
     project_uuid = repo.config.project_uuid
     server_url = repo.config.server_url.rstrip("/")
@@ -202,12 +247,26 @@ def _git_clone(remote_url: str, geoseeq_dir: Path, token: str | None, server_url
         )
 
 
+def _update_config_audit_mode(repo, audit_trail_mode: str) -> None:
+    """Persist a refreshed audit_trail_mode into the repo's config.json."""
+    repo.config.audit_trail_mode = audit_trail_mode
+    repo.config.save(repo.root / ".geoseeq" / "config.json")
+
+
+def _write_manifest(geoseeq_dir: Path, manifest_data: dict) -> None:
+    """Write a manifest dict as manifest.json into the .geoseeq/ directory."""
+    manifest_path = geoseeq_dir / "manifest.json"
+    with open(manifest_path, "w") as fh:
+        fh.write(json.dumps(manifest_data, indent=2))
+
+
 def _write_config(
     geoseeq_dir: Path,
     project_uuid: str,
     server_url: str,
     auth_profile: str,
     git_remote_url: str,
+    audit_trail_mode: str = "off",
 ) -> None:
     """Write config.json into the .geoseeq/ directory."""
     config = RepoConfig(
@@ -215,6 +274,7 @@ def _write_config(
         server_url=server_url,
         auth_profile=auth_profile,
         git_remote_url=git_remote_url,
+        audit_trail_mode=audit_trail_mode,
     )
     config.save(geoseeq_dir / "config.json")
 
@@ -357,6 +417,9 @@ def pull(state, path, sample, file_filter):
 
     knex = state.get_knex().set_auth_required()
 
+    audit_mode = _fetch_audit_trail_mode(knex, repo.config.project_uuid)
+    _update_config_audit_mode(repo, audit_mode)
+
     old_paths = {
         mfile.local_path
         for _sname, sample_obj in repo.manifest.samples.items()
@@ -364,7 +427,13 @@ def pull(state, path, sample, file_filter):
         for mfile in folder.files.values()
     }
 
-    repo.git_pull()
+    if audit_mode == "on":
+        repo.git_pull()
+    else:
+        manifest_data = _fetch_manifest_from_api(knex, repo.config.project_uuid)
+        _write_manifest(repo.root / ".geoseeq", manifest_data)
+        _warn_audit_trail_disabled()
+
     repo._manifest = None  # invalidate the cached manifest
 
     new_files = [
@@ -594,7 +663,11 @@ def push(state, sample, path):
     n = len(candidates)
     names_str = ", ".join(sorted(sample_names))
     repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
-    repo.git_pull()
+
+    if repo.config.audit_trail_mode == "on":
+        repo.git_pull()
+    else:
+        _warn_audit_trail_disabled()
 
     click.echo(f"Pushed {n} files for {names_str}")
 
@@ -650,7 +723,11 @@ def new_sample(state, name, metadata_file, path):
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     repo.manifest.save(repo.root / ".geoseeq" / "manifest.json")
-    repo.git_pull()
+
+    if repo.config.audit_trail_mode == "on":
+        repo.git_pull()
+    else:
+        _warn_audit_trail_disabled()
 
     click.echo(f"Created sample '{name}'")
 
