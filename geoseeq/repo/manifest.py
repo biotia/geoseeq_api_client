@@ -3,45 +3,54 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from os.path import basename
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Iterator, NamedTuple, Optional
 
 
 @dataclass
 class ManifestFile:
-    """Represents a single file tracked in the manifest."""
+    """Represents a single file tracked in the manifest.
+
+    Mirrors the per-file payload the geoseeq_server writes into manifest.json:
+    ``{uuid, checksum, size_bytes, stored_data}``.  ``stored_data`` is the
+    server's storage descriptor and always carries a ``"uri"`` key pointing at
+    the file's cloud location (e.g. ``s3://bucket/Sample1_R1.fastq.gz``).
+    """
 
     uuid: str
-    brn: str
     checksum: str
     size_bytes: int
-    local_path: str
+    stored_data: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Serialize to a dict for JSON output."""
         return {
             "uuid": self.uuid,
-            "brn": self.brn,
             "checksum": self.checksum,
             "size_bytes": self.size_bytes,
-            "local_path": self.local_path,
+            "stored_data": self.stored_data,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> ManifestFile:
-        """Deserialize from a dict."""
+        """Deserialize from a dict, ignoring any unknown keys."""
         return cls(
             uuid=data["uuid"],
-            brn=data["brn"],
             checksum=data["checksum"],
             size_bytes=data["size_bytes"],
-            local_path=data["local_path"],
+            stored_data=data.get("stored_data", {}),
         )
+
+    @property
+    def filename(self) -> str:
+        """The on-disk file name: basename of the stored cloud URI."""
+        return basename(self.stored_data.get("uri", ""))
 
 
 @dataclass
 class ManifestResultFolder:
-    """Represents a result folder (e.g. 'reads') tracked in the manifest."""
+    """Represents a result folder (e.g. 'raw_reads') tracked in the manifest."""
 
     uuid: str
     files: Dict[str, ManifestFile] = field(default_factory=dict)
@@ -95,6 +104,21 @@ class ManifestSample:
         )
 
 
+class ManifestFileEntry(NamedTuple):
+    """A flattened view of one file in the manifest plus its derived local path.
+
+    ``local_path`` is the repo-root-relative on-disk location for the file and is
+    computed in exactly one place (``Manifest.iter_files``) so every consumer
+    agrees on where a file lives.
+    """
+
+    sample_name: Optional[str]  # None for project-level files
+    module_name: str
+    field_name: str
+    mfile: ManifestFile
+    local_path: str
+
+
 @dataclass
 class Manifest:
     """Top-level manifest for a geoseeq repo clone."""
@@ -132,6 +156,27 @@ class Manifest:
             samples=samples,
             project_results=data.get("project_results", {}),
         )
+
+    def iter_files(self) -> Iterator[ManifestFileEntry]:
+        """Yield every file in the manifest with its derived local path.
+
+        This is the single source of truth for a file's on-disk location.
+        Sample files live under ``samples/<sample>/<module>/<filename>`` and
+        project-level files under ``project_results/<module>/<filename>``, where
+        ``filename`` is the basename of the file's stored cloud URI.
+        """
+        for sample_name, sample in self.samples.items():
+            for module_name, folder in sample.result_folders.items():
+                for field_name, mfile in folder.files.items():
+                    lp = f"samples/{sample_name}/{module_name}/{mfile.filename}"
+                    yield ManifestFileEntry(
+                        sample_name, module_name, field_name, mfile, lp
+                    )
+        for module_name, folder_dict in self.project_results.items():
+            folder = ManifestResultFolder.from_dict(folder_dict)
+            for field_name, mfile in folder.files.items():
+                lp = f"project_results/{module_name}/{mfile.filename}"
+                yield ManifestFileEntry(None, module_name, field_name, mfile, lp)
 
     @classmethod
     def load(cls, path: Path) -> Manifest:
