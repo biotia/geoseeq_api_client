@@ -7,6 +7,7 @@ Covers the version-aware change-detection scheme (GRF-09):
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -265,6 +266,85 @@ def test_compute_status_outdated(tmp_path):
     # Unmodified locally, so it is also reported as downloaded (independent lists).
     assert local_path in status.downloaded
     assert local_path not in status.modified_local
+
+
+def test_outdated_file_no_longer_outdated_after_redownload(tmp_path):
+    """Re-downloading an outdated file clears it from outdated and marks it downloaded.
+
+    Proves the end-to-end contract: a file recorded under an old server version
+    (v1) whose manifest now reports v2 is initially ``outdated``.  After a
+    download writes new bytes and records state for v2 (via the same
+    ``record_for`` path the CLI/SDK use), the file is no longer outdated and is
+    classified ``downloaded`` against the new content's xxh3.
+    """
+    old_content = b"old version content"
+    new_content = b"v2 fetched content differs"
+    repo, entry, local_path = _single_file_repo(tmp_path, "file.fastq.gz", "v2")
+    disk_path = _write_disk_file(repo, local_path, old_content)
+    # Recorded under the OLD server version; manifest now reports v2.
+    _seed_state(repo, local_path, "v1")
+
+    before = repo.compute_status()
+    assert local_path in before.outdated
+    assert local_path in before.downloaded
+
+    # Simulate a download that writes NEW bytes and records state for v2,
+    # mirroring reality: download_file fetches by uuid then calls record_for.
+    mock_result_file = MagicMock()
+
+    def _fake_download(filename, cache):
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        Path(filename).write_bytes(new_content)
+
+    mock_result_file.download.side_effect = _fake_download
+    knex = MagicMock()
+
+    with patch(
+        "geoseeq.id_constructors.from_uuids.result_file_from_uuid",
+        return_value=mock_result_file,
+    ):
+        repo.download_file(entry, knex)
+
+    # The recorded state now reflects v2 and the new content's hash.
+    record = RepoState.load(tmp_path / ".geoseeq").get(local_path)
+    assert record["version_replicate"] == "v2"
+    assert record["xxh3"] == fast_hash(disk_path)
+
+    after = repo.compute_status()
+    assert after.outdated == []
+    assert local_path in after.downloaded
+    assert local_path not in after.modified_local
+
+
+def test_touch_refresh_keeps_downloaded_and_refreshes_recorded_mtime(tmp_path):
+    """A touched-but-unchanged file stays downloaded and its recorded mtime is refreshed.
+
+    When only the mtime changes (content byte-identical), ``_is_modified`` must
+    fall back to the xxh3 hash, find it matches, and refresh the recorded mtime
+    so the next status read can use the cheap stat fast-path.  Asserts both the
+    classification (``downloaded``, not ``modified_local``) and that the
+    persisted state.json record's ``mtime`` was updated to the new mtime.
+    """
+    repo, _entry, local_path = _single_file_repo(tmp_path, "file.fastq.gz", "v1")
+    disk_path = _write_disk_file(repo, local_path, b"identical content bytes")
+    _seed_state(repo, local_path, "v1")
+
+    recorded_mtime = RepoState.load(tmp_path / ".geoseeq").get(local_path)["mtime"]
+
+    # Touch the file: change mtime without changing content.
+    new_mtime = recorded_mtime + 500.0
+    os.utime(disk_path, (new_mtime, new_mtime))
+    assert disk_path.stat().st_mtime != recorded_mtime
+
+    status = repo.compute_status()
+
+    assert local_path in status.downloaded
+    assert local_path not in status.modified_local
+
+    # The refreshed mtime was persisted, so the next status uses the stat fast-path.
+    refreshed = RepoState.load(tmp_path / ".geoseeq").get(local_path)
+    assert refreshed["mtime"] == disk_path.stat().st_mtime
+    assert refreshed["mtime"] != recorded_mtime
 
 
 def test_compute_status_present_without_record_is_downloaded(tmp_path):
