@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from geoseeq.repo import GeoSeeqRepo, RepoExistsError
+from geoseeq.repo.state import RepoState, record_for
 
 from .progress_bar import PBarManager
 from .shared_params import use_common_state, yes_option
@@ -204,11 +205,19 @@ def status_cmd(state, path, sample):
         repo_status.modified_local = [
             p for p in repo_status.modified_local if p in sample_paths
         ]
+        repo_status.outdated = [
+            p for p in repo_status.outdated if p in sample_paths
+        ]
         repo_status.new_local = [
             p for p in repo_status.new_local if p.startswith(sample_prefix)
         ]
 
-    if not (repo_status.absent or repo_status.new_local or repo_status.modified_local):
+    if not (
+        repo_status.absent
+        or repo_status.new_local
+        or repo_status.modified_local
+        or repo_status.outdated
+    ):
         click.echo(f'Project "{project_name}" is fully synced.')
         return
 
@@ -216,6 +225,10 @@ def status_cmd(state, path, sample):
     if repo_status.absent:
         click.echo("absent (not downloaded):")
         for p in repo_status.absent:
+            click.echo(f"  {p}")
+    if repo_status.outdated:
+        click.echo("\noutdated (newer version on server):")
+        for p in repo_status.outdated:
             click.echo(f"  {p}")
     if repo_status.new_local:
         click.echo("\nnew-local (not in manifest):")
@@ -258,24 +271,30 @@ def pull(state, path, sample, file_filter):
     """
     repo = GeoSeeqRepo.find(Path(path))
 
-    old_paths = {entry.local_path for entry in repo.manifest.iter_files()}
+    # Snapshot path -> version_replicate before the pull so we can tell new
+    # files from in-place version bumps after the manifest is refreshed.
+    old_versions = {
+        entry.local_path: entry.mfile.version_replicate
+        for entry in repo.manifest.iter_files()
+    }
 
     repo.git_pull()
     repo._manifest = None  # invalidate the cached manifest
 
-    new_files = [
-        entry
-        for entry in _filtered_entries(repo, sample, file_filter)
-        if entry.local_path not in old_paths
-    ]
+    new_files = []
+    updated_files = []
+    for entry in _filtered_entries(repo, sample, file_filter):
+        if entry.local_path not in old_versions:
+            new_files.append(entry)
+        elif entry.mfile.version_replicate != old_versions[entry.local_path]:
+            updated_files.append(entry)
 
     repo.write_pipeline_configs()
 
-    if new_files:
-        n = len(new_files)
+    if new_files or updated_files:
         click.echo(
-            f"Pulled manifest: {n} new file(s) available "
-            "(use 'geoseeq repo download' to fetch them)"
+            f"Pulled manifest: {len(new_files)} new, {len(updated_files)} updated "
+            "— run 'geoseeq repo download' to fetch"
         )
     else:
         click.echo("Already up to date.")
@@ -289,10 +308,11 @@ def pull(state, path, sample, file_filter):
 @click.option("--all", "download_all", is_flag=True, help="Re-download files even if already present on disk")
 @click.argument("path", default=".", required=False)
 def download_cmd(state, yes, path, sample, file_filter, download_all):
-    """Download absent files from the manifest.
+    """Download absent and outdated files from the manifest.
 
-    By default only files not yet present on disk are downloaded.
-    Pass --all to re-download even files that appear to already be present.
+    By default files not yet present on disk, plus files for which a newer
+    server version exists (outdated), are downloaded.  Pass --all to
+    re-download every file regardless of local state.
 
     ---
 
@@ -323,12 +343,14 @@ def download_cmd(state, yes, path, sample, file_filter, download_all):
     knex = state.get_knex().set_auth_required()
 
     repo_status = repo.compute_status()
-    absent_set = set(repo_status.absent)
+    # Default targets are files missing locally OR superseded by a newer server
+    # version; --all re-downloads everything.
+    fetch_set = set(repo_status.absent) | set(repo_status.outdated)
 
     targets = [
         entry
         for entry in _filtered_entries(repo, sample, file_filter)
-        if download_all or entry.local_path in absent_set
+        if download_all or entry.local_path in fetch_set
     ]
 
     if not targets:
@@ -351,6 +373,24 @@ def download_cmd(state, yes, path, sample, file_filter, download_all):
         click.confirm(f"Download {len(targets)} file(s)?", abort=True)
     download_manager.download_files()
 
+    # The download manager writes files in parallel; record per-file state
+    # (version_replicate/size/mtime/xxh3) afterwards so compute_status can later
+    # detect local edits and staleness.  Mirrors GeoSeeqRepo.download_file.
+    _record_downloaded_state(repo, targets)
+
+
+def _record_downloaded_state(repo, targets) -> None:
+    """Record state.json entries for *targets* that landed on disk."""
+    state = RepoState.load(repo.root / ".geoseeq")
+    for entry in targets:
+        local_path = repo.root / entry.local_path
+        if local_path.exists():
+            state.set(
+                entry.local_path,
+                record_for(local_path, entry.mfile.version_replicate),
+            )
+    state.save()
+
 
 @cli_repo.command("offload")
 @use_common_state
@@ -362,8 +402,9 @@ def download_cmd(state, yes, path, sample, file_filter, download_all):
 def offload_cmd(state, yes, quiet, path, sample, file_filter):
     """Remove local file copies while keeping manifest entries.
 
-    Refuses to offload files whose local copy has been modified (checksum
-    mismatch) to prevent accidental data loss.
+    Refuses to offload files that have been edited locally (their on-disk
+    content no longer matches the recorded download state) to prevent
+    accidental data loss.
 
     ---
 
