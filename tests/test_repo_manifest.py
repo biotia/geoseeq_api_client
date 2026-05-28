@@ -56,12 +56,14 @@ SAMPLE_MANIFEST_DICT = {
                             "checksum": "md5:abc123",
                             "size_bytes": 1234567890,
                             "stored_data": _stored_data("Sample1_R1.fastq.gz"),
+                            "version_replicate": "v-r1-001",
                         },
                         "read_2": {
                             "uuid": "file-uuid-r2",
                             "checksum": "md5:def456",
                             "size_bytes": 1234567891,
                             "stored_data": _stored_data("Sample1_R2.fastq.gz"),
+                            "version_replicate": "v-r2-001",
                         },
                     },
                 }
@@ -113,12 +115,14 @@ def test_manifest_file_from_dict():
         "checksum": "md5:abc123",
         "size_bytes": 1234567890,
         "stored_data": _stored_data("Sample1_R1.fastq.gz"),
+        "version_replicate": "v-r1-001",
     }
     f = ManifestFile.from_dict(data)
     assert f.uuid == "file-uuid-r1"
     assert f.checksum == "md5:abc123"
     assert f.size_bytes == 1234567890
     assert f.stored_data["uri"] == "s3://bucket/Sample1_R1.fastq.gz"
+    assert f.version_replicate == "v-r1-001"
 
 
 def test_manifest_file_roundtrip():
@@ -128,8 +132,26 @@ def test_manifest_file_roundtrip():
         "checksum": "md5:zzz",
         "size_bytes": 999,
         "stored_data": _stored_data("c.gz"),
+        "version_replicate": "v-001",
     }
     assert ManifestFile.from_dict(original).to_dict() == original
+
+
+def test_manifest_file_from_dict_tolerates_missing_version_replicate():
+    """from_dict defaults version_replicate to "" when the server omits it.
+
+    Older server commits predate the field; the client must still parse them.
+    """
+    data = {
+        "uuid": "u1",
+        "checksum": "md5:zzz",
+        "size_bytes": 999,
+        "stored_data": _stored_data("c.gz"),
+    }
+    f = ManifestFile.from_dict(data)
+    assert f.version_replicate == ""
+    # to_dict always emits the field (as the empty default).
+    assert f.to_dict()["version_replicate"] == ""
 
 
 def test_manifest_file_from_dict_ignores_unknown_keys():
@@ -293,6 +315,7 @@ def _project_results_manifest_dict() -> dict:
                         "checksum": "md5:rrr",
                         "size_bytes": 10,
                         "stored_data": _stored_data("report.html"),
+                        "version_replicate": "v-report-001",
                     }
                 },
             }
@@ -556,13 +579,14 @@ def _reads_manifest(module_name, files):
     }
 
 
-def _read_file(uuid, filename, checksum="md5:x"):
+def _read_file(uuid, filename, checksum="md5:x", version_replicate="v-001"):
     """Build a single manifest file entry dict."""
     return {
         "uuid": uuid,
         "checksum": checksum,
         "size_bytes": 1,
         "stored_data": _stored_data(filename),
+        "version_replicate": version_replicate,
     }
 
 
