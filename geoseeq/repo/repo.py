@@ -164,10 +164,14 @@ class GeoSeeqRepo:
         failures.
         """
         geoseeq_dir = self.root / ".geoseeq"
+        # Capture only stdout (not stderr) so git's own error message still
+        # reaches the terminal on a real failure (auth/network); we only need
+        # stdout to detect the empty-but-successful "no main ref" case.  This
+        # matches the ``git pull`` call below, which also leaves stderr alone.
         ls_remote = subprocess.run(
             ["git", "-C", str(geoseeq_dir), "ls-remote", "--heads", "origin", "main"],
             check=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
             text=True,
         )
         if not ls_remote.stdout.strip():
