@@ -1,11 +1,21 @@
 """Dataclasses for the geoseeq repo manifest.json schema."""
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from os.path import basename
 from pathlib import Path
 from typing import Dict, Iterator, NamedTuple, Optional
+
+
+def _md5(path: Path) -> str:
+    """Return the hex MD5 digest of the file at *path*."""
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 @dataclass
