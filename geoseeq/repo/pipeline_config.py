@@ -13,11 +13,13 @@ from .repo import GeoSeeqRepo
 
 def _ordered_read_paths(entries: List[ManifestFileEntry], read_num: int) -> List[str]:
     """Return derived local paths for the given *read_num* (1 or 2), lane-ordered."""
+    classified = [(e, *classify_fastq_field(e.field_name)) for e in entries]
     selected = [
-        e for e in entries if classify_fastq_field(e.field_name)[0] == read_num
+        (e, lane_num) for e, entry_read_num, lane_num in classified
+        if entry_read_num == read_num
     ]
-    selected.sort(key=lambda e: classify_fastq_field(e.field_name)[1])
-    return [e.local_path for e in selected]
+    selected.sort(key=lambda pair: pair[1])
+    return [e.local_path for e, _ in selected]
 
 
 def _build_sample_config(
