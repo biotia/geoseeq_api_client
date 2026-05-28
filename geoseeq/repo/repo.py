@@ -409,12 +409,17 @@ class GeoSeeqRepo:
         pushed: list[str] = []
         for rel in candidates:
             parts = Path(rel).parts
-            # Only sample files (samples/<sample>/<module>/<filename>) are pushable;
-            # anything shorter or rooted elsewhere is logged and skipped, not raised.
-            if len(parts) < 4 or parts[0] != "samples":
-                logging.warning("Skipping %s: unexpected path structure.", rel)
+            # The manifest is flat: a pushable file is EXACTLY
+            # samples/<sample>/<module>/<filename> (4 parts).  Nested files cannot
+            # round-trip (the manifest's derived local_path strips subdirectories to
+            # the basename), so they would be uploaded mis-mapped and never recorded
+            # in state.json — skip them rather than push a path we can't track.
+            if len(parts) != 4 or parts[0] != "samples":
+                logging.warning(
+                    "Skipping %s: not a samples/<sample>/<module>/<file> path.", rel
+                )
                 continue
-            s_name, module, filename = parts[1], parts[2], parts[-1]
+            s_name, module, filename = parts[1], parts[2], parts[3]
             if s_name not in self.manifest.samples:
                 raise ValueError(
                     f"Sample '{s_name}' is not in the manifest. "
