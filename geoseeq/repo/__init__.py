@@ -1,5 +1,9 @@
-"""geoseeq.repo — local geoseeq project repository management."""
+"""geoseeq.repo — local geoseeq project repository management.
 
+Clone SDK helpers live in ``geoseeq.repo.clone`` and are intentionally not re-exported.
+"""
+
+from .config import RepoConfig
 from .manifest import (
     Manifest,
     ManifestFile,
@@ -7,8 +11,8 @@ from .manifest import (
     ManifestResultFolder,
     ManifestSample,
 )
-from .repo import GeoSeeqRepo, NonFastForwardError, NotARepoError
-from .config import RepoConfig
+from .repo import GeoSeeqRepo, NotARepoError, RepoExistsError
+from .status import RepoStatus
 
 __all__ = [
     "Manifest",
@@ -17,7 +21,8 @@ __all__ = [
     "ManifestResultFolder",
     "ManifestSample",
     "GeoSeeqRepo",
-    "NonFastForwardError",
     "NotARepoError",
+    "RepoExistsError",
+    "RepoStatus",
     "RepoConfig",
 ]

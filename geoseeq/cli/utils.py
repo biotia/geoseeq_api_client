@@ -1,5 +1,6 @@
 import logging
 import math
+from datetime import datetime
 
 import click
 
@@ -105,3 +106,27 @@ def convert_size(size_bytes):
    p = math.pow(1024, i)
    s = round(size_bytes / p, 2)
    return "%s %s" % (s, size_name[i])
+
+
+def format_timestamp(raw: str) -> str:
+    """Parse an ISO-8601 timestamp string and return a human-readable form.
+
+    Strips a trailing 'Z' before parsing so ``datetime.fromisoformat`` works
+    on Python 3.10 and earlier.  Returns the raw string unchanged if parsing
+    fails so that the output is never empty.
+    """
+    try:
+        cleaned = raw.rstrip("Z")
+        dt = datetime.fromisoformat(cleaned)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, AttributeError):
+        return raw
+
+
+def human_size(nbytes: int) -> str:
+    """Format a byte count as a human-readable string (KB, MB, GB, etc.)."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(nbytes) < 1024.0:
+            return f"{nbytes:.1f} {unit}"
+        nbytes /= 1024.0
+    return f"{nbytes:.1f} PB"

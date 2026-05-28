@@ -11,7 +11,6 @@ import pytest
 from click.testing import CliRunner
 
 from geoseeq.cli.main import main
-from geoseeq.cli.repo import _scrub_token
 from geoseeq.constants import READS_MODULE_NAMES
 from geoseeq.fastq import classify_fastq_field
 from geoseeq.repo import (
@@ -21,10 +20,10 @@ from geoseeq.repo import (
     ManifestFileEntry,
     ManifestResultFolder,
     ManifestSample,
-    NonFastForwardError,
     NotARepoError,
     RepoConfig,
 )
+from geoseeq.repo.clone import scrub_token
 from geoseeq.repo.pipeline_config import write_pipeline_configs
 
 
@@ -118,12 +117,14 @@ def test_manifest_file_from_dict():
         "checksum": "md5:abc123",
         "size_bytes": 1234567890,
         "stored_data": _stored_data("Sample1_R1.fastq.gz"),
+        "version_replicate": "v-r1-001",
     }
     f = ManifestFile.from_dict(data)
     assert f.uuid == "file-uuid-r1"
     assert f.checksum == "md5:abc123"
     assert f.size_bytes == 1234567890
     assert f.stored_data["uri"] == "s3://bucket/Sample1_R1.fastq.gz"
+    assert f.version_replicate == "v-r1-001"
 
 
 def test_manifest_file_roundtrip():
@@ -492,41 +493,11 @@ def test_geoseeq_repo_config_lazy_load(tmp_path_with_repo):
 # ---------------------------------------------------------------------------
 # GeoSeeqRepo git operations tests (subprocess mocked)
 # ---------------------------------------------------------------------------
-
-
-def test_geoseeq_repo_commit(tmp_path_with_repo):
-    """GeoSeeqRepo.commit() calls git add and git commit."""
-    repo = GeoSeeqRepo(tmp_path_with_repo)
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0)
-        repo.commit("test commit message")
-
-    calls = mock_run.call_args_list
-    assert len(calls) == 2
-    assert "add" in calls[0][0][0]
-    assert "manifest.json" in calls[0][0][0]
-    assert "commit" in calls[1][0][0]
-    assert "test commit message" in calls[1][0][0]
-
-
-def test_geoseeq_repo_git_push_success(tmp_path_with_repo):
-    """GeoSeeqRepo.git_push() succeeds when git returns 0."""
-    repo = GeoSeeqRepo(tmp_path_with_repo)
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0, stderr="")
-        repo.git_push()  # should not raise
-
-
-def test_geoseeq_repo_git_push_non_fast_forward(tmp_path_with_repo):
-    """GeoSeeqRepo.git_push() raises NonFastForwardError on rejected push."""
-    repo = GeoSeeqRepo(tmp_path_with_repo)
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stderr="error: failed to push some refs (non-fast-forward)",
-        )
-        with pytest.raises(NonFastForwardError):
-            repo.git_push()
+#
+# GRF-17: the client is read-only against the manifest git repo (the server is
+# the sole commit authority), so GeoSeeqRepo no longer exposes commit()/
+# git_push() and there is no NonFastForwardError.  git_pull() is the only git
+# operation the client performs after the initial clone.
 
 
 def test_geoseeq_repo_git_pull(tmp_path_with_repo):
@@ -804,7 +775,7 @@ def test_clone_creates_directory_structure(tmp_path):
             return_value=_make_fake_project(),
         ),
         patch(
-            "geoseeq.cli.repo._git_clone",
+            "geoseeq.repo.clone.git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
                 geoseeq_dir.parent
             ),
@@ -832,7 +803,7 @@ def test_clone_writes_config_json(tmp_path):
             return_value=_make_fake_project(),
         ),
         patch(
-            "geoseeq.cli.repo._git_clone",
+            "geoseeq.repo.clone.git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
                 geoseeq_dir.parent
             ),
@@ -859,7 +830,7 @@ def test_clone_gitignores_config_json(tmp_path):
             return_value=_make_fake_project(),
         ),
         patch(
-            "geoseeq.cli.repo._git_clone",
+            "geoseeq.repo.clone.git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
                 geoseeq_dir.parent
             ),
@@ -893,18 +864,18 @@ def test_clone_fails_if_repo_already_exists(tmp_path):
 
 
 def test_scrub_token_removes_credential_from_url():
-    """_scrub_token replaces x:<token>@ with x:***@ in error strings."""
+    """scrub_token replaces x:<token>@ with x:***@ in error strings."""
     token = "secret123"
     text = "fatal: repository 'https://x:secret123@host/repo.git/' not found"
-    scrubbed = _scrub_token(text, token)
+    scrubbed = scrub_token(text, token)
     assert "secret123" not in scrubbed
     assert "x:***@" in scrubbed
 
 
 def test_scrub_token_noop_when_token_is_none():
-    """_scrub_token is a no-op when no token is provided."""
+    """scrub_token is a no-op when no token is provided."""
     text = "some error text"
-    assert _scrub_token(text, None) == text
+    assert scrub_token(text, None) == text
 
 
 def test_clone_git_error_does_not_leak_token(tmp_path):
@@ -918,7 +889,7 @@ def test_clone_git_error_does_not_leak_token(tmp_path):
             return_value=_make_fake_project(),
         ),
         patch(
-            "geoseeq.cli.repo._build_authenticated_url",
+            "geoseeq.repo.clone.build_authenticated_url",
             return_value="https://x:secret-token@host/repo.git",
         ),
         patch("subprocess.run") as mock_run,
@@ -948,7 +919,7 @@ def test_clone_default_path_is_last_component(tmp_path):
             return_value=_make_fake_project(),
         ),
         patch(
-            "geoseeq.cli.repo._git_clone",
+            "geoseeq.repo.clone.git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
                 geoseeq_dir.parent
             ),
@@ -971,7 +942,7 @@ def test_clone_config_omits_legacy_keys(tmp_path):
             return_value=_make_fake_project(),
         ),
         patch(
-            "geoseeq.cli.repo._git_clone",
+            "geoseeq.repo.clone.git_clone",
             side_effect=lambda remote_url, geoseeq_dir, token, server_url: _build_mock_geoseeq_dir(
                 geoseeq_dir.parent
             ),
@@ -1017,19 +988,37 @@ def test_repo_config_from_dict_ignores_legacy_keys():
 
 
 def test_ensure_config_gitignored_appends_to_existing_gitignore(tmp_path):
-    """_ensure_config_gitignored appends config.json when .gitignore already exists."""
-    from geoseeq.cli.repo import _ensure_config_gitignored
+    """ensure_config_gitignored appends config.json and state.json when .gitignore exists."""
+    from geoseeq.repo.clone import ensure_config_gitignored
 
     geoseeq_dir = tmp_path / ".geoseeq"
     geoseeq_dir.mkdir()
     gitignore_path = geoseeq_dir / ".gitignore"
-    gitignore_path.write_text("*.pyc\n")  # existing entries, no config.json
+    gitignore_path.write_text("*.pyc\n")  # existing entries, neither private file present
 
-    _ensure_config_gitignored(geoseeq_dir)
+    ensure_config_gitignored(geoseeq_dir)
 
     content = gitignore_path.read_text()
     assert "config.json" in content
+    assert "state.json" in content  # download index must also be gitignored
     assert "*.pyc" in content  # original entry preserved
+
+
+def test_ensure_config_gitignored_idempotent(tmp_path):
+    """ensure_config_gitignored is a no-op when both private files are already listed."""
+    from geoseeq.repo.clone import ensure_config_gitignored
+
+    geoseeq_dir = tmp_path / ".geoseeq"
+    geoseeq_dir.mkdir()
+    gitignore_path = geoseeq_dir / ".gitignore"
+    gitignore_path.write_text("config.json\nstate.json\n")
+
+    ensure_config_gitignored(geoseeq_dir)
+
+    # Content unchanged — no duplicate entries appended.
+    lines = [ln for ln in gitignore_path.read_text().splitlines() if ln]
+    assert lines.count("config.json") == 1
+    assert lines.count("state.json") == 1
 
 
 def test_repo_help_lists_clone_subcommand():
