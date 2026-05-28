@@ -16,6 +16,7 @@ from geoseeq.repo import (
     GeoSeeqRepo,
     Manifest,
     ManifestFile,
+    ManifestFileEntry,
     ManifestResultFolder,
     ManifestSample,
     NonFastForwardError,
@@ -29,6 +30,15 @@ from geoseeq.repo.pipeline_config import write_pipeline_configs
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
+def _stored_data(filename: str) -> dict:
+    """Build a realistic server-style stored_data descriptor for *filename*."""
+    return {
+        "__type__": "s3",
+        "uri": f"s3://bucket/{filename}",
+        "endpoint_url": "https://s3.amazonaws.com",
+    }
+
+
 SAMPLE_MANIFEST_DICT = {
     "version": 1,
     "project_uuid": "proj-uuid-1234",
@@ -39,22 +49,20 @@ SAMPLE_MANIFEST_DICT = {
             "uuid": "sample-uuid-1",
             "metadata": {"location": "NYC"},
             "result_folders": {
-                "reads": {
+                "raw_reads": {
                     "uuid": "folder-uuid-1",
                     "files": {
-                        "Sample1_R1.fastq.gz": {
+                        "read_1": {
                             "uuid": "file-uuid-r1",
-                            "brn": "brn:geoseeq:file:file-uuid-r1",
                             "checksum": "md5:abc123",
                             "size_bytes": 1234567890,
-                            "local_path": "samples/Sample1/reads/Sample1_R1.fastq.gz",
+                            "stored_data": _stored_data("Sample1_R1.fastq.gz"),
                         },
-                        "Sample1_R2.fastq.gz": {
+                        "read_2": {
                             "uuid": "file-uuid-r2",
-                            "brn": "brn:geoseeq:file:file-uuid-r2",
                             "checksum": "md5:def456",
                             "size_bytes": 1234567891,
-                            "local_path": "samples/Sample1/reads/Sample1_R2.fastq.gz",
+                            "stored_data": _stored_data("Sample1_R2.fastq.gz"),
                         },
                     },
                 }
@@ -85,8 +93,6 @@ def tmp_path_with_repo(tmp_path):
     config = RepoConfig(
         project_uuid="proj-uuid-1234",
         server_url="https://backend.geoseeq.com",
-        auth_profile="default",
-        git_remote_url="https://backend.geoseeq.com/api/v1/projects/proj-uuid-1234/git",
     )
     config.save(geoseeq_dir / "config.json")
 
@@ -105,28 +111,61 @@ def test_manifest_file_from_dict():
     """ManifestFile deserializes correctly from a dict."""
     data = {
         "uuid": "file-uuid-r1",
-        "brn": "brn:geoseeq:file:file-uuid-r1",
         "checksum": "md5:abc123",
         "size_bytes": 1234567890,
-        "local_path": "samples/Sample1/reads/Sample1_R1.fastq.gz",
+        "stored_data": _stored_data("Sample1_R1.fastq.gz"),
     }
     f = ManifestFile.from_dict(data)
     assert f.uuid == "file-uuid-r1"
     assert f.checksum == "md5:abc123"
     assert f.size_bytes == 1234567890
-    assert f.local_path == "samples/Sample1/reads/Sample1_R1.fastq.gz"
+    assert f.stored_data["uri"] == "s3://bucket/Sample1_R1.fastq.gz"
 
 
 def test_manifest_file_roundtrip():
     """ManifestFile to_dict / from_dict is a lossless round-trip."""
     original = {
         "uuid": "u1",
-        "brn": "brn:x",
         "checksum": "md5:zzz",
         "size_bytes": 999,
-        "local_path": "a/b/c.gz",
+        "stored_data": _stored_data("c.gz"),
     }
     assert ManifestFile.from_dict(original).to_dict() == original
+
+
+def test_manifest_file_from_dict_ignores_unknown_keys():
+    """ManifestFile.from_dict ignores legacy keys like brn/local_path."""
+    data = {
+        "uuid": "u1",
+        "checksum": "md5:zzz",
+        "size_bytes": 999,
+        "stored_data": _stored_data("c.gz"),
+        "brn": "brn:legacy",
+        "local_path": "legacy/path/c.gz",
+    }
+    f = ManifestFile.from_dict(data)
+    assert f.uuid == "u1"
+    assert not hasattr(f, "brn")
+    assert not hasattr(f, "local_path")
+
+
+def test_manifest_file_filename_derives_from_uri():
+    """ManifestFile.filename is the basename of the stored cloud URI."""
+    f = ManifestFile.from_dict(
+        {
+            "uuid": "u1",
+            "checksum": "md5:zzz",
+            "size_bytes": 1,
+            "stored_data": {"uri": "s3://bucket/path/to/Sample1_R1.fastq.gz"},
+        }
+    )
+    assert f.filename == "Sample1_R1.fastq.gz"
+
+
+def test_manifest_file_filename_empty_when_no_uri():
+    """ManifestFile.filename is empty when stored_data has no uri."""
+    f = ManifestFile(uuid="u1", checksum="c", size_bytes=1, stored_data={})
+    assert f.filename == ""
 
 
 # ---------------------------------------------------------------------------
@@ -139,19 +178,18 @@ def test_manifest_result_folder_from_dict():
     data = {
         "uuid": "folder-uuid-1",
         "files": {
-            "Sample1_R1.fastq.gz": {
+            "read_1": {
                 "uuid": "file-uuid-r1",
-                "brn": "brn:geoseeq:file:file-uuid-r1",
                 "checksum": "md5:abc123",
                 "size_bytes": 100,
-                "local_path": "samples/Sample1/reads/Sample1_R1.fastq.gz",
+                "stored_data": _stored_data("Sample1_R1.fastq.gz"),
             }
         },
     }
     rf = ManifestResultFolder.from_dict(data)
     assert rf.uuid == "folder-uuid-1"
-    assert "Sample1_R1.fastq.gz" in rf.files
-    assert isinstance(rf.files["Sample1_R1.fastq.gz"], ManifestFile)
+    assert "read_1" in rf.files
+    assert isinstance(rf.files["read_1"], ManifestFile)
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +203,8 @@ def test_manifest_sample_from_dict():
     s = ManifestSample.from_dict(data)
     assert s.uuid == "sample-uuid-1"
     assert s.metadata == {"location": "NYC"}
-    assert "reads" in s.result_folders
-    assert isinstance(s.result_folders["reads"], ManifestResultFolder)
+    assert "raw_reads" in s.result_folders
+    assert isinstance(s.result_folders["raw_reads"], ManifestResultFolder)
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +256,57 @@ def test_manifest_empty_samples():
     }
     m = Manifest.from_dict(data)
     assert m.samples == {}
+
+
+# ---------------------------------------------------------------------------
+# Manifest.iter_files tests
+# ---------------------------------------------------------------------------
+
+
+def test_iter_files_derives_sample_paths():
+    """iter_files yields sample files with samples/<sample>/<module>/<filename>."""
+    m = Manifest.from_dict(SAMPLE_MANIFEST_DICT)
+    entries = list(m.iter_files())
+
+    assert len(entries) == 2
+    by_field = {e.field_name: e for e in entries}
+    assert by_field["read_1"].sample_name == "Sample1"
+    assert by_field["read_1"].module_name == "raw_reads"
+    assert by_field["read_1"].local_path == "samples/Sample1/raw_reads/Sample1_R1.fastq.gz"
+    assert by_field["read_2"].local_path == "samples/Sample1/raw_reads/Sample1_R2.fastq.gz"
+    assert all(isinstance(e, ManifestFileEntry) for e in entries)
+
+
+def test_iter_files_derives_project_result_paths():
+    """iter_files yields project-level files under project_results/<module>/."""
+    data = {
+        "version": 1,
+        "project_uuid": "p",
+        "project_name": "O/P",
+        "server_url": "https://x.com",
+        "samples": {},
+        "project_results": {
+            "summary": {
+                "uuid": "pr-folder-1",
+                "files": {
+                    "report": {
+                        "uuid": "pr-file-1",
+                        "checksum": "md5:rrr",
+                        "size_bytes": 10,
+                        "stored_data": _stored_data("report.html"),
+                    }
+                },
+            }
+        },
+    }
+    m = Manifest.from_dict(data)
+    entries = list(m.iter_files())
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.sample_name is None
+    assert entry.module_name == "summary"
+    assert entry.local_path == "project_results/summary/report.html"
     assert m.to_dict() == data
 
 
@@ -333,8 +422,8 @@ def test_write_pipeline_configs_produces_correct_json(tmp_path_with_repo):
         config = json.loads(fh.read())
 
     assert config["sample_name"] == "Sample1"
-    assert config["reads_1"] == "samples/Sample1/reads/Sample1_R1.fastq.gz"
-    assert config["reads_2"] == "samples/Sample1/reads/Sample1_R2.fastq.gz"
+    assert config["reads_1"] == ["samples/Sample1/raw_reads/Sample1_R1.fastq.gz"]
+    assert config["reads_2"] == ["samples/Sample1/raw_reads/Sample1_R2.fastq.gz"]
     assert config["fastq_checksum"] == "md5:abc123"
     assert config["bdx_result_dir"] == "samples/"
     assert config["geoseeq_uuid"] == "sample-uuid-1"
@@ -361,6 +450,87 @@ def test_write_pipeline_configs_creates_dir(tmp_path_with_repo):
     repo = GeoSeeqRepo(tmp_path_with_repo)
     write_pipeline_configs(repo)
     assert config_dir.exists()
+
+
+def _repo_with_manifest(tmp_path, manifest_dict) -> GeoSeeqRepo:
+    """Seed a tmp geoseeq repo with the given manifest dict and return a handle."""
+    geoseeq_dir = tmp_path / ".geoseeq"
+    geoseeq_dir.mkdir()
+    RepoConfig(
+        project_uuid="proj-uuid-1234",
+        server_url="https://backend.geoseeq.com",
+    ).save(geoseeq_dir / "config.json")
+    Manifest.from_dict(manifest_dict).save(geoseeq_dir / "manifest.json")
+    return GeoSeeqRepo(tmp_path)
+
+
+def _reads_manifest(module_name, files):
+    """Build a one-sample manifest dict with *files* under *module_name*."""
+    return {
+        "version": 1,
+        "project_uuid": "proj-uuid-1234",
+        "project_name": "TestOrg/TestProject",
+        "server_url": "https://backend.geoseeq.com",
+        "samples": {
+            "Sample1": {
+                "uuid": "sample-uuid-1",
+                "metadata": {},
+                "result_folders": {
+                    module_name: {"uuid": "folder-uuid-1", "files": files}
+                },
+            }
+        },
+        "project_results": {},
+    }
+
+
+def _read_file(uuid, filename, checksum="md5:x"):
+    """Build a single manifest file entry dict."""
+    return {
+        "uuid": uuid,
+        "checksum": checksum,
+        "size_bytes": 1,
+        "stored_data": _stored_data(filename),
+    }
+
+
+def test_write_pipeline_configs_orders_reads_by_lane(tmp_path):
+    """reads_1/reads_2 are ordered by lane number derived from the field name."""
+    files = {
+        "paired_end::read_1::lane_2": _read_file("u1", "S1_L2_R1.fastq.gz"),
+        "paired_end::read_2::lane_2": _read_file("u2", "S1_L2_R2.fastq.gz"),
+        "paired_end::read_1::lane_1": _read_file("u3", "S1_L1_R1.fastq.gz", "md5:lane1"),
+        "paired_end::read_2::lane_1": _read_file("u4", "S1_L1_R2.fastq.gz"),
+    }
+    repo = _repo_with_manifest(tmp_path, _reads_manifest("short_read::paired_end", files))
+    write_pipeline_configs(repo)
+
+    with open(tmp_path / "sample_configs" / "Sample1.json") as fh:
+        config = json.loads(fh.read())
+
+    base = "samples/Sample1/short_read::paired_end"
+    assert config["reads_1"] == [f"{base}/S1_L1_R1.fastq.gz", f"{base}/S1_L2_R1.fastq.gz"]
+    assert config["reads_2"] == [f"{base}/S1_L1_R2.fastq.gz", f"{base}/S1_L2_R2.fastq.gz"]
+    # checksum comes from the first read_1 file (lane 1)
+    assert config["fastq_checksum"] == "md5:lane1"
+
+
+def test_write_pipeline_configs_single_end_has_empty_reads_2(tmp_path):
+    """A single-end field (no read_2 token) is treated as read 1, reads_2 empty."""
+    files = {"reads": _read_file("u1", "Sample1.fastq.gz", "md5:single")}
+    repo = _repo_with_manifest(
+        tmp_path, _reads_manifest("raw::single_short_reads", files)
+    )
+    write_pipeline_configs(repo)
+
+    with open(tmp_path / "sample_configs" / "Sample1.json") as fh:
+        config = json.loads(fh.read())
+
+    assert config["reads_1"] == [
+        "samples/Sample1/raw::single_short_reads/Sample1.fastq.gz"
+    ]
+    assert config["reads_2"] == []
+    assert config["fastq_checksum"] == "md5:single"
 
 
 # ---------------------------------------------------------------------------
@@ -564,8 +734,8 @@ def test_clone_default_path_is_last_component(tmp_path):
     assert "TestProject" in result.output
 
 
-def test_clone_stores_auth_profile_in_config(tmp_path):
-    """clone stores the active auth_profile name in config.json."""
+def test_clone_config_omits_legacy_keys(tmp_path):
+    """clone writes config.json with no auth_profile/git_remote_url keys."""
     clone_path = tmp_path / "TestProject"
     runner = CliRunner()
 
@@ -580,22 +750,44 @@ def test_clone_stores_auth_profile_in_config(tmp_path):
                 geoseeq_dir.parent
             ),
         ),
-        patch(
-            "geoseeq.cli.shared_params.common_state.load_auth_profile",
-            return_value=("https://backend.geoseeq.com", "tok"),
-        ),
     ):
-        # --profile is a per-command option (applied to clone via use_common_state)
-        result = runner.invoke(
-            main,
-            ["repo", "clone", "--profile", "myprofile", "TestOrg/TestProject", str(clone_path)],
-            env={"GEOSEEQ_API_TOKEN": "fake-token"},
-            catch_exceptions=False,
-        )
+        result = _invoke_clone(runner, ["TestOrg/TestProject", str(clone_path)])
 
     assert result.exit_code == 0, result.output
-    config = RepoConfig.load(clone_path / ".geoseeq" / "config.json")
-    assert config.auth_profile == "myprofile"
+    with open(clone_path / ".geoseeq" / "config.json") as fh:
+        raw = json.loads(fh.read())
+    assert set(raw.keys()) == {"project_uuid", "server_url"}
+    assert "auth_profile" not in raw
+    assert "git_remote_url" not in raw
+
+
+def test_repo_config_git_remote_url_is_computed():
+    """RepoConfig.git_remote_url is derived from server_url and project_uuid."""
+    config = RepoConfig(
+        project_uuid="proj-uuid-1234",
+        server_url="https://backend.geoseeq.com/",
+    )
+    assert (
+        config.git_remote_url
+        == "https://backend.geoseeq.com/api/v1/projects/proj-uuid-1234/git"
+    )
+
+
+def test_repo_config_from_dict_ignores_legacy_keys():
+    """RepoConfig.from_dict ignores legacy auth_profile/git_remote_url keys."""
+    config = RepoConfig.from_dict(
+        {
+            "project_uuid": "p",
+            "server_url": "https://x.com",
+            "auth_profile": "myprofile",
+            "git_remote_url": "https://x.com/stale",
+        }
+    )
+    assert config.project_uuid == "p"
+    assert config.server_url == "https://x.com"
+    assert not hasattr(config, "auth_profile")
+    # git_remote_url is recomputed, never the stale persisted value
+    assert config.git_remote_url == "https://x.com/api/v1/projects/p/git"
 
 
 def test_ensure_config_gitignored_appends_to_existing_gitignore(tmp_path):
