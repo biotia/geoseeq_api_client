@@ -100,7 +100,7 @@ def log(state, limit, offset, as_json, path):
         f"?limit={limit}&offset={offset}"
     )
 
-    knex = state.get_knex()
+    knex = state.get_knex().set_auth_required()
     response = knex.sess.get(url)
     data = knex._handle_response(response, json_response=False).json()
 

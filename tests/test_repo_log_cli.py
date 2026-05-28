@@ -167,6 +167,34 @@ def test_log_not_in_repo(tmp_path):
     assert "Not inside a geoseeq repo" in str(result.exception)
 
 
+def test_log_requires_auth_before_request(tmp_path):
+    """Without a token, log fails the friendly auth check and skips the request."""
+    make_mock_repo(tmp_path)
+    runner = CliRunner()
+
+    mock_get = MagicMock()
+
+    # No GEOSEEQ_API_TOKEN and no default profile on disk -> auth missing.
+    with (
+        patch("geoseeq.cli.repo.GeoSeeqRepo.find", return_value=_mock_repo()),
+        patch(
+            "geoseeq.cli.shared_params.common_state.load_auth_profile",
+            side_effect=KeyError("no default profile"),
+        ),
+        patch("requests.Session.get", mock_get),
+    ):
+        result = runner.invoke(
+            main,
+            ["repo", "log", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": ""},
+        )
+
+    assert result.exit_code != 0
+    assert "Authentication is required" in str(result.exception)
+    # The history request must never be sent for an unauthenticated user.
+    mock_get.assert_not_called()
+
+
 def test_log_pagination_params(tmp_path):
     """--limit and --offset are forwarded to the API URL."""
     make_mock_repo(tmp_path)
