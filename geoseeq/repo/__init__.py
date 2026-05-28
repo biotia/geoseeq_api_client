@@ -1,9 +1,6 @@
 """geoseeq.repo — local geoseeq project repository management.
 
-The clone SDK helpers (git_clone, create_repo_directories, etc.) live in
-``geoseeq.repo.clone`` and are intentionally not re-exported here — they are
-internal implementation details. Import them from ``geoseeq.repo.clone`` if
-you genuinely need them.
+Clone SDK helpers live in ``geoseeq.repo.clone`` and are intentionally not re-exported.
 """
 
 from .config import RepoConfig
