@@ -1033,3 +1033,58 @@ def test_repo_help_lists_clone_subcommand():
     result = runner.invoke(main, ["repo", "--help"])
     assert result.exit_code == 0
     assert "clone" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Sample.get_one_fastq_folder default preference order
+# ---------------------------------------------------------------------------
+
+
+def _make_sample_with_fastqs(fastq_dict):
+    """Return a Sample stub whose get_all_fastqs() returns *fastq_dict*."""
+    from unittest.mock import MagicMock, patch
+    from geoseeq.sample import Sample
+
+    sample = Sample.__new__(Sample)
+    with patch.object(Sample, "get_all_fastqs", return_value=fastq_dict):
+        yield sample
+
+
+def test_get_one_fastq_folder_default_preference_order():
+    """Default preference order is paired_end > single_end > nanopore > pacbio.
+
+    Confirms that FASTQ_READ_TYPE_PREFERENCE is wired correctly: when both
+    short_read::paired_end and short_read::single_end are present, paired_end
+    is returned.
+    """
+    from unittest.mock import patch
+    from geoseeq.sample import Sample
+    from geoseeq.constants import FASTQ_READ_TYPE_PREFERENCE
+
+    all_fastqs = {
+        "short_read::single_end": {"folder_se": [["se_file"]]},
+        "short_read::paired_end": {"folder_pe": [["r1", "r2"]]},
+    }
+    sample = Sample.__new__(Sample)
+    with patch.object(Sample, "get_all_fastqs", return_value=all_fastqs):
+        read_type, folder_name, reads = sample.get_one_fastq_folder()
+
+    assert read_type == "short_read::paired_end"
+    assert folder_name == "folder_pe"
+    # Sanity-check the constant itself matches the expected head
+    assert FASTQ_READ_TYPE_PREFERENCE[0] == "short_read::paired_end"
+
+
+def test_get_one_fastq_folder_falls_through_to_nanopore():
+    """When only long_read::nanopore is available it is returned (no paired/single_end)."""
+    from unittest.mock import patch
+    from geoseeq.sample import Sample
+
+    all_fastqs = {
+        "long_read::nanopore": {"folder_nano": [["nano_file"]]},
+    }
+    sample = Sample.__new__(Sample)
+    with patch.object(Sample, "get_all_fastqs", return_value=all_fastqs):
+        read_type, folder_name, reads = sample.get_one_fastq_folder()
+
+    assert read_type == "long_read::nanopore"
