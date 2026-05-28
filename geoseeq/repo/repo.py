@@ -1,9 +1,10 @@
 """GeoSeeqRepo handle: wraps a local .geoseeq/ git repo."""
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from .config import RepoConfig
 from .manifest import Manifest, ManifestFileEntry
@@ -325,3 +326,137 @@ class GeoSeeqRepo:
             state.save()
             return True
         return False
+
+    def is_fully_synced(self) -> bool:
+        """Return True if no local files are new or modified relative to the manifest.
+
+        A repo is "fully synced" for the purposes of safe deletion when nothing on
+        disk is unpushed: no ``new_local`` files (present locally but not in the
+        manifest) and no ``modified_local`` files (edited since download).  Absent
+        and outdated files are ignored — those represent server content the user
+        simply hasn't downloaded yet, which is not at risk of being lost.
+        """
+        s = self.compute_status()
+        return not (s.new_local or s.modified_local)
+
+    def new_sample(self, name: str, metadata: dict, knex: "Knex") -> str:
+        """Create a new sample in this repo's project on the server.
+
+        Creates the sample (with *metadata*) via the API, makes its local
+        ``samples/<name>/`` directory, then ``git_pull``s the server's updated
+        manifest (the server commits the new sample) and regenerates pipeline
+        configs.  The client never writes the manifest itself.
+
+        Returns the new sample's UUID.
+        """
+        from geoseeq.id_constructors.from_uuids import project_from_uuid
+
+        project = project_from_uuid(knex, self.manifest.project_uuid)
+        sample = project.sample(name, metadata=metadata).idem()
+
+        sample_dir = self.root.joinpath("samples", name)
+        sample_dir.mkdir(parents=True, exist_ok=True)
+
+        self.git_pull()
+        self._manifest = None
+
+        self.write_pipeline_configs()
+        return sample.uuid
+
+    def push(
+        self,
+        knex: "Knex",
+        sample: Optional[str] = None,
+        cores: int = 1,
+        log_level: int = logging.WARNING,
+        progress_tracker_factory: Optional[Callable] = None,
+    ) -> list[str]:
+        """Upload new-local and modified-local files to GeoSeeq.
+
+        Uploads every file that is new on disk or edited since download
+        (optionally filtered to a single *sample*) to its server result folder,
+        then ``git_pull``s the server's freshly-committed manifest and records the
+        pushed files' local state against the refreshed ``version_replicate``.
+
+        The client never writes or commits the manifest itself: it uploads via the
+        API, the server commits on each write, and the client pulls the result.
+
+        Args:
+            knex: authenticated Knex client.
+            sample: if set, only push files under ``samples/<sample>/``.
+            cores: number of parallel uploads.
+            log_level: log level passed to the upload manager.
+            progress_tracker_factory: optional per-file progress-bar factory.
+
+        Returns the list of pushed repo-root-relative paths (empty if nothing was
+        queued).  Raises a plain ``ValueError`` if a candidate file belongs to a
+        sample that is not yet in the manifest (the user must ``new-sample`` first).
+        """
+        from geoseeq.id_constructors.from_uuids import sample_from_uuid
+        from geoseeq.upload_download_manager import GeoSeeqUploadManager
+
+        status = self.compute_status()
+        candidates = status.new_local + status.modified_local
+        if sample:
+            prefix = f"samples/{sample}/"
+            candidates = [p for p in candidates if p.startswith(prefix)]
+
+        mgr = GeoSeeqUploadManager(
+            n_parallel_uploads=cores,
+            use_atomic_upload=True,
+            progress_tracker_factory=progress_tracker_factory,
+            log_level=log_level,
+        )
+        pushed: list[str] = []
+        # Cache resolved result folders keyed by (sample, module) so a sample/module
+        # with many files only hits the API once for sample lookup + folder idem().
+        folder_cache: dict[tuple[str, str], object] = {}
+        for rel in candidates:
+            parts = Path(rel).parts
+            # The manifest is flat: a pushable file is EXACTLY
+            # samples/<sample>/<module>/<filename> (4 parts).  Nested files cannot
+            # round-trip (the manifest's derived local_path strips subdirectories to
+            # the basename), so they would be uploaded mis-mapped and never recorded
+            # in state.json — skip them rather than push a path we can't track.
+            if len(parts) != 4 or parts[0] != "samples":
+                logging.warning(
+                    "Skipping %s: not a samples/<sample>/<module>/<file> path.", rel
+                )
+                continue
+            s_name, module, filename = parts[1], parts[2], parts[3]
+            if s_name not in self.manifest.samples:
+                raise ValueError(
+                    f"Sample '{s_name}' is not in the manifest. "
+                    f"Run 'geoseeq repo new-sample {s_name}' before pushing its files."
+                )
+            rf = folder_cache.get((s_name, module))
+            if rf is None:
+                sample_obj = sample_from_uuid(knex, self.manifest.samples[s_name].uuid)
+                rf = sample_obj.result_folder(module).idem()
+                folder_cache[(s_name, module)] = rf
+            mgr.add_local_file_to_result_folder(
+                rf, str(self.root / rel), geoseeq_file_name=filename
+            )
+            pushed.append(rel)
+
+        if not pushed:
+            return []
+
+        mgr.upload_files()
+
+        self.git_pull()
+        self._manifest = None
+
+        entries_by_path = {e.local_path: e for e in self.manifest.iter_files()}
+        for rel in pushed:
+            entry = entries_by_path.get(rel)
+            if entry is None:
+                continue
+            record_under_lock(
+                self.root / ".geoseeq",
+                rel,
+                record_for(self.root / rel, entry.mfile.version_replicate),
+            )
+
+        self.write_pipeline_configs()
+        return pushed
