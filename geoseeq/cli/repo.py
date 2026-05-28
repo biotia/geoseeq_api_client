@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from geoseeq.repo import GeoSeeqRepo, RepoExistsError
-from geoseeq.repo.state import RepoState, record_for
+from geoseeq.repo.state import DownloadStateRecorder
 
 from .download import cores_option
 from .progress_bar import PBarManager
@@ -332,34 +332,29 @@ def download_cmd(state, yes, cores, path, sample, file_filter, download_all):
         log_level=state.log_level,
         progress_tracker_factory=PBarManager().get_new_bar,
     )
+    geoseeq_dir = str(repo.root / ".geoseeq")
     for entry in targets:
         rf = result_file_from_uuid(knex, entry.mfile.uuid)
         local_path = repo.root / entry.local_path
         local_path.parent.mkdir(parents=True, exist_ok=True)
-        download_manager.add_download(rf, str(local_path))
+        # Record each file's state as soon as it downloads, via a per-file
+        # callback, so an interrupted run still leaves completed files tracked
+        # (resumable).  The callback must be picklable for multiprocessing under
+        # --cores>1 and serializes its state.json writes with a flock — hence
+        # the module-level DownloadStateRecorder rather than a local closure.
+        download_manager.add_download(
+            rf,
+            str(local_path),
+            key=entry.local_path,
+            callback=DownloadStateRecorder(
+                geoseeq_dir, entry.mfile.version_replicate
+            ),
+        )
 
     click.echo(download_manager.get_preview_string(), err=True)
     if not yes:
         click.confirm(f"Download {len(targets)} file(s)?", abort=True)
     download_manager.download_files()
-
-    # The download manager writes files in parallel; record per-file state
-    # (version_replicate/size/mtime/xxh3) afterwards so compute_status can later
-    # detect local edits and staleness.  Mirrors GeoSeeqRepo.download_file.
-    _record_downloaded_state(repo, targets)
-
-
-def _record_downloaded_state(repo, targets) -> None:
-    """Record state.json entries for *targets* that landed on disk."""
-    state = RepoState.load(repo.root / ".geoseeq")
-    for entry in targets:
-        local_path = repo.root / entry.local_path
-        if local_path.exists():
-            state.set(
-                entry.local_path,
-                record_for(local_path, entry.mfile.version_replicate),
-            )
-    state.save()
 
 
 @cli_repo.command("offload")

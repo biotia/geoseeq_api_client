@@ -68,13 +68,14 @@ def write_config(geoseeq_dir: Path, project_uuid: str, server_url: str) -> None:
 def ensure_config_gitignored(geoseeq_dir: Path) -> None:
     """Ensure the client-private files are listed in .geoseeq/.gitignore.
 
-    Both ``config.json`` (auth/server config) and ``state.json`` (the local
-    download index) are client-private and must never be committed to the
-    manifest git repo.  Any of these entries already present is left as-is;
-    only the missing ones are appended.
+    ``config.json`` (auth/server config), ``state.json`` (the local download
+    index) and ``.state.lock`` (the flock file guarding parallel state writes)
+    are all client-private and must never be committed to the manifest git
+    repo.  Any of these entries already present is left as-is; only the missing
+    ones are appended.
     """
     gitignore_path = geoseeq_dir / ".gitignore"
-    private_files = ("config.json", "state.json")
+    private_files = ("config.json", "state.json", ".state.lock")
 
     existing = gitignore_path.read_text() if gitignore_path.exists() else ""
     existing_lines = set(existing.splitlines())

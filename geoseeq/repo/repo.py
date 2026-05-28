@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from .config import RepoConfig
 from .manifest import Manifest, ManifestFileEntry
-from .state import RepoState, fast_hash, record_for
+from .state import RepoState, fast_hash, record_for, record_under_lock
 from .status import RepoStatus
 
 if TYPE_CHECKING:
@@ -284,12 +284,14 @@ class GeoSeeqRepo:
         records a real content hash).  The recorded xxh3 is what later lets
         :meth:`compute_status` detect local edits.
 
-        Note: this method does a full ``RepoState.load()`` + ``save()`` per
-        call, which is fine for downloading a single file.  Callers downloading
-        MANY files should not call this in a tight loop (that does N load/save
-        cycles); instead batch the state recording after all downloads finish,
-        as the CLI ``download`` command does via its ``_record_downloaded_state``
-        helper (one load + one save for the whole batch).
+        Note: this single-file call has no cross-process race, but it still
+        records via the shared :func:`record_under_lock` path (rather than a
+        bespoke ``RepoState.load``/``set``/``save``) so the SDK and the CLI's
+        per-file download callback converge on one recording path.  Callers
+        downloading MANY files should not call this in a tight loop; the CLI
+        ``download`` command instead records each file via a per-file manager
+        callback as it completes (resumable, and lock-serialized under
+        ``--cores>1``).
         """
         from geoseeq.id_constructors.from_uuids import result_file_from_uuid
 
@@ -299,9 +301,11 @@ class GeoSeeqRepo:
         result_file = result_file_from_uuid(knex, entry.mfile.uuid)
         result_file.download(filename=str(local_path), cache=False)
 
-        state = RepoState.load(self.root / ".geoseeq")
-        state.set(entry.local_path, record_for(local_path, entry.mfile.version_replicate))
-        state.save()
+        record_under_lock(
+            self.root / ".geoseeq",
+            entry.local_path,
+            record_for(local_path, entry.mfile.version_replicate),
+        )
 
     def offload_file(self, entry: ManifestFileEntry) -> bool:
         """Delete the local copy of *entry*; the manifest entry is preserved.
