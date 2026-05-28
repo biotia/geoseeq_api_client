@@ -22,6 +22,7 @@ dependencies = [
     "pandas",
     "biopython",
     "tqdm",
+    "xxhash",
 ]
 
 [project.optional-dependencies]
