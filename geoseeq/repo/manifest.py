@@ -13,15 +13,12 @@ class ManifestFile:
     """Represents a single file tracked in the manifest.
 
     Mirrors the per-file payload the geoseeq_server writes into manifest.json:
-    ``{uuid, checksum, size_bytes, stored_data, version_replicate}``.
+    ``{uuid, checksum, size_bytes, version_replicate, stored_data}``.
     ``stored_data`` is the server's storage descriptor and always carries a
-    ``"uri"`` key pointing at the file's cloud location (e.g.
-    ``s3://bucket/Sample1_R1.fastq.gz``).
-
-    ``version_replicate`` is the server's identifier for the file's *current*
-    version.  It is the trustworthy signal for "the server has a newer version
-    of this file" (staleness) — the ``checksum`` field is an S3 ETag dict, not a
-    content hash, so it cannot be used to compare local and server content.
+    ``"uri"`` key pointing at the file's cloud location
+    (e.g. ``s3://bucket/Sample1_R1.fastq.gz``). ``version_replicate`` is the
+    server's per-file version/replicate marker; older manifests omit it and
+    default it to ``""``.
     """
 
     uuid: str
@@ -42,11 +39,7 @@ class ManifestFile:
 
     @classmethod
     def from_dict(cls, data: dict) -> ManifestFile:
-        """Deserialize from a dict, ignoring any unknown keys.
-
-        ``version_replicate`` defaults to "" for back-compat: older server
-        commits predate the field and will not emit it.
-        """
+        """Deserialize from a dict, ignoring any unknown keys."""
         return cls(
             uuid=data["uuid"],
             checksum=data["checksum"],
