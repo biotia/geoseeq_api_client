@@ -618,6 +618,34 @@ def test_write_pipeline_configs_orders_reads_by_lane(tmp_path):
     assert config["fastq_checksum"] == "md5:lane1"
 
 
+def test_write_pipeline_configs_lane_ordering_is_numeric_not_lexical(tmp_path):
+    """Lane ordering is numeric (lane_2 < lane_10), not lexical (lane_10 < lane_2).
+
+    Lexical sort would place lane_10 before lane_2 because '1' < '2', reversing
+    the intended physical lane order. The implementation uses int() on the lane
+    number, so lane_10 must sort after lane_2.
+    """
+    files = {
+        "paired_end::read_1::lane_10": _read_file("u1", "S1_L10_R1.fastq.gz"),
+        "paired_end::read_1::lane_2": _read_file("u2", "S1_L2_R1.fastq.gz", "md5:lane2"),
+        "paired_end::read_1::lane_1": _read_file("u3", "S1_L1_R1.fastq.gz", "md5:lane1"),
+    }
+    repo = _repo_with_manifest(tmp_path, _reads_manifest("short_read::paired_end", files))
+    write_pipeline_configs(repo)
+
+    with open(tmp_path / "sample_configs" / "Sample1.json") as fh:
+        config = json.loads(fh.read())
+
+    base = "samples/Sample1/short_read::paired_end"
+    assert config["reads_1"] == [
+        f"{base}/S1_L1_R1.fastq.gz",
+        f"{base}/S1_L2_R1.fastq.gz",
+        f"{base}/S1_L10_R1.fastq.gz",
+    ], "lane_10 must sort after lane_2 (numeric, not lexical)"
+    # checksum comes from the first read_1 file (lane 1)
+    assert config["fastq_checksum"] == "md5:lane1"
+
+
 def test_write_pipeline_configs_single_end_has_empty_reads_2(tmp_path):
     """A single-end field (no read_2 token) is treated as read 1, reads_2 empty."""
     files = {"reads": _read_file("u1", "Sample1.fastq.gz", "md5:single")}
