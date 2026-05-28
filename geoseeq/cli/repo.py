@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 
 import click
@@ -13,6 +12,7 @@ from geoseeq.repo.state import RepoState, record_for
 from .progress_bar import PBarManager
 from .shared_params import project_id_arg, use_common_state, yes_option
 from .shared_params.id_handlers import handle_project_id
+from .utils import format_timestamp, human_size
 
 
 @click.group("repo")
@@ -119,33 +119,9 @@ def log(state, limit, offset, as_json, path):
 
     for entry in results:
         short_sha = entry["sha1"][:10]
-        ts = _format_timestamp(entry.get("timestamp", ""))
+        ts = format_timestamp(entry.get("timestamp", ""))
         message = entry.get("message", "")
         click.echo(f"{short_sha}  {ts}  {message}")
-
-
-def _format_timestamp(raw: str) -> str:
-    """Parse an ISO-8601 timestamp string and return a human-readable form.
-
-    Strips a trailing 'Z' before parsing so ``datetime.fromisoformat`` works
-    on Python 3.10 and earlier.  Returns the raw string unchanged if parsing
-    fails so that the output is never empty.
-    """
-    try:
-        cleaned = raw.rstrip("Z")
-        dt = datetime.fromisoformat(cleaned)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except (ValueError, AttributeError):
-        return raw
-
-
-def _human_size(nbytes: int) -> str:
-    """Format a byte count as a human-readable string (KB, MB, GB, etc.)."""
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if abs(nbytes) < 1024.0:
-            return f"{nbytes:.1f} {unit}"
-        nbytes /= 1024.0
-    return f"{nbytes:.1f} PB"
 
 
 def _filtered_entries(repo, sample=None, file_filter=None):
@@ -449,10 +425,10 @@ def offload_cmd(state, yes, quiet, path, sample, file_filter):
             size = local_path.stat().st_size
             total_bytes += size
             if not quiet:
-                click.echo(f"  {entry.local_path} ({_human_size(size)})")
+                click.echo(f"  {entry.local_path} ({human_size(size)})")
 
     if not quiet:
-        click.echo(f"\nTotal disk space to free: {_human_size(total_bytes)}")
+        click.echo(f"\nTotal disk space to free: {human_size(total_bytes)}")
 
     if not yes:
         click.confirm(f"Offload {len(targets)} file(s)?", abort=True)

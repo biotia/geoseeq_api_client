@@ -225,8 +225,8 @@ def test_log_pagination_params(tmp_path):
 
 
 def test_format_timestamp_invalid_returns_raw():
-    """_format_timestamp returns the raw string unchanged when parsing fails."""
-    from geoseeq.cli.repo import _format_timestamp
+    """format_timestamp returns the raw string unchanged when parsing fails."""
+    from geoseeq.cli.utils import format_timestamp
 
-    assert _format_timestamp("not-a-date") == "not-a-date"
-    assert _format_timestamp("") == ""
+    assert format_timestamp("not-a-date") == "not-a-date"
+    assert format_timestamp("") == ""
