@@ -354,7 +354,8 @@ class GeoSeeqRepo:
         project = project_from_uuid(knex, self.manifest.project_uuid)
         sample = project.sample(name, metadata=metadata).idem()
 
-        (self.root / "samples" / name).mkdir(parents=True, exist_ok=True)
+        sample_dir = self.root.joinpath("samples", name)
+        sample_dir.mkdir(parents=True, exist_ok=True)
 
         self.git_pull()
         self._manifest = None
