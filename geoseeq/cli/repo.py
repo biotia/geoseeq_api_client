@@ -60,6 +60,16 @@ def clone(state, project_id, path):
     except RepoExistsError as exc:
         raise click.ClickException(str(exc))
 
+    # The Project object does not expose ``audit_trail_mode``; clone signals the
+    # disabled/refless case (no committed manifest) via ``_cloned_empty``.
+    if repo._cloned_empty:
+        click.echo(
+            "Note: Audit trail is disabled for this project; cloned an empty "
+            "manifest. Enable it in the project Settings to start recording "
+            "history.",
+            err=True,
+        )
+
     n_samples = len(repo.manifest.samples)
     click.echo(f'Cloned "{project_id}" to {clone_path} ({n_samples} samples)')
 
