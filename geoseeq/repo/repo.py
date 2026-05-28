@@ -153,11 +153,26 @@ class GeoSeeqRepo:
         is the sole commit authority.  This fetch is the only git operation
         the client performs (besides the initial clone).
 
+        When the project's audit trail is off the server never commits the
+        manifest, so the remote has no ``main`` ref and ``git pull`` would
+        fail.  We probe with ``git ls-remote`` first and no-op (leaving the
+        local manifest as-is) when there is no ``main`` to pull, so
+        ``pull``/``push``/``new-sample`` degrade gracefully instead of raising.
+
         Uses check=True so subprocess.CalledProcessError propagates to the
         caller intentionally — no special error type is defined for pull
         failures.
         """
         geoseeq_dir = self.root / ".geoseeq"
+        ls_remote = subprocess.run(
+            ["git", "-C", str(geoseeq_dir), "ls-remote", "--heads", "origin", "main"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if not ls_remote.stdout.strip():
+            # Refless remote (audit trail off): nothing to pull, manifest stays.
+            return
         subprocess.run(
             ["git", "-C", str(geoseeq_dir), "pull", "--rebase", "origin", "main"],
             check=True,
