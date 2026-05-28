@@ -915,19 +915,37 @@ def test_repo_config_from_dict_ignores_legacy_keys():
 
 
 def test_ensure_config_gitignored_appends_to_existing_gitignore(tmp_path):
-    """ensure_config_gitignored appends config.json when .gitignore already exists."""
+    """ensure_config_gitignored appends config.json and state.json when .gitignore exists."""
     from geoseeq.repo.clone import ensure_config_gitignored
 
     geoseeq_dir = tmp_path / ".geoseeq"
     geoseeq_dir.mkdir()
     gitignore_path = geoseeq_dir / ".gitignore"
-    gitignore_path.write_text("*.pyc\n")  # existing entries, no config.json
+    gitignore_path.write_text("*.pyc\n")  # existing entries, neither private file present
 
     ensure_config_gitignored(geoseeq_dir)
 
     content = gitignore_path.read_text()
     assert "config.json" in content
+    assert "state.json" in content  # download index must also be gitignored
     assert "*.pyc" in content  # original entry preserved
+
+
+def test_ensure_config_gitignored_idempotent(tmp_path):
+    """ensure_config_gitignored is a no-op when both private files are already listed."""
+    from geoseeq.repo.clone import ensure_config_gitignored
+
+    geoseeq_dir = tmp_path / ".geoseeq"
+    geoseeq_dir.mkdir()
+    gitignore_path = geoseeq_dir / ".gitignore"
+    gitignore_path.write_text("config.json\nstate.json\n")
+
+    ensure_config_gitignored(geoseeq_dir)
+
+    # Content unchanged — no duplicate entries appended.
+    lines = [ln for ln in gitignore_path.read_text().splitlines() if ln]
+    assert lines.count("config.json") == 1
+    assert lines.count("state.json") == 1
 
 
 def test_repo_help_lists_clone_subcommand():
