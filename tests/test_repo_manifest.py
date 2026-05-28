@@ -277,9 +277,9 @@ def test_iter_files_derives_sample_paths():
     assert all(isinstance(e, ManifestFileEntry) for e in entries)
 
 
-def test_iter_files_derives_project_result_paths():
-    """iter_files yields project-level files under project_results/<module>/."""
-    data = {
+def _project_results_manifest_dict() -> dict:
+    """Return a manifest dict carrying a single project-level result file."""
+    return {
         "version": 1,
         "project_uuid": "p",
         "project_name": "O/P",
@@ -299,7 +299,11 @@ def test_iter_files_derives_project_result_paths():
             }
         },
     }
-    m = Manifest.from_dict(data)
+
+
+def test_iter_files_derives_project_result_paths():
+    """iter_files yields project-level files under project_results/<module>/."""
+    m = Manifest.from_dict(_project_results_manifest_dict())
     entries = list(m.iter_files())
 
     assert len(entries) == 1
@@ -307,7 +311,106 @@ def test_iter_files_derives_project_result_paths():
     assert entry.sample_name is None
     assert entry.module_name == "summary"
     assert entry.local_path == "project_results/summary/report.html"
-    assert m.to_dict() == data
+
+
+def test_manifest_project_results_roundtrip():
+    """Manifest with project_results round-trips losslessly via to_dict."""
+    data = _project_results_manifest_dict()
+    assert Manifest.from_dict(data).to_dict() == data
+
+
+def test_iter_files_skips_sample_entry_without_uri():
+    """A sample result field whose stored_data lacks a uri is omitted by iter_files.
+
+    Such inline/non-file fields are not downloadable and must not yield a
+    broken, filename-less local path like ``samples/Sample1/raw_reads/``.
+    """
+    data = {
+        "version": 1,
+        "project_uuid": "p",
+        "project_name": "O/P",
+        "server_url": "https://x.com",
+        "samples": {
+            "Sample1": {
+                "uuid": "sample-uuid-1",
+                "metadata": {},
+                "result_folders": {
+                    "raw_reads": {
+                        "uuid": "folder-uuid-1",
+                        "files": {
+                            # downloadable file (has a cloud uri)
+                            "read_1": {
+                                "uuid": "file-uuid-r1",
+                                "checksum": "md5:abc",
+                                "size_bytes": 1,
+                                "stored_data": _stored_data("Sample1_R1.fastq.gz"),
+                            },
+                            # inline metric: stored_data present but no uri
+                            "metric": {
+                                "uuid": "file-uuid-m",
+                                "checksum": "md5:m",
+                                "size_bytes": 1,
+                                "stored_data": {"__type__": "inline", "value": 0.9},
+                            },
+                            # empty stored_data: also no uri
+                            "empty": {
+                                "uuid": "file-uuid-e",
+                                "checksum": "md5:e",
+                                "size_bytes": 0,
+                                "stored_data": {},
+                            },
+                        },
+                    }
+                },
+            }
+        },
+        "project_results": {},
+    }
+    m = Manifest.from_dict(data)
+    entries = list(m.iter_files())
+
+    # Only the field with a cloud uri is yielded.
+    assert len(entries) == 1
+    assert entries[0].field_name == "read_1"
+    assert entries[0].local_path == "samples/Sample1/raw_reads/Sample1_R1.fastq.gz"
+    # No entry has a directory-like (filename-less) local path.
+    assert all(not e.local_path.endswith("/") for e in entries)
+
+
+def test_iter_files_skips_project_entry_without_uri():
+    """A project-level result field lacking a uri is omitted by iter_files."""
+    data = {
+        "version": 1,
+        "project_uuid": "p",
+        "project_name": "O/P",
+        "server_url": "https://x.com",
+        "samples": {},
+        "project_results": {
+            "summary": {
+                "uuid": "pr-folder-1",
+                "files": {
+                    "report": {
+                        "uuid": "pr-file-1",
+                        "checksum": "md5:rrr",
+                        "size_bytes": 10,
+                        "stored_data": _stored_data("report.html"),
+                    },
+                    "inline_stat": {
+                        "uuid": "pr-file-2",
+                        "checksum": "md5:s",
+                        "size_bytes": 1,
+                        "stored_data": {"__type__": "inline", "value": 1},
+                    },
+                },
+            }
+        },
+    }
+    m = Manifest.from_dict(data)
+    entries = list(m.iter_files())
+
+    assert len(entries) == 1
+    assert entries[0].field_name == "report"
+    assert entries[0].local_path == "project_results/summary/report.html"
 
 
 # ---------------------------------------------------------------------------
