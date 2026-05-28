@@ -199,8 +199,10 @@ def _run_clone(tmp_path: Path, *, refless: bool):
             ).save(geoseeq_dir / "manifest.json")
 
     runner = CliRunner()
-    # clone imports git_clone from geoseeq.repo.clone at call time, so patch the
-    # definition site (geoseeq.repo.clone.git_clone).
+    # GeoSeeqRepo.clone does a local ``from .clone import git_clone`` inside the
+    # method, which re-fetches the attribute from the module on each call — so
+    # patching the module attribute (the definition site, geoseeq.repo.clone.git_clone)
+    # takes effect.
     with (
         patch("geoseeq.cli.repo.handle_project_id", return_value=_mock_project()),
         patch("geoseeq.repo.clone.git_clone", side_effect=_fake_git_clone),
@@ -299,3 +301,30 @@ def test_git_pull_pulls_when_remote_has_main(tmp_path):
 
     assert any("ls-remote" in cmd for cmd in calls)
     assert any("pull" in cmd and "--rebase" in cmd for cmd in calls)
+
+
+def test_pull_on_refless_repo_returns_empty_and_never_pulls(tmp_path):
+    """pull() on a refless (audit-off) repo no-ops cleanly: returns ([], []), no git pull.
+
+    Closes the gap between the git_pull subprocess-unit test and the public
+    pull() method: with an empty on-disk manifest and a refless remote, pull()
+    must classify zero files (no exception, no FileNotFoundError) and must only
+    probe with ls-remote — never invoke ``git pull``.
+    """
+    repo = _build_repo(tmp_path)
+
+    calls = []
+
+    def _fake_run(cmd, *args, **kwargs):
+        calls.append(cmd)
+        if "ls-remote" in cmd:
+            return MagicMock(stdout="", returncode=0)
+        raise AssertionError(f"git pull should not run for a refless remote: {cmd}")
+
+    with patch("geoseeq.repo.repo.subprocess.run", side_effect=_fake_run):
+        new_files, updated_files = repo.pull()
+
+    assert new_files == []
+    assert updated_files == []
+    assert any("ls-remote" in cmd for cmd in calls)
+    assert not any("pull" in cmd for cmd in calls)
