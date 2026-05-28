@@ -168,6 +168,11 @@ class Manifest:
         for sample_name, sample in self.samples.items():
             for module_name, folder in sample.result_folders.items():
                 for field_name, mfile in folder.files.items():
+                    # Entries without a cloud uri (e.g. inline JSON metric fields)
+                    # are not downloadable on-disk files; skip them so they never
+                    # produce a directory-like, filename-less local path.
+                    if not mfile.filename:
+                        continue
                     lp = f"samples/{sample_name}/{module_name}/{mfile.filename}"
                     yield ManifestFileEntry(
                         sample_name, module_name, field_name, mfile, lp
@@ -175,6 +180,9 @@ class Manifest:
         for module_name, folder_dict in self.project_results.items():
             folder = ManifestResultFolder.from_dict(folder_dict)
             for field_name, mfile in folder.files.items():
+                # Same as above: skip non-file (uri-less) project-level entries.
+                if not mfile.filename:
+                    continue
                 lp = f"project_results/{module_name}/{mfile.filename}"
                 yield ManifestFileEntry(None, module_name, field_name, mfile, lp)
 
