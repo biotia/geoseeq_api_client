@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from geoseeq.repo import GeoSeeqRepo
+from geoseeq.repo import GeoSeeqRepo, RepoExistsError
 
 from .progress_bar import PBarManager
 from .shared_params import use_common_state, yes_option
@@ -52,7 +52,10 @@ def clone(state, project_id, path):
 
     clone_path = Path(path) if path else Path(project_id.split("/")[-1])
 
-    repo = GeoSeeqRepo.clone(knex, proj, clone_path, profile=state.profile)
+    try:
+        repo = GeoSeeqRepo.clone(knex, proj, clone_path, profile=state.profile)
+    except RepoExistsError as exc:
+        raise click.ClickException(str(exc))
 
     n_samples = len(repo.manifest.samples)
     click.echo(f'Cloned "{project_id}" to {clone_path} ({n_samples} samples)')

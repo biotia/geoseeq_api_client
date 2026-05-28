@@ -14,7 +14,7 @@ from .manifest import (
     ManifestResultFolder,
     ManifestSample,
 )
-from .repo import GeoSeeqRepo, NotARepoError
+from .repo import GeoSeeqRepo, NotARepoError, RepoExistsError
 from .status import RepoStatus
 from .sync import ChecksumError
 
@@ -26,6 +26,7 @@ __all__ = [
     "ManifestSample",
     "GeoSeeqRepo",
     "NotARepoError",
+    "RepoExistsError",
     "RepoStatus",
     "ChecksumError",
     "RepoConfig",

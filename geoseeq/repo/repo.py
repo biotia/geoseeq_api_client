@@ -19,6 +19,14 @@ class NotARepoError(Exception):
     """Raised when no .geoseeq/config.json is found in the directory tree."""
 
 
+class RepoExistsError(Exception):
+    """Raised by ``GeoSeeqRepo.clone`` when the target already contains a repo.
+
+    Kept CLI-agnostic so the SDK layer never depends on click; the CLI catches
+    this and re-raises it as a ``click.ClickException``.
+    """
+
+
 def _expected_hex(checksum: str) -> str:
     """Return the bare hex digest of a manifest checksum (drops a ``md5:`` prefix)."""
     return checksum.split(":", 1)[-1] if ":" in checksum else checksum
@@ -88,11 +96,9 @@ class GeoSeeqRepo:
         it, then regenerates the pipeline configs.  ``profile`` is accepted for
         call-site symmetry but is intentionally not persisted.
 
-        Raises click.ClickException if ``.geoseeq/`` already exists or the git
-        clone fails.
+        Raises RepoExistsError if ``.geoseeq/`` already exists.  Git clone
+        failures propagate from ``git_clone``.
         """
-        import click
-
         from .clone import (
             create_repo_directories,
             ensure_config_gitignored,
@@ -110,7 +116,7 @@ class GeoSeeqRepo:
 
         geoseeq_dir = clone_path / ".geoseeq"
         if geoseeq_dir.exists():
-            raise click.ClickException("Directory already contains a geoseeq repo.")
+            raise RepoExistsError("Directory already contains a geoseeq repo.")
 
         create_repo_directories(clone_path)
         git_clone(git_remote_url, geoseeq_dir, token, server_url)
