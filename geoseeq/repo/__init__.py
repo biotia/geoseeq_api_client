@@ -1,13 +1,11 @@
-"""geoseeq.repo — local geoseeq project repository management."""
+"""geoseeq.repo — local geoseeq project repository management.
 
-from .clone import (
-    build_authenticated_url,
-    create_repo_directories,
-    ensure_config_gitignored,
-    git_clone,
-    scrub_token,
-    write_config,
-)
+The clone SDK helpers (git_clone, create_repo_directories, etc.) live in
+``geoseeq.repo.clone`` and are intentionally not re-exported here — they are
+internal implementation details. Import them from ``geoseeq.repo.clone`` if
+you genuinely need them.
+"""
+
 from .config import RepoConfig
 from .manifest import (
     Manifest,
@@ -31,10 +29,4 @@ __all__ = [
     "RepoStatus",
     "ChecksumError",
     "RepoConfig",
-    "build_authenticated_url",
-    "create_repo_directories",
-    "ensure_config_gitignored",
-    "git_clone",
-    "scrub_token",
-    "write_config",
 ]
