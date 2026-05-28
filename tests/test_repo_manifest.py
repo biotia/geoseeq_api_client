@@ -677,13 +677,18 @@ def _reads_manifest(module_name, files):
     }
 
 
-def _read_file(uuid, filename, checksum="md5:x"):
-    """Build a single manifest file entry dict."""
+def _read_file(uuid, filename, checksum="md5:x", version_replicate=""):
+    """Build a single manifest file entry dict.
+
+    Mirrors ``ManifestFile.to_dict``, which always emits ``version_replicate``;
+    keeping the key here lets roundtrip-equality tests fed from this helper hold.
+    """
     return {
         "uuid": uuid,
         "checksum": checksum,
         "size_bytes": 1,
         "stored_data": _stored_data(filename),
+        "version_replicate": version_replicate,
     }
 
 
