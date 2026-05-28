@@ -1,7 +1,6 @@
 """Dataclasses for the geoseeq repo manifest.json schema."""
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass, field
 from os.path import basename
@@ -9,29 +8,27 @@ from pathlib import Path
 from typing import Dict, Iterator, NamedTuple, Optional
 
 
-def _md5(path: Path) -> str:
-    """Return the hex MD5 digest of the file at *path*."""
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 @dataclass
 class ManifestFile:
     """Represents a single file tracked in the manifest.
 
     Mirrors the per-file payload the geoseeq_server writes into manifest.json:
-    ``{uuid, checksum, size_bytes, stored_data}``.  ``stored_data`` is the
-    server's storage descriptor and always carries a ``"uri"`` key pointing at
-    the file's cloud location (e.g. ``s3://bucket/Sample1_R1.fastq.gz``).
+    ``{uuid, checksum, size_bytes, stored_data, version_replicate}``.
+    ``stored_data`` is the server's storage descriptor and always carries a
+    ``"uri"`` key pointing at the file's cloud location (e.g.
+    ``s3://bucket/Sample1_R1.fastq.gz``).
+
+    ``version_replicate`` is the server's identifier for the file's *current*
+    version.  It is the trustworthy signal for "the server has a newer version
+    of this file" (staleness) — the ``checksum`` field is an S3 ETag dict, not a
+    content hash, so it cannot be used to compare local and server content.
     """
 
     uuid: str
     checksum: str
     size_bytes: int
     stored_data: dict = field(default_factory=dict)
+    version_replicate: str = ""
 
     def to_dict(self) -> dict:
         """Serialize to a dict for JSON output."""
@@ -40,16 +37,22 @@ class ManifestFile:
             "checksum": self.checksum,
             "size_bytes": self.size_bytes,
             "stored_data": self.stored_data,
+            "version_replicate": self.version_replicate,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> ManifestFile:
-        """Deserialize from a dict, ignoring any unknown keys."""
+        """Deserialize from a dict, ignoring any unknown keys.
+
+        ``version_replicate`` defaults to "" for back-compat: older server
+        commits predate the field and will not emit it.
+        """
         return cls(
             uuid=data["uuid"],
             checksum=data["checksum"],
             size_bytes=data["size_bytes"],
             stored_data=data.get("stored_data", {}),
+            version_replicate=data.get("version_replicate", ""),
         )
 
     @property
