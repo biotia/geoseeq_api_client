@@ -114,6 +114,13 @@ def log(state, limit, offset, as_json, path):
         click.echo(json.dumps(data, indent=2))
         return
 
+    # When the project's audit trail is off the server never commits the
+    # manifest, so there is no history to show.  The history envelope reports
+    # the live mode, so we read it here rather than persisting it in config.
+    if data.get("audit_trail_mode") == "off":
+        click.echo("Audit trail is disabled for this project.")
+        return
+
     results = data.get("results", [])
     if not results:
         click.echo("No manifest history yet.")
