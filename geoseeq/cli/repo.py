@@ -60,6 +60,16 @@ def clone(state, project_id, path):
     except RepoExistsError as exc:
         raise click.ClickException(str(exc))
 
+    # The Project object does not expose ``audit_trail_mode``; clone signals the
+    # disabled/refless case (no committed manifest) via ``_cloned_empty``.
+    if repo._cloned_empty:
+        click.echo(
+            "Note: Audit trail is disabled for this project; cloned an empty "
+            "manifest. Enable it in the project Settings to start recording "
+            "history.",
+            err=True,
+        )
+
     n_samples = len(repo.manifest.samples)
     click.echo(f'Cloned "{project_id}" to {clone_path} ({n_samples} samples)')
 
@@ -112,6 +122,13 @@ def log(state, limit, offset, as_json, path):
 
     if as_json:
         click.echo(json.dumps(data, indent=2))
+        return
+
+    # When the project's audit trail is off the server never commits the
+    # manifest, so there is no history to show.  The history envelope reports
+    # the live mode, so we read it here rather than persisting it in config.
+    if data.get("audit_trail_mode") == "off":
+        click.echo("Audit trail is disabled for this project.")
         return
 
     results = data.get("results", [])
