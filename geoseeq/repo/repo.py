@@ -407,6 +407,9 @@ class GeoSeeqRepo:
             log_level=log_level,
         )
         pushed: list[str] = []
+        # Cache resolved result folders keyed by (sample, module) so a sample/module
+        # with many files only hits the API once for sample lookup + folder idem().
+        folder_cache: dict[tuple[str, str], object] = {}
         for rel in candidates:
             parts = Path(rel).parts
             # The manifest is flat: a pushable file is EXACTLY
@@ -425,8 +428,11 @@ class GeoSeeqRepo:
                     f"Sample '{s_name}' is not in the manifest. "
                     f"Run 'geoseeq repo new-sample {s_name}' before pushing its files."
                 )
-            sample_obj = sample_from_uuid(knex, self.manifest.samples[s_name].uuid)
-            rf = sample_obj.result_folder(module).idem()
+            rf = folder_cache.get((s_name, module))
+            if rf is None:
+                sample_obj = sample_from_uuid(knex, self.manifest.samples[s_name].uuid)
+                rf = sample_obj.result_folder(module).idem()
+                folder_cache[(s_name, module)] = rf
             mgr.add_local_file_to_result_folder(
                 rf, str(self.root / rel), geoseeq_file_name=filename
             )
