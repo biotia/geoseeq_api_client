@@ -63,7 +63,7 @@ def clone(state, project_name, path):
 
     _create_repo_directories(clone_path)
     _git_clone(git_remote_url, geoseeq_dir, state.api_token, server_url)
-    _write_config(geoseeq_dir, proj.uuid, server_url, state.profile, git_remote_url)
+    _write_config(geoseeq_dir, proj.uuid, server_url)
     _ensure_config_gitignored(geoseeq_dir)
 
     repo = GeoSeeqRepo(clone_path)
@@ -120,15 +120,11 @@ def _write_config(
     geoseeq_dir: Path,
     project_uuid: str,
     server_url: str,
-    auth_profile: str,
-    git_remote_url: str,
 ) -> None:
-    """Write config.json into the .geoseeq/ directory."""
+    """Write the repo's config.json (project_uuid + server_url) into the .geoseeq/ directory."""
     config = RepoConfig(
         project_uuid=project_uuid,
         server_url=server_url,
-        auth_profile=auth_profile,
-        git_remote_url=git_remote_url,
     )
     config.save(geoseeq_dir / "config.json")
 
