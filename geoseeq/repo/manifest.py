@@ -13,15 +13,19 @@ class ManifestFile:
     """Represents a single file tracked in the manifest.
 
     Mirrors the per-file payload the geoseeq_server writes into manifest.json:
-    ``{uuid, checksum, size_bytes, stored_data}``.  ``stored_data`` is the
-    server's storage descriptor and always carries a ``"uri"`` key pointing at
-    the file's cloud location (e.g. ``s3://bucket/Sample1_R1.fastq.gz``).
+    ``{uuid, checksum, size_bytes, version_replicate, stored_data}``.
+    ``stored_data`` is the server's storage descriptor and always carries a
+    ``"uri"`` key pointing at the file's cloud location
+    (e.g. ``s3://bucket/Sample1_R1.fastq.gz``). ``version_replicate`` is the
+    server's per-file version/replicate marker; older manifests omit it and
+    default it to ``""``.
     """
 
     uuid: str
     checksum: str
     size_bytes: int
     stored_data: dict = field(default_factory=dict)
+    version_replicate: str = ""
 
     def to_dict(self) -> dict:
         """Serialize to a dict for JSON output."""
@@ -30,6 +34,7 @@ class ManifestFile:
             "checksum": self.checksum,
             "size_bytes": self.size_bytes,
             "stored_data": self.stored_data,
+            "version_replicate": self.version_replicate,
         }
 
     @classmethod
@@ -40,6 +45,7 @@ class ManifestFile:
             checksum=data["checksum"],
             size_bytes=data["size_bytes"],
             stored_data=data.get("stored_data", {}),
+            version_replicate=data.get("version_replicate", ""),
         )
 
     @property
