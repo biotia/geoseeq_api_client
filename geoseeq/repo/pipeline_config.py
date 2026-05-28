@@ -12,6 +12,9 @@ from .repo import GeoSeeqRepo
 # server's DATA_NAMES table (geoseeq_server pangea/core/views/data_views/fastq.py)
 # and additionally include the legacy ``reads``/``raw_reads`` names that appear
 # in server tests, so detection stays permissive across both conventions.
+# NB: ``short_read::paired_end``/``short_read::single_end``/``long_read::*`` are
+# folder_name (i.e. module_name) values here -- the 2nd column of DATA_NAMES --
+# not ``kind`` values (the 1st column); they are deliberately real module names.
 READ_MODULE_NAMES = {
     "raw::raw_reads",
     "raw::single_short_reads",
@@ -96,6 +99,9 @@ def write_pipeline_configs(repo: GeoSeeqRepo) -> None:
     config_dir.mkdir(exist_ok=True)
 
     manifest = repo.manifest
+    # Materialize the flattened file list once; iter_files walks the whole
+    # manifest, so calling it per-sample would be O(samples x total_files).
+    all_entries = list(manifest.iter_files())
     for sample_name, sample in manifest.samples.items():
         reads_modules = [
             name
@@ -107,7 +113,7 @@ def write_pipeline_configs(repo: GeoSeeqRepo) -> None:
 
         reads_entries = [
             entry
-            for entry in manifest.iter_files()
+            for entry in all_entries
             if entry.sample_name == sample_name and entry.module_name in reads_modules
         ]
 
