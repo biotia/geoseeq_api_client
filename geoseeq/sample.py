@@ -1,4 +1,5 @@
 import urllib
+from .constants import FASTQ_READ_TYPE_PREFERENCE
 from .remote_object import RemoteObject
 from .result import SampleResultFolder
 
@@ -169,12 +170,7 @@ class Sample(RemoteObject):
             "long_read::pacbio"
         """
         if preference_order is None:
-            preference_order = [
-                "short_read::paired_end",
-                "short_read::single_end",
-                "long_read::nanopore",
-                "long_read::pacbio",
-            ]
+            preference_order = list(FASTQ_READ_TYPE_PREFERENCE)
         all_fastqs = self.get_all_fastqs()
         for read_type in preference_order:
             if read_type in all_fastqs:

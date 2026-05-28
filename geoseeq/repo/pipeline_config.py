@@ -2,56 +2,21 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import List
+
+from geoseeq.constants import READS_MODULE_NAMES
+from geoseeq.fastq import classify_fastq_field
 
 from .manifest import ManifestFileEntry
 from .repo import GeoSeeqRepo
 
-# Reads-module folder names. These mirror the ``folder_name`` column of the
-# server's DATA_NAMES table (geoseeq_server pangea/core/views/data_views/fastq.py)
-# and additionally include the legacy ``reads``/``raw_reads`` names that appear
-# in server tests, so detection stays permissive across both conventions.
-# NB: ``short_read::paired_end``/``short_read::single_end``/``long_read::*`` are
-# folder_name (i.e. module_name) values here -- the 2nd column of DATA_NAMES --
-# not ``kind`` values (the 1st column); they are deliberately real module names.
-READ_MODULE_NAMES = {
-    "raw::raw_reads",
-    "raw::single_short_reads",
-    "short_read::paired_end",
-    "short_read::single_end",
-    "long_read::nanopore",
-    "long_read::pacbio",
-    "reads",
-    "raw_reads",
-}
 
-# Read pair number and lane number are encoded in the file's *field name* (the
-# dict key the server emits), e.g. "read_1", "paired_end::read_2::lane_3".
-READ_PAIR_RE = re.compile(r"read_(?P<pair_num>1|2)")
-LANE_RE = re.compile(r"lane_(?P<lane_num>\d+)")
-
-
-def _lane_num(field_name: str) -> int:
-    """Return the 1-based lane number encoded in *field_name* (default 1)."""
-    match = LANE_RE.search(field_name)
-    return int(match.group("lane_num")) if match else 1
-
-
-def _is_read_2(field_name: str) -> bool:
-    """Return True if *field_name* designates read 2 of a pair.
-
-    Anything that does not explicitly match ``read_2`` (including single-end
-    reads with no pair token at all) is treated as read 1.
-    """
-    match = READ_PAIR_RE.search(field_name)
-    return match is not None and match.group("pair_num") == "2"
-
-
-def _ordered_read_paths(entries: List[ManifestFileEntry], read_2: bool) -> List[str]:
-    """Return derived local paths for read-1 (or read-2) files, lane-ordered."""
-    selected = [e for e in entries if _is_read_2(e.field_name) == read_2]
-    selected.sort(key=lambda e: _lane_num(e.field_name))
+def _ordered_read_paths(entries: List[ManifestFileEntry], read_num: int) -> List[str]:
+    """Return derived local paths for the given *read_num* (1 or 2), lane-ordered."""
+    selected = [
+        e for e in entries if classify_fastq_field(e.field_name)[0] == read_num
+    ]
+    selected.sort(key=lambda e: classify_fastq_field(e.field_name)[1])
     return [e.local_path for e in selected]
 
 
@@ -68,8 +33,8 @@ def _build_sample_config(
     *reads_entries* are the manifest entries for the sample's reads folder, each
     carrying the file's derived ``local_path``.
     """
-    reads_1 = _ordered_read_paths(reads_entries, read_2=False)
-    reads_2 = _ordered_read_paths(reads_entries, read_2=True)
+    reads_1 = _ordered_read_paths(reads_entries, read_num=1)
+    reads_2 = _ordered_read_paths(reads_entries, read_num=2)
 
     checksum = ""
     if reads_1:
@@ -93,7 +58,8 @@ def write_pipeline_configs(repo: GeoSeeqRepo) -> None:
 
     Config files are written to <repo.root>/sample_configs/<sample_name>.json.
     A folder counts as a reads folder when its ``module_name`` is in
-    READ_MODULE_NAMES. Samples without a reads folder are silently skipped.
+    ``constants.READS_MODULE_NAMES``. Samples without a reads folder are silently
+    skipped.
     """
     config_dir = repo.root / "sample_configs"
     config_dir.mkdir(exist_ok=True)
@@ -106,7 +72,7 @@ def write_pipeline_configs(repo: GeoSeeqRepo) -> None:
         reads_modules = [
             name
             for name in sample.result_folders
-            if name in READ_MODULE_NAMES
+            if name in READS_MODULE_NAMES
         ]
         if not reads_modules:
             continue
