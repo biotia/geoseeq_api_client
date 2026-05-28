@@ -22,7 +22,13 @@ from geoseeq.repo import (
     RepoExistsError,
     RepoStatus,
 )
-from geoseeq.repo.state import RepoState, fast_hash, record_for
+from geoseeq.repo.state import (
+    DownloadStateRecorder,
+    RepoState,
+    fast_hash,
+    record_for,
+    record_under_lock,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +183,88 @@ def test_repo_state_remove(tmp_path):
     state.remove("p")
     assert state.get("p") is None
     state.remove("does-not-exist")  # no error
+
+
+# ---------------------------------------------------------------------------
+# record_under_lock / DownloadStateRecorder tests
+# ---------------------------------------------------------------------------
+
+
+def _record(version="v1", size=1, mtime=0.0, xxh3="x") -> dict:
+    """Build a minimal state record dict."""
+    return {"version_replicate": version, "size_bytes": size, "mtime": mtime, "xxh3": xxh3}
+
+
+def test_record_under_lock_adds_and_persists(tmp_path):
+    """record_under_lock writes a single path's record and persists it to disk."""
+    geoseeq_dir = tmp_path / ".geoseeq"
+
+    record_under_lock(geoseeq_dir, "samples/S1/reads/a.gz", _record("v1", 10))
+
+    reloaded = RepoState.load(geoseeq_dir)
+    assert reloaded.get("samples/S1/reads/a.gz") == _record("v1", 10)
+
+
+def test_record_under_lock_sequential_completions_do_not_clobber(tmp_path):
+    """A second record_under_lock updates a different path without losing the first.
+
+    Simulates two sequential file 'completions' writing to the same state.json:
+    the second write must not drop the first path's record.
+    """
+    geoseeq_dir = tmp_path / ".geoseeq"
+
+    record_under_lock(geoseeq_dir, "a", _record("v1", 1))
+    record_under_lock(geoseeq_dir, "b", _record("v2", 2))
+
+    reloaded = RepoState.load(geoseeq_dir)
+    assert reloaded.get("a") == _record("v1", 1)
+    assert reloaded.get("b") == _record("v2", 2)
+
+
+def test_record_under_lock_updates_existing_path(tmp_path):
+    """record_under_lock replaces an existing path's record in place."""
+    geoseeq_dir = tmp_path / ".geoseeq"
+
+    record_under_lock(geoseeq_dir, "a", _record("v1", 1))
+    record_under_lock(geoseeq_dir, "a", _record("v2", 99))
+
+    reloaded = RepoState.load(geoseeq_dir)
+    assert reloaded.get("a") == _record("v2", 99)
+
+
+def test_download_state_recorder_is_picklable():
+    """DownloadStateRecorder round-trips through pickle (multiprocessing requirement).
+
+    The callback is handed to ``multiprocessing.Pool`` under ``--cores>1``, so it
+    MUST be picklable.  A module-level class with str attrs pickles; a lambda or
+    local closure would not.
+    """
+    import pickle
+
+    recorder = DownloadStateRecorder("some/.geoseeq", "v-7")
+    restored = pickle.loads(pickle.dumps(recorder))
+
+    assert isinstance(restored, DownloadStateRecorder)
+    assert restored.geoseeq_dir == "some/.geoseeq"
+    assert restored.version_replicate == "v-7"
+
+
+def test_download_state_recorder_writes_expected_record(tmp_path):
+    """Calling a recorder with (rel_path, abs_local_path) writes the full record."""
+    geoseeq_dir = tmp_path / ".geoseeq"
+    content = b"recorder under test"
+    disk_path = tmp_path / "samples" / "S1" / "reads" / "f.gz"
+    disk_path.parent.mkdir(parents=True, exist_ok=True)
+    disk_path.write_bytes(content)
+
+    recorder = DownloadStateRecorder(str(geoseeq_dir), "v-rec-5")
+    recorder("samples/S1/reads/f.gz", str(disk_path))
+
+    record = RepoState.load(geoseeq_dir).get("samples/S1/reads/f.gz")
+    assert record["version_replicate"] == "v-rec-5"
+    assert record["size_bytes"] == len(content)
+    assert record["mtime"] == disk_path.stat().st_mtime
+    assert record["xxh3"] == fast_hash(disk_path)
 
 
 # ---------------------------------------------------------------------------
@@ -825,7 +913,7 @@ def test_download_all_adds_targets_and_downloads(tmp_path):
 
     mock_manager = MagicMock()
     added: list[str] = []
-    mock_manager.add_download.side_effect = lambda rf, dest: added.append(dest)
+    mock_manager.add_download.side_effect = lambda rf, dest, **kwargs: added.append(dest)
 
     runner = CliRunner()
     with (
@@ -860,7 +948,7 @@ def test_download_includes_outdated_files(tmp_path):
 
     mock_manager = MagicMock()
     added: list[str] = []
-    mock_manager.add_download.side_effect = lambda rf, dest: added.append(dest)
+    mock_manager.add_download.side_effect = lambda rf, dest, **kwargs: added.append(dest)
 
     runner = CliRunner()
     with (
@@ -886,20 +974,19 @@ def test_download_includes_outdated_files(tmp_path):
     assert str(Path(added[0]).relative_to(tmp_path)) == local_path
 
 
-def test_download_records_state_after_fetch(tmp_path):
-    """After a CLI download the per-file state is recorded for downloaded targets."""
-    repo, _entry, local_path = _single_file_repo(tmp_path, "file.fastq.gz", "v-cli-3")
+def _capture_download_callbacks(tmp_path):
+    """Run the CLI download against a mocked manager, capturing per-file callbacks.
 
-    content = b"cli downloaded bytes"
-
-    def _fake_download_files():
-        """Stand in for the manager: write the file the command queued."""
-        disk_path = tmp_path / local_path
-        disk_path.parent.mkdir(parents=True, exist_ok=True)
-        disk_path.write_bytes(content)
-
+    Returns the mock manager and a list of ``(key, callback)`` pairs the command
+    queued via ``add_download``.  ``download_files`` is left as a no-op so the
+    test can drive the callbacks itself, file-by-file, to model how the real
+    manager invokes ``callback(key, local_path)`` as each download completes.
+    """
+    captured: list[tuple[str, object]] = []
     mock_manager = MagicMock()
-    mock_manager.download_files.side_effect = _fake_download_files
+    mock_manager.add_download.side_effect = (
+        lambda rf, dest, key=None, callback=None, **kw: captured.append((key, callback))
+    )
 
     runner = CliRunner()
     with (
@@ -914,16 +1001,89 @@ def test_download_records_state_after_fetch(tmp_path):
     ):
         result = runner.invoke(
             main,
-            ["repo", "download", "--yes", str(tmp_path)],
+            ["repo", "download", "--all", "--yes", str(tmp_path)],
             env={"GEOSEEQ_API_TOKEN": "fake"},
             catch_exceptions=False,
         )
 
     assert result.exit_code == 0, result.output
-    record = RepoState.load(tmp_path / ".geoseeq").get(local_path)
-    assert record is not None
-    assert record["version_replicate"] == "v-cli-3"
-    assert record["size_bytes"] == len(content)
+    return captured
+
+
+def _invoke_callback(repo, key, callback, content: bytes) -> None:
+    """Write *content* to disk for *key* then invoke *callback(key, abs_path)*.
+
+    Models the download manager: the file lands on disk first, then the manager
+    calls the per-file callback with the repo-root-relative key and the absolute
+    on-disk path.
+    """
+    disk_path = repo.root / key
+    disk_path.parent.mkdir(parents=True, exist_ok=True)
+    disk_path.write_bytes(content)
+    callback(key, str(disk_path))
+
+
+def test_download_records_state_per_callback(tmp_path):
+    """Each completed file is recorded by its own per-file download callback.
+
+    Mirrors the manager contract: ``add_download`` is given a ``key`` and a
+    ``callback``; the manager calls ``callback(key, local_path)`` once per
+    completed file.  Driving every captured callback records every target.
+    """
+    md = _make_manifest_dict(
+        {
+            "read_1": {"filename": "r1.fastq.gz", "version_replicate": "v-cli-1"},
+            "read_2": {"filename": "r2.fastq.gz", "version_replicate": "v-cli-2"},
+        }
+    )
+    repo = _build_repo(tmp_path, md)
+    expected_paths = {e.local_path for e in repo.manifest.iter_files()}
+
+    captured = _capture_download_callbacks(tmp_path)
+    assert {key for key, _ in captured} == expected_paths
+
+    for key, callback in captured:
+        _invoke_callback(repo, key, callback, b"downloaded " + key.encode())
+
+    state = RepoState.load(tmp_path / ".geoseeq")
+    assert set(state.records) == expected_paths
+    for key in expected_paths:
+        assert state.get(key)["size_bytes"] == len(b"downloaded " + key.encode())
+
+
+def test_download_state_is_resumable_when_interrupted(tmp_path):
+    """Invoking only the first callback records ONLY that file (resumability).
+
+    If a run is interrupted mid-batch, files that already completed must still
+    be tracked.  Because recording happens per file via the callback, driving
+    just the first captured callback persists exactly that one record and no
+    other — the rest stay absent and will be re-fetched on the next run.
+    """
+    md = _make_manifest_dict(
+        {
+            "read_1": {"filename": "r1.fastq.gz", "version_replicate": "v1"},
+            "read_2": {"filename": "r2.fastq.gz", "version_replicate": "v1"},
+        }
+    )
+    repo = _build_repo(tmp_path, md)
+
+    captured = _capture_download_callbacks(tmp_path)
+    first_key, first_callback = captured[0]
+    _invoke_callback(repo, first_key, first_callback, b"only this one completed")
+
+    state = RepoState.load(tmp_path / ".geoseeq")
+    assert set(state.records) == {first_key}
+
+
+def test_record_downloaded_state_helper_removed():
+    """The old batch ``_record_downloaded_state`` helper is gone.
+
+    Recording now happens per-file via the manager callback; the post-download
+    batch helper must not linger as a second, divergent recording path.
+    """
+    import geoseeq.cli.repo as repo_cli
+
+    assert not hasattr(repo_cli, "_record_downloaded_state")
 
 
 def test_download_cores_passed_to_manager(tmp_path):
@@ -1062,7 +1222,7 @@ def test_clone_derives_server_url_and_remote(tmp_path):
 
 
 def test_clone_gitignores_state_json(tmp_path):
-    """clone() gitignores both config.json and state.json."""
+    """clone() gitignores the client-private config.json, state.json and lock file."""
     from geoseeq.knex import Knex
 
     knex = Knex(endpoint_url="https://backend.geoseeq.com")
@@ -1088,6 +1248,7 @@ def test_clone_gitignores_state_json(tmp_path):
     gitignore = (clone_path / ".geoseeq" / ".gitignore").read_text()
     assert "config.json" in gitignore
     assert "state.json" in gitignore
+    assert ".state.lock" in gitignore
 
 
 def test_clone_raises_when_repo_already_exists(tmp_path):
