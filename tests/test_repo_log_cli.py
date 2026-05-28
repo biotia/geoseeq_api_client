@@ -222,3 +222,11 @@ def test_log_pagination_params(tmp_path):
     assert len(captured_urls) == 1
     assert "limit=5" in captured_urls[0]
     assert "offset=10" in captured_urls[0]
+
+
+def test_format_timestamp_invalid_returns_raw():
+    """_format_timestamp returns the raw string unchanged when parsing fails."""
+    from geoseeq.cli.repo import _format_timestamp
+
+    assert _format_timestamp("not-a-date") == "not-a-date"
+    assert _format_timestamp("") == ""

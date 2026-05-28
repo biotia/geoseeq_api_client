@@ -468,6 +468,32 @@ def test_download_all_adds_targets_and_downloads(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# CLI: pull already-up-to-date path
+# ---------------------------------------------------------------------------
+
+
+def test_pull_already_up_to_date(tmp_path):
+    """pull prints 'Already up to date.' when the manifest gained no new files."""
+    md = _make_manifest_dict({"read_1": {"filename": "old.fastq.gz", "checksum": "md5:old"}})
+    _build_repo(tmp_path, md)
+
+    runner = CliRunner()
+    with (
+        patch("geoseeq.cli.repo.GeoSeeqRepo.git_pull"),
+        patch("geoseeq.cli.repo.GeoSeeqRepo.write_pipeline_configs"),
+    ):
+        result = runner.invoke(
+            main,
+            ["repo", "pull", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake"},
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Already up to date." in result.output
+
+
+# ---------------------------------------------------------------------------
 # GeoSeeqRepo.clone server_url derivation
 # ---------------------------------------------------------------------------
 
