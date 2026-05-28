@@ -257,6 +257,8 @@ def pull(state, path, sample, file_filter):
 
     # The method returns the full diff; the --sample/--file filters are a display
     # concern, so apply them here to the echoed counts only.
+    # repo.pull() always reconciles the full manifest regardless of these filters,
+    # so --sample X can report "Already up to date" even when a different sample changed.
     new_files = list(_filter_entries(new_files, sample, file_filter))
     updated_files = list(_filter_entries(updated_files, sample, file_filter))
 

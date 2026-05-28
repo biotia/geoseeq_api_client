@@ -977,10 +977,10 @@ def test_download_includes_outdated_files(tmp_path):
 def _capture_download_callbacks(tmp_path):
     """Run the CLI download against a mocked manager, capturing per-file callbacks.
 
-    Returns the mock manager and a list of ``(key, callback)`` pairs the command
-    queued via ``add_download``.  ``download_files`` is left as a no-op so the
-    test can drive the callbacks itself, file-by-file, to model how the real
-    manager invokes ``callback(key, local_path)`` as each download completes.
+    Returns a list of ``(key, callback)`` pairs the command queued via
+    ``add_download``.  ``download_files`` is left as a no-op so the test can
+    drive the callbacks itself, file-by-file, to model how the real manager
+    invokes ``callback(key, local_path)`` as each download completes.
     """
     captured: list[tuple[str, object]] = []
     mock_manager = MagicMock()

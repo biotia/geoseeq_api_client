@@ -122,15 +122,12 @@ def record_under_lock(geoseeq_dir: Path, rel_path: str, record: dict) -> None:
 
     geoseeq_dir = Path(geoseeq_dir)
     geoseeq_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = geoseeq_dir / _LOCK_FILENAME
-    with open(lock_path, "w") as lockf:
+    with open(geoseeq_dir / _LOCK_FILENAME, "w") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
-        try:
-            state = RepoState.load(geoseeq_dir)
-            state.set(rel_path, record)
-            state.save()
-        finally:
-            fcntl.flock(lockf, fcntl.LOCK_UN)
+        state = RepoState.load(geoseeq_dir)
+        state.set(rel_path, record)
+        state.save()
+    # flock released when lockf closes
 
 
 class DownloadStateRecorder:
