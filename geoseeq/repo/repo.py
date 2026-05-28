@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from .config import RepoConfig
-from .manifest import Manifest, ManifestFileEntry, _md5
+from .manifest import Manifest, ManifestFileEntry
+from .state import RepoState, fast_hash, record_for
 from .status import RepoStatus
-from .sync import ChecksumError
 
 if TYPE_CHECKING:
     from geoseeq.knex import Knex
@@ -25,11 +25,6 @@ class RepoExistsError(Exception):
     Kept CLI-agnostic so the SDK layer never depends on click; the CLI catches
     this and re-raises it as a ``click.ClickException``.
     """
-
-
-def _expected_hex(checksum: str) -> str:
-    """Return the bare hex digest of a manifest checksum (drops a ``md5:`` prefix)."""
-    return checksum.split(":", 1)[-1] if ":" in checksum else checksum
 
 
 class GeoSeeqRepo:
@@ -151,15 +146,20 @@ class GeoSeeqRepo:
         write_pipeline_configs(self)
 
     def compute_status(self) -> RepoStatus:
-        """Compare the manifest against the local filesystem and return a RepoStatus.
+        """Compare the manifest + local state index against disk.
 
-        For every file in the manifest (via ``iter_files``), check whether it
-        exists on disk and whether its MD5 checksum matches.  Then scan
-        ``samples/`` and ``project_results/`` for any files not listed in the
-        manifest.
+        For each manifest file (via ``iter_files``): absent if not on disk;
+        otherwise classified using the recorded state in ``.geoseeq/state.json``
+        — ``modified_local`` if the on-disk content differs from the recorded
+        xxh3, ``downloaded`` if unchanged and current, and additionally
+        ``outdated`` if the server's ``version_replicate`` has moved past the
+        recorded one.  Finally scans ``samples/`` and ``project_results/`` for
+        files not in the manifest (``new_local``).
         """
         status = RepoStatus()
+        state = RepoState.load(self.root / ".geoseeq")
         manifest_paths: set[str] = set()
+        state_dirty = False
 
         for entry in self.manifest.iter_files():
             manifest_paths.add(entry.local_path)
@@ -167,12 +167,70 @@ class GeoSeeqRepo:
             if not disk_path.exists():
                 status.absent.append(entry.local_path)
                 continue
-            actual_hex = _md5(disk_path)
-            if actual_hex == _expected_hex(entry.mfile.checksum):
-                status.downloaded.append(entry.local_path)
-            else:
-                status.modified_local.append(entry.local_path)
+            state_dirty |= self._classify_present(entry, disk_path, state, status)
 
+        self._scan_new_local(manifest_paths, status)
+
+        if state_dirty:
+            state.save()
+        return status
+
+    def _classify_present(
+        self,
+        entry: ManifestFileEntry,
+        disk_path: Path,
+        state: RepoState,
+        status: RepoStatus,
+    ) -> bool:
+        """Classify an on-disk manifest file as modified/downloaded and outdated.
+
+        Mutates *status* in place and returns True if *state* was refreshed (a
+        recovered mtime) so the caller knows to persist it.
+        """
+        record = state.get(entry.local_path)
+        if record is None:
+            # Present but never recorded (e.g. downloaded by an older client):
+            # we can't verify it, so treat it as a plain downloaded file.
+            status.downloaded.append(entry.local_path)
+            return False
+
+        modified, refreshed = self._is_modified(disk_path, record, state, entry.local_path)
+        if modified:
+            status.modified_local.append(entry.local_path)
+        else:
+            status.downloaded.append(entry.local_path)
+
+        version = entry.mfile.version_replicate
+        if version and version != record.get("version_replicate", ""):
+            status.outdated.append(entry.local_path)
+        return refreshed
+
+    @staticmethod
+    def _is_modified(
+        disk_path: Path, record: dict, state: RepoState, rel_path: str
+    ) -> tuple[bool, bool]:
+        """Decide if *disk_path* has been edited since download.
+
+        Stat fast-path: if size and mtime match the record, it is unchanged.
+        Otherwise recompute the xxh3 hash; a matching hash means the file was
+        only touched (refresh the recorded mtime), a differing hash means it was
+        edited.  Returns ``(is_modified, state_refreshed)``.
+        """
+        stat = disk_path.stat()
+        if stat.st_size == record.get("size_bytes") and stat.st_mtime == record.get("mtime"):
+            return False, False
+        if fast_hash(disk_path) != record.get("xxh3"):
+            return True, False
+        # Same content, different mtime/size metadata: refresh the record so the
+        # cheap stat fast-path works next time.
+        refreshed = dict(record)
+        refreshed["size_bytes"] = stat.st_size
+        refreshed["mtime"] = stat.st_mtime
+        state.set(rel_path, refreshed)
+        return False, True
+
+    def _scan_new_local(self, manifest_paths: set[str], status: RepoStatus) -> None:
+        """Append on-disk files under samples/ or project_results/ not in the manifest."""
         for scan_dir in ("samples", "project_results"):
             base = self.root / scan_dir
             if not base.exists():
@@ -183,16 +241,19 @@ class GeoSeeqRepo:
                     if rel not in manifest_paths:
                         status.new_local.append(rel)
 
-        return status
-
     def download_file(self, entry: ManifestFileEntry, knex: "Knex") -> None:
-        """Download the file for *entry* to its derived local path and verify it.
+        """Download the file for *entry* and record its state locally.
 
         Looks up the result file by UUID via *knex*, downloads it to
-        ``entry.local_path`` under repo.root, then verifies the MD5 checksum.
+        ``entry.local_path`` under repo.root, then records the downloaded
+        content's state (server ``version_replicate``, size, mtime, xxh3) in
+        ``.geoseeq/state.json``.
 
-        Raises ChecksumError if the downloaded content does not match the
-        checksum recorded in the manifest.
+        No content-hash verification is performed against the manifest: the
+        manifest ``checksum`` is an S3 ETag dict, not a trustworthy file content
+        hash, so there is nothing to verify against (deferred until the server
+        records a real content hash).  The recorded xxh3 is what later lets
+        :meth:`compute_status` detect local edits.
         """
         from geoseeq.id_constructors.from_uuids import result_file_from_uuid
 
@@ -202,15 +263,15 @@ class GeoSeeqRepo:
         result_file = result_file_from_uuid(knex, entry.mfile.uuid)
         result_file.download(filename=str(local_path), cache=False)
 
-        actual_hex = _md5(local_path)
-        if actual_hex != _expected_hex(entry.mfile.checksum):
-            raise ChecksumError(
-                f"Error: {entry.local_path} checksum mismatch. "
-                f"Expected {entry.mfile.checksum}, got md5:{actual_hex}."
-            )
+        state = RepoState.load(self.root / ".geoseeq")
+        state.set(entry.local_path, record_for(local_path, entry.mfile.version_replicate))
+        state.save()
 
     def offload_file(self, entry: ManifestFileEntry) -> bool:
         """Delete the local copy of *entry*; the manifest entry is preserved.
+
+        After deleting the file its record is removed from the local state
+        index (the content is no longer on disk, so any recorded hash is stale).
 
         Returns ``True`` if a file was deleted, ``False`` if it was already
         absent (a no-op).  Callers use the return value to count files that
@@ -219,5 +280,8 @@ class GeoSeeqRepo:
         local_path = self.root / entry.local_path
         if local_path.exists():
             local_path.unlink()
+            state = RepoState.load(self.root / ".geoseeq")
+            state.remove(entry.local_path)
+            state.save()
             return True
         return False

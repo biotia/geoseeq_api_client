@@ -16,7 +16,6 @@ from .manifest import (
 )
 from .repo import GeoSeeqRepo, NotARepoError, RepoExistsError
 from .status import RepoStatus
-from .sync import ChecksumError
 
 __all__ = [
     "Manifest",
@@ -28,6 +27,5 @@ __all__ = [
     "NotARepoError",
     "RepoExistsError",
     "RepoStatus",
-    "ChecksumError",
     "RepoConfig",
 ]
