@@ -446,6 +446,115 @@ def test_download_then_status_is_downloaded(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# GeoSeeqRepo.pull tests
+# ---------------------------------------------------------------------------
+
+
+def _swap_manifest_on_pull(repo: GeoSeeqRepo, new_manifest_dict: dict):
+    """Return a git_pull stand-in that writes *new_manifest_dict* to disk."""
+
+    def _fake_git_pull():
+        Manifest.from_dict(new_manifest_dict).save(
+            repo.root / ".geoseeq" / "manifest.json"
+        )
+
+    return _fake_git_pull
+
+
+def test_pull_returns_new_entries(tmp_path):
+    """pull() returns a file that appeared in the manifest as new, not updated."""
+    old_md = _make_manifest_dict(
+        {"read_1": {"filename": "old.fastq.gz", "version_replicate": "v1"}}
+    )
+    repo = _build_repo(tmp_path, old_md)
+
+    new_md = _make_manifest_dict(
+        {
+            "read_1": {"filename": "old.fastq.gz", "version_replicate": "v1"},
+            "read_2": {"filename": "new.fastq.gz", "version_replicate": "v1"},
+        }
+    )
+
+    with (
+        patch.object(GeoSeeqRepo, "git_pull", side_effect=_swap_manifest_on_pull(repo, new_md)),
+        patch.object(GeoSeeqRepo, "write_pipeline_configs") as mock_write,
+    ):
+        new_files, updated_files = repo.pull()
+
+    assert [e.local_path for e in new_files] == ["samples/Sample1/reads/new.fastq.gz"]
+    assert updated_files == []
+    mock_write.assert_called_once()
+
+
+def test_pull_returns_updated_entries(tmp_path):
+    """pull() classifies a same-path version_replicate bump as updated, not new."""
+    old_md = _make_manifest_dict(
+        {"read_1": {"filename": "f.fastq.gz", "version_replicate": "v1"}}
+    )
+    repo = _build_repo(tmp_path, old_md)
+
+    new_md = _make_manifest_dict(
+        {"read_1": {"filename": "f.fastq.gz", "version_replicate": "v2"}}
+    )
+
+    with (
+        patch.object(GeoSeeqRepo, "git_pull", side_effect=_swap_manifest_on_pull(repo, new_md)),
+        patch.object(GeoSeeqRepo, "write_pipeline_configs"),
+    ):
+        new_files, updated_files = repo.pull()
+
+    assert new_files == []
+    assert [e.local_path for e in updated_files] == ["samples/Sample1/reads/f.fastq.gz"]
+
+
+def test_pull_returns_empty_when_unchanged(tmp_path):
+    """pull() returns ([], []) when the manifest gains no new or updated files."""
+    md = _make_manifest_dict(
+        {"read_1": {"filename": "f.fastq.gz", "version_replicate": "v1"}}
+    )
+    repo = _build_repo(tmp_path, md)
+
+    with (
+        patch.object(GeoSeeqRepo, "git_pull"),
+        patch.object(GeoSeeqRepo, "write_pipeline_configs"),
+    ):
+        new_files, updated_files = repo.pull()
+
+    assert new_files == []
+    assert updated_files == []
+
+
+def test_pull_invalidates_cached_manifest(tmp_path):
+    """pull() invalidates the cached manifest so the refreshed file is visible."""
+    old_md = _make_manifest_dict(
+        {"read_1": {"filename": "old.fastq.gz", "version_replicate": "v1"}}
+    )
+    repo = _build_repo(tmp_path, old_md)
+    # Prime the manifest cache with the pre-pull state.
+    assert {e.local_path for e in repo.manifest.iter_files()} == {
+        "samples/Sample1/reads/old.fastq.gz"
+    }
+
+    new_md = _make_manifest_dict(
+        {
+            "read_1": {"filename": "old.fastq.gz", "version_replicate": "v1"},
+            "read_2": {"filename": "new.fastq.gz", "version_replicate": "v1"},
+        }
+    )
+
+    with (
+        patch.object(GeoSeeqRepo, "git_pull", side_effect=_swap_manifest_on_pull(repo, new_md)),
+        patch.object(GeoSeeqRepo, "write_pipeline_configs"),
+    ):
+        repo.pull()
+
+    # The cache was invalidated, so the new file is now visible on the handle.
+    assert "samples/Sample1/reads/new.fastq.gz" in {
+        e.local_path for e in repo.manifest.iter_files()
+    }
+
+
+# ---------------------------------------------------------------------------
 # offload_file tests
 # ---------------------------------------------------------------------------
 
@@ -815,6 +924,102 @@ def test_download_records_state_after_fetch(tmp_path):
     assert record is not None
     assert record["version_replicate"] == "v-cli-3"
     assert record["size_bytes"] == len(content)
+
+
+def test_download_cores_passed_to_manager(tmp_path):
+    """download --cores N is accepted and forwarded as n_parallel_downloads."""
+    repo, _entry, _local_path = _single_file_repo(tmp_path, "file.fastq.gz", "v1")
+
+    mock_manager = MagicMock()
+    captured: dict = {}
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return mock_manager
+
+    runner = CliRunner()
+    with (
+        patch(
+            "geoseeq.upload_download_manager.GeoSeeqDownloadManager",
+            side_effect=_capture,
+        ),
+        patch(
+            "geoseeq.id_constructors.from_uuids.result_file_from_uuid",
+            return_value=MagicMock(),
+        ),
+    ):
+        result = runner.invoke(
+            main,
+            ["repo", "download", "--cores", "4", "--all", "--yes", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake"},
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured["n_parallel_downloads"] == 4
+
+
+def test_download_cores_defaults_to_one(tmp_path):
+    """Without --cores the download manager still receives n_parallel_downloads=1."""
+    repo, _entry, _local_path = _single_file_repo(tmp_path, "file.fastq.gz", "v1")
+
+    mock_manager = MagicMock()
+    captured: dict = {}
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return mock_manager
+
+    runner = CliRunner()
+    with (
+        patch(
+            "geoseeq.upload_download_manager.GeoSeeqDownloadManager",
+            side_effect=_capture,
+        ),
+        patch(
+            "geoseeq.id_constructors.from_uuids.result_file_from_uuid",
+            return_value=MagicMock(),
+        ),
+    ):
+        result = runner.invoke(
+            main,
+            ["repo", "download", "--all", "--yes", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake"},
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured["n_parallel_downloads"] == 1
+
+
+# ---------------------------------------------------------------------------
+# cli.utils helpers
+# ---------------------------------------------------------------------------
+
+
+def test_format_timestamp_parses_iso8601():
+    """format_timestamp renders an ISO-8601 'Z' timestamp as 'YYYY-MM-DD HH:MM:SS'."""
+    from geoseeq.cli.utils import format_timestamp
+
+    assert format_timestamp("2026-05-20T14:32:00Z") == "2026-05-20 14:32:00"
+
+
+def test_format_timestamp_returns_raw_on_failure():
+    """format_timestamp returns the input unchanged when it cannot be parsed."""
+    from geoseeq.cli.utils import format_timestamp
+
+    assert format_timestamp("not-a-date") == "not-a-date"
+    assert format_timestamp("") == ""
+
+
+def test_human_size_scales_units():
+    """human_size scales bytes through B/KB/MB and formats to one decimal place."""
+    from geoseeq.cli.utils import human_size
+
+    assert human_size(0) == "0.0 B"
+    assert human_size(512) == "512.0 B"
+    assert human_size(1024) == "1.0 KB"
+    assert human_size(1024 * 1024) == "1.0 MB"
 
 
 # ---------------------------------------------------------------------------
