@@ -11,6 +11,8 @@ import pytest
 from click.testing import CliRunner
 
 from geoseeq.cli.main import main
+from geoseeq.constants import READS_MODULE_NAMES
+from geoseeq.fastq import classify_fastq_field
 from geoseeq.repo import (
     GeoSeeqRepo,
     Manifest,
@@ -56,14 +58,14 @@ SAMPLE_MANIFEST_DICT = {
                             "checksum": "md5:abc123",
                             "size_bytes": 1234567890,
                             "stored_data": _stored_data("Sample1_R1.fastq.gz"),
-                            "version_replicate": "v-r1-001",
+                            "version_replicate": "v1",
                         },
                         "read_2": {
                             "uuid": "file-uuid-r2",
                             "checksum": "md5:def456",
                             "size_bytes": 1234567891,
                             "stored_data": _stored_data("Sample1_R2.fastq.gz"),
-                            "version_replicate": "v-r2-001",
+                            "version_replicate": "v1",
                         },
                     },
                 }
@@ -132,25 +134,35 @@ def test_manifest_file_roundtrip():
         "checksum": "md5:zzz",
         "size_bytes": 999,
         "stored_data": _stored_data("c.gz"),
-        "version_replicate": "v-001",
+        "version_replicate": "v2",
     }
     assert ManifestFile.from_dict(original).to_dict() == original
 
 
-def test_manifest_file_from_dict_tolerates_missing_version_replicate():
-    """from_dict defaults version_replicate to "" when the server omits it.
-
-    Older server commits predate the field; the client must still parse them.
-    """
+def test_manifest_file_version_replicate_roundtrips():
+    """version_replicate survives a from_dict / to_dict round-trip."""
     data = {
         "uuid": "u1",
         "checksum": "md5:zzz",
-        "size_bytes": 999,
+        "size_bytes": 1,
+        "stored_data": _stored_data("c.gz"),
+        "version_replicate": "rep-7",
+    }
+    f = ManifestFile.from_dict(data)
+    assert f.version_replicate == "rep-7"
+    assert f.to_dict()["version_replicate"] == "rep-7"
+
+
+def test_manifest_file_version_replicate_defaults_empty_when_absent():
+    """A manifest file with no version_replicate defaults it to '' (back-compat)."""
+    data = {
+        "uuid": "u1",
+        "checksum": "md5:zzz",
+        "size_bytes": 1,
         "stored_data": _stored_data("c.gz"),
     }
     f = ManifestFile.from_dict(data)
     assert f.version_replicate == ""
-    # to_dict always emits the field (as the empty default).
     assert f.to_dict()["version_replicate"] == ""
 
 
@@ -315,7 +327,7 @@ def _project_results_manifest_dict() -> dict:
                         "checksum": "md5:rrr",
                         "size_bytes": 10,
                         "stored_data": _stored_data("report.html"),
-                        "version_replicate": "v-report-001",
+                        "version_replicate": "",
                     }
                 },
             }
@@ -501,6 +513,63 @@ def test_geoseeq_repo_git_pull(tmp_path_with_repo):
 
 
 # ---------------------------------------------------------------------------
+# classify_fastq_field tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "field_name,expected",
+    [
+        ("read_1", (1, 1)),
+        ("read_2", (2, 1)),
+        ("paired_end::read_2::lane_3", (2, 3)),
+        ("paired_end::read_1::lane_10", (1, 10)),
+        ("reads", (1, 1)),  # single-end / no pair token -> read 1, lane 1
+        ("single_end::reads", (1, 1)),
+    ],
+)
+def test_classify_fastq_field(field_name, expected):
+    """classify_fastq_field reads pair/lane from the server-style field name."""
+    assert classify_fastq_field(field_name) == expected
+
+
+# ---------------------------------------------------------------------------
+# READS_MODULE_NAMES tests
+# ---------------------------------------------------------------------------
+
+
+def test_reads_module_names_includes_server_and_legacy_names():
+    """READS_MODULE_NAMES carries the server reads folders plus legacy names."""
+    assert "raw::single_short_reads" in READS_MODULE_NAMES
+    assert "short_read::paired_end" in READS_MODULE_NAMES
+    assert "reads" in READS_MODULE_NAMES
+    assert "raw_reads" in READS_MODULE_NAMES
+
+
+def test_reads_module_names_excludes_fasta():
+    """genome::fasta is not a reads folder and must not be in READS_MODULE_NAMES."""
+    assert "genome::fasta" not in READS_MODULE_NAMES
+
+
+def test_write_pipeline_configs_uses_central_reads_module_names(tmp_path):
+    """A folder named raw::single_short_reads (in the central set) yields a config."""
+    files = {"reads": _read_file("u1", "Sample1.fastq.gz", "md5:single")}
+    repo = _repo_with_manifest(
+        tmp_path, _reads_manifest("raw::single_short_reads", files)
+    )
+    write_pipeline_configs(repo)
+    assert (tmp_path / "sample_configs" / "Sample1.json").exists()
+
+
+def test_write_pipeline_configs_skips_fasta_only_sample(tmp_path):
+    """A sample whose only folder is genome::fasta is not treated as having reads."""
+    files = {"contig": _read_file("u1", "Sample1.fasta", "md5:fasta")}
+    repo = _repo_with_manifest(tmp_path, _reads_manifest("genome::fasta", files))
+    write_pipeline_configs(repo)
+    assert not (tmp_path / "sample_configs" / "Sample1.json").exists()
+
+
+# ---------------------------------------------------------------------------
 # write_pipeline_configs tests
 # ---------------------------------------------------------------------------
 
@@ -579,8 +648,12 @@ def _reads_manifest(module_name, files):
     }
 
 
-def _read_file(uuid, filename, checksum="md5:x", version_replicate="v-001"):
-    """Build a single manifest file entry dict."""
+def _read_file(uuid, filename, checksum="md5:x", version_replicate=""):
+    """Build a single manifest file entry dict.
+
+    Mirrors ``ManifestFile.to_dict``, which always emits ``version_replicate``;
+    keeping the key here lets roundtrip-equality tests fed from this helper hold.
+    """
     return {
         "uuid": uuid,
         "checksum": checksum,
@@ -954,3 +1027,58 @@ def test_repo_help_lists_clone_subcommand():
     result = runner.invoke(main, ["repo", "--help"])
     assert result.exit_code == 0
     assert "clone" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Sample.get_one_fastq_folder default preference order
+# ---------------------------------------------------------------------------
+
+
+def _make_sample_with_fastqs(fastq_dict):
+    """Return a Sample stub whose get_all_fastqs() returns *fastq_dict*."""
+    from unittest.mock import MagicMock, patch
+    from geoseeq.sample import Sample
+
+    sample = Sample.__new__(Sample)
+    with patch.object(Sample, "get_all_fastqs", return_value=fastq_dict):
+        yield sample
+
+
+def test_get_one_fastq_folder_default_preference_order():
+    """Default preference order is paired_end > single_end > nanopore > pacbio.
+
+    Confirms that FASTQ_READ_TYPE_PREFERENCE is wired correctly: when both
+    short_read::paired_end and short_read::single_end are present, paired_end
+    is returned.
+    """
+    from unittest.mock import patch
+    from geoseeq.sample import Sample
+    from geoseeq.constants import FASTQ_READ_TYPE_PREFERENCE
+
+    all_fastqs = {
+        "short_read::single_end": {"folder_se": [["se_file"]]},
+        "short_read::paired_end": {"folder_pe": [["r1", "r2"]]},
+    }
+    sample = Sample.__new__(Sample)
+    with patch.object(Sample, "get_all_fastqs", return_value=all_fastqs):
+        read_type, folder_name, reads = sample.get_one_fastq_folder()
+
+    assert read_type == "short_read::paired_end"
+    assert folder_name == "folder_pe"
+    # Sanity-check the constant itself matches the expected head
+    assert FASTQ_READ_TYPE_PREFERENCE[0] == "short_read::paired_end"
+
+
+def test_get_one_fastq_folder_falls_through_to_nanopore():
+    """When only long_read::nanopore is available it is returned (no paired/single_end)."""
+    from unittest.mock import patch
+    from geoseeq.sample import Sample
+
+    all_fastqs = {
+        "long_read::nanopore": {"folder_nano": [["nano_file"]]},
+    }
+    sample = Sample.__new__(Sample)
+    with patch.object(Sample, "get_all_fastqs", return_value=all_fastqs):
+        read_type, folder_name, reads = sample.get_one_fastq_folder()
+
+    assert read_type == "long_read::nanopore"
