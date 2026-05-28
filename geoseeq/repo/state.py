@@ -103,3 +103,62 @@ class RepoState:
     def remove(self, rel_path: str) -> None:
         """Remove the record for *rel_path* if present (no-op otherwise)."""
         self.records.pop(rel_path, None)
+
+
+_LOCK_FILENAME = ".state.lock"
+
+
+def record_under_lock(geoseeq_dir: Path, rel_path: str, record: dict) -> None:
+    """Atomically add/update one path's record in state.json, serialized across
+    processes with an exclusive flock so parallel download callbacks don't
+    clobber each other's writes. POSIX-only (fcntl).
+
+    The lock is held only for the load/set/save cycle, which keeps the critical
+    section small.  ``fcntl`` is imported lazily so importing this module on a
+    non-POSIX platform does not break unrelated repo commands (the lock-free
+    paths in :class:`RepoState` remain usable everywhere).
+    """
+    import fcntl
+
+    geoseeq_dir = Path(geoseeq_dir)
+    geoseeq_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = geoseeq_dir / _LOCK_FILENAME
+    with open(lock_path, "w") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            state = RepoState.load(geoseeq_dir)
+            state.set(rel_path, record)
+            state.save()
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
+
+
+class DownloadStateRecorder:
+    """Picklable per-file download callback that records state under a lock.
+
+    Passed to ``GeoSeeqDownloadManager.add_download(..., callback=...)``.  Runs
+    in a worker process (multiprocessing) under ``--cores>1``, so it persists
+    each file's record via :func:`record_under_lock` to stay race-free.  It is a
+    module-level class with plain ``str`` attributes precisely so that
+    ``multiprocessing.Pool`` can pickle it (a lambda or local closure could
+    not).  Recording per file as each download completes is what makes an
+    interrupted download resumable.
+    """
+
+    def __init__(self, geoseeq_dir: str, version_replicate: str) -> None:
+        """Capture the ``.geoseeq/`` dir and server version for later records."""
+        self.geoseeq_dir = str(geoseeq_dir)
+        self.version_replicate = version_replicate
+
+    def __call__(self, key, local_path) -> None:
+        """Record state for the just-downloaded file.
+
+        *key* is the repo-root-relative path (what the manager was given as the
+        download ``key``); *local_path* is the absolute on-disk path the manager
+        wrote.  The record is keyed by *key* so it matches ``compute_status``.
+        """
+        record_under_lock(
+            Path(self.geoseeq_dir),
+            key,
+            record_for(Path(local_path), self.version_replicate),
+        )
