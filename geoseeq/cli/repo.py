@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import click
@@ -427,3 +428,138 @@ def offload_cmd(state, yes, quiet, path, sample, file_filter):
     count = sum(1 for entry in targets if repo.offload_file(entry))
 
     click.echo(f"Offloaded {count} file(s).")
+
+
+@cli_repo.command("push")
+@use_common_state
+@cores_option
+@click.option("--sample", "-s", default=None, help="Limit push to one sample")
+@click.argument("path", default=".", required=False)
+def push(state, cores, sample, path):
+    """Upload new-local and modified-local files to GeoSeeq.
+
+    Uploads every file that is new on disk or edited since download (optionally
+    filtered to --sample), then pulls the server's freshly-committed manifest.
+    The server is the sole commit authority; this command never writes or
+    commits the manifest itself.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Push all new/modified files
+    $ geoseeq repo push
+
+    \b
+    # Push only files for a specific sample
+    $ geoseeq repo push --sample MySample
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    knex = state.get_knex().set_auth_required()
+    pushed = repo.push(
+        knex,
+        sample=sample,
+        cores=cores,
+        log_level=state.log_level,
+        progress_tracker_factory=PBarManager().get_new_bar,
+    )
+
+    if not pushed:
+        click.echo("Nothing to push.")
+        return
+
+    names = sorted({Path(p).parts[1] for p in pushed})
+    click.echo(f"Pushed {len(pushed)} files for {', '.join(names)}")
+
+
+@cli_repo.command("new-sample")
+@use_common_state
+@click.option(
+    "--metadata-file",
+    "metadata_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to a JSON file with sample metadata",
+)
+@click.argument("name")
+@click.argument("path", default=".", required=False)
+def new_sample(state, name, metadata_file, path):
+    """Create a new sample in a GeoSeeq project.
+
+    Creates the sample on the server and a local ``samples/<name>/`` directory,
+    then pulls the server's updated manifest.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Add a sample with no metadata
+    $ geoseeq repo new-sample "My Sample"
+
+    \b
+    # Add a sample with metadata from a file
+    $ geoseeq repo new-sample "My Sample" --metadata-file meta.json
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    metadata = {}
+    if metadata_file:
+        with open(metadata_file, "r") as fh:
+            metadata = json.load(fh)
+
+    knex = state.get_knex().set_auth_required()
+    repo.new_sample(name, metadata, knex)
+
+    click.echo(f"Created sample '{name}'")
+
+
+@cli_repo.command("rm")
+@use_common_state
+@click.argument("path", default=".", required=False)
+def rm(state, path):
+    """Remove a local geoseeq repo directory.
+
+    Refuses to remove the repo if any local files are out of sync (new-local or
+    modified-local) to prevent accidental data loss.  Run 'geoseeq repo status'
+    to see what is out of sync, then push or discard the changes before removing.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Remove the repo in the current directory
+    $ geoseeq repo rm
+
+    \b
+    # Remove a repo at a specific path
+    $ geoseeq repo rm /path/to/my-project
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    if not repo.is_fully_synced():
+        raise click.ClickException(
+            "Error: project is not fully synced. "
+            "Run 'geoseeq repo status' to see what's out of sync."
+        )
+
+    shutil.rmtree(repo.root)
+    click.echo(f"Removed local repo at {repo.root}")
