@@ -254,6 +254,13 @@ class GeoSeeqRepo:
         hash, so there is nothing to verify against (deferred until the server
         records a real content hash).  The recorded xxh3 is what later lets
         :meth:`compute_status` detect local edits.
+
+        Note: this method does a full ``RepoState.load()`` + ``save()`` per
+        call, which is fine for downloading a single file.  Callers downloading
+        MANY files should not call this in a tight loop (that does N load/save
+        cycles); instead batch the state recording after all downloads finish,
+        as the CLI ``download`` command does via its ``_record_downloaded_state``
+        helper (one load + one save for the whole batch).
         """
         from geoseeq.id_constructors.from_uuids import result_file_from_uuid
 
