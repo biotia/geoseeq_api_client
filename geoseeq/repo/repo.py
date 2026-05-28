@@ -327,6 +327,41 @@ class GeoSeeqRepo:
             return True
         return False
 
+    def is_fully_synced(self) -> bool:
+        """Return True if no local files are new or modified relative to the manifest.
+
+        A repo is "fully synced" for the purposes of safe deletion when nothing on
+        disk is unpushed: no ``new_local`` files (present locally but not in the
+        manifest) and no ``modified_local`` files (edited since download).  Absent
+        and outdated files are ignored — those represent server content the user
+        simply hasn't downloaded yet, which is not at risk of being lost.
+        """
+        s = self.compute_status()
+        return not (s.new_local or s.modified_local)
+
+    def new_sample(self, name: str, metadata: dict, knex: "Knex") -> str:
+        """Create a new sample in this repo's project on the server.
+
+        Creates the sample (with *metadata*) via the API, makes its local
+        ``samples/<name>/`` directory, then ``git_pull``s the server's updated
+        manifest (the server commits the new sample) and regenerates pipeline
+        configs.  The client never writes the manifest itself.
+
+        Returns the new sample's UUID.
+        """
+        from geoseeq.id_constructors.from_uuids import project_from_uuid
+
+        project = project_from_uuid(knex, self.manifest.project_uuid)
+        sample = project.sample(name, metadata=metadata).idem()
+
+        (self.root / "samples" / name).mkdir(parents=True, exist_ok=True)
+
+        self.git_pull()
+        self._manifest = None
+
+        self.write_pipeline_configs()
+        return sample.uuid
+
     def push(
         self,
         knex: "Knex",
