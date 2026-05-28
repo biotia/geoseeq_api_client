@@ -131,6 +131,26 @@ def test_log_empty_but_enabled_still_reports_no_history(tmp_path):
     assert "Audit trail is disabled for this project." not in result.output
 
 
+def test_log_falls_through_when_audit_trail_mode_absent(tmp_path):
+    """Older servers that omit audit_trail_mode still show normal history (no crash, no disabled msg)."""
+    response = {
+        "count": 1,
+        "results": [
+            {
+                "sha1": "abc123def456abc1",
+                "message": "api: upload file",
+                "timestamp": "2026-05-20T14:32:00Z",
+            }
+        ],
+    }
+
+    result = _run_log(tmp_path, response)
+
+    assert result.exit_code == 0, result.output
+    assert "Audit trail is disabled for this project." not in result.output
+    assert "api: upload file" in result.output
+
+
 def test_log_json_emits_raw_response_when_disabled(tmp_path):
     """--json prints the raw API response (including audit_trail_mode) regardless of mode."""
     response = {"audit_trail_mode": "off", "count": 0, "results": []}
