@@ -534,3 +534,50 @@ def test_rm_dirty_repo_raises_exact_error(tmp_path):
         "Run 'geoseeq repo status' to see what's out of sync."
     ) in result.output
     assert tmp_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# is_fully_synced tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_fully_synced_true_when_only_absent_or_outdated(tmp_path):
+    """is_fully_synced returns True when the only issues are absent/outdated files.
+
+    Absent (manifest entries not on disk) and outdated (server version moved
+    ahead of what the client recorded) do not represent local unsaved work, so
+    they must not block a ``rm``.
+    """
+    # Manifest has a file; it is not on disk at all (absent) and also has an
+    # outdated state record (version_replicate mismatch).
+    md = _make_manifest_dict(
+        {"Sample1": {"reads": {"read_1": {"filename": "f.fastq.gz", "version_replicate": "v2"}}}}
+    )
+    repo = _build_repo(tmp_path, md)
+    # Seed state at v1 so the manifest's v2 will be seen as outdated, but
+    # never write the file itself so it is also absent.
+    tracked = "samples/Sample1/reads/f.fastq.gz"
+    state = RepoState.load(repo.root / ".geoseeq")
+    state.set(tracked, {"version_replicate": "v1", "mtime": 0.0, "size": 0, "checksum": ""})
+    state.save()
+
+    # Both absent and outdated — but nothing locally new or modified.
+    s = repo.compute_status()
+    assert tracked in s.absent or tracked in s.outdated
+
+    assert repo.is_fully_synced() is True
+
+
+def test_is_fully_synced_false_when_modified_local(tmp_path):
+    """is_fully_synced returns False when a tracked file has been edited locally."""
+    md = _make_manifest_dict(
+        {"Sample1": {"reads": {"read_1": {"filename": "g.fastq.gz", "version_replicate": "v1"}}}}
+    )
+    repo = _build_repo(tmp_path, md)
+    tracked = "samples/Sample1/reads/g.fastq.gz"
+    _write_disk_file(repo, tracked, b"original")
+    _seed_state(repo, tracked, "v1")
+    # Overwrite -> modified_local.
+    _write_disk_file(repo, tracked, b"locally changed")
+
+    assert repo.is_fully_synced() is False
