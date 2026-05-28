@@ -121,12 +121,7 @@ def _write_config(
     project_uuid: str,
     server_url: str,
 ) -> None:
-    """Write config.json into the .geoseeq/ directory.
-
-    Only ``project_uuid`` and ``server_url`` are persisted; ``git_remote_url`` is
-    derived from those by ``RepoConfig`` and the auth profile is intentionally
-    not stored.
-    """
+    """Write the repo's config.json (project_uuid + server_url) into the .geoseeq/ directory."""
     config = RepoConfig(
         project_uuid=project_uuid,
         server_url=server_url,
