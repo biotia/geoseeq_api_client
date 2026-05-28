@@ -9,6 +9,7 @@ import click
 from geoseeq.repo import GeoSeeqRepo, RepoExistsError
 from geoseeq.repo.state import RepoState, record_for
 
+from .download import cores_option
 from .progress_bar import PBarManager
 from .shared_params import project_id_arg, use_common_state, yes_option
 from .shared_params.id_handlers import handle_project_id
@@ -271,11 +272,12 @@ def pull(state, path, sample, file_filter):
 @cli_repo.command("download")
 @use_common_state
 @yes_option
+@cores_option
 @click.option("--sample", "-s", default=None, help="Filter to one sample")
 @click.option("--file", "-f", "file_filter", default=None, help="Filter to files whose path contains this string")
 @click.option("--all", "download_all", is_flag=True, help="Re-download files even if already present on disk")
 @click.argument("path", default=".", required=False)
-def download_cmd(state, yes, path, sample, file_filter, download_all):
+def download_cmd(state, yes, cores, path, sample, file_filter, download_all):
     """Download absent and outdated files from the manifest.
 
     By default files not yet present on disk, plus files for which a newer
@@ -326,7 +328,7 @@ def download_cmd(state, yes, path, sample, file_filter, download_all):
         return
 
     download_manager = GeoSeeqDownloadManager(
-        n_parallel_downloads=1,
+        n_parallel_downloads=cores,
         log_level=state.log_level,
         progress_tracker_factory=PBarManager().get_new_bar,
     )
