@@ -155,13 +155,30 @@ def test_push_uploads_new_and_modified_local(tmp_path):
     new_file = "samples/Sample1/reads/new.fastq.gz"
     _write_disk_file(repo, new_file, b"brand new")
 
+    # The server commits on each upload; git_pull brings down a refreshed manifest
+    # whose derived local_path (samples/<sample>/<module>/<basename>) matches the
+    # pushed 4-part paths, so the post-pull state recording can find each entry.
+    post_md = _make_manifest_dict(
+        {
+            "Sample1": {
+                "reads": {
+                    "read_1": {"filename": "old.fastq.gz", "version_replicate": "v2"},
+                    "read_2": {"filename": "new.fastq.gz", "version_replicate": "v1"},
+                }
+            }
+        }
+    )
+
+    def _fake_pull():
+        Manifest.from_dict(post_md).save(repo.root / ".geoseeq" / "manifest.json")
+
     manager_cls, instance = _mock_upload_manager()
     sample_obj, _folder = _mock_sample_obj()
 
     with (
         patch("geoseeq.upload_download_manager.GeoSeeqUploadManager", manager_cls),
         patch("geoseeq.id_constructors.from_uuids.sample_from_uuid", return_value=sample_obj),
-        patch.object(GeoSeeqRepo, "git_pull") as mock_pull,
+        patch.object(GeoSeeqRepo, "git_pull", side_effect=_fake_pull) as mock_pull,
         patch.object(GeoSeeqRepo, "write_pipeline_configs"),
     ):
         pushed = repo.push(MagicMock())
@@ -174,6 +191,11 @@ def test_push_uploads_new_and_modified_local(tmp_path):
     sample_obj.result_folder.return_value.idem.assert_called()
     instance.upload_files.assert_called_once()
     mock_pull.assert_called_once()
+
+    # Each pushed path is now recorded in state.json — not merely dispatched.
+    state = RepoState.load(repo.root / ".geoseeq")
+    for rel in pushed:
+        assert state.get(rel) is not None
 
 
 def test_push_records_state_after_pull(tmp_path):
@@ -324,6 +346,41 @@ def test_push_skips_unparseable_new_local(tmp_path):
     assert pushed == []
     assert instance.added == []
     mock_pull.assert_not_called()
+
+
+def test_push_skips_nested_new_local(tmp_path):
+    """push skips a nested (>4-part) new_local path and pushes only flat 4-part files.
+
+    A file like samples/S1/reads/sub/extra.txt has 5 path parts.  The manifest is
+    flat, so after a git_pull its derived local_path would collapse to the basename
+    (samples/S1/reads/extra.txt) and never match the pushed key — leaving the file
+    stuck as new_local forever.  push must therefore skip it (not upload it
+    mis-mapped) while still pushing the sibling 4-part file.
+    """
+    md = _make_manifest_dict({"Sample1": {}})
+    repo = _build_repo(tmp_path, md)
+
+    valid = "samples/Sample1/reads/flat.fastq.gz"
+    _write_disk_file(repo, valid, b"flat")
+    nested = "samples/Sample1/reads/sub/extra.txt"
+    _write_disk_file(repo, nested, b"nested")
+
+    manager_cls, instance = _mock_upload_manager()
+    sample_obj, _folder = _mock_sample_obj()
+
+    with (
+        patch("geoseeq.upload_download_manager.GeoSeeqUploadManager", manager_cls),
+        patch("geoseeq.id_constructors.from_uuids.sample_from_uuid", return_value=sample_obj),
+        patch.object(GeoSeeqRepo, "git_pull"),
+        patch.object(GeoSeeqRepo, "write_pipeline_configs"),
+    ):
+        pushed = repo.push(MagicMock())
+
+    # Only the flat path round-trips; the nested one is skipped, not uploaded.
+    assert pushed == [valid]
+    queued_paths = {lp for (_rf, lp, _name) in instance.added}
+    assert str(repo.root / valid) in queued_paths
+    assert str(repo.root / nested) not in queued_paths
 
 
 def test_push_unknown_sample_raises(tmp_path):
