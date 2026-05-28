@@ -16,26 +16,34 @@ class RepoConfig:
 
     project_uuid: str
     server_url: str
-    auth_profile: str
-    git_remote_url: str
+
+    @property
+    def git_remote_url(self) -> str:
+        """The git remote URL for this project's manifest repository.
+
+        Derived from ``server_url`` and ``project_uuid`` rather than persisted,
+        so it can never drift from the project it points at.
+        """
+        return f"{self.server_url.rstrip('/')}/api/v1/projects/{self.project_uuid}/git"
 
     def to_dict(self) -> dict:
         """Serialize to a dict for JSON output."""
         return {
             "project_uuid": self.project_uuid,
             "server_url": self.server_url,
-            "auth_profile": self.auth_profile,
-            "git_remote_url": self.git_remote_url,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> RepoConfig:
-        """Deserialize from a dict."""
+        """Deserialize from a dict, ignoring any unknown keys.
+
+        Older on-disk config.json files may still contain ``auth_profile`` and
+        ``git_remote_url`` keys; those are ignored here so loading them never
+        breaks (back-compat).
+        """
         return cls(
             project_uuid=data["project_uuid"],
             server_url=data["server_url"],
-            auth_profile=data.get("auth_profile", ""),
-            git_remote_url=data["git_remote_url"],
         )
 
     @classmethod
