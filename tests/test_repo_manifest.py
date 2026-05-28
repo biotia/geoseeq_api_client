@@ -12,6 +12,8 @@ from click.testing import CliRunner
 
 from geoseeq.cli.main import main
 from geoseeq.cli.repo import _scrub_token
+from geoseeq.constants import READS_MODULE_NAMES
+from geoseeq.fastq import classify_fastq_field
 from geoseeq.repo import (
     GeoSeeqRepo,
     Manifest,
@@ -57,12 +59,14 @@ SAMPLE_MANIFEST_DICT = {
                             "checksum": "md5:abc123",
                             "size_bytes": 1234567890,
                             "stored_data": _stored_data("Sample1_R1.fastq.gz"),
+                            "version_replicate": "v1",
                         },
                         "read_2": {
                             "uuid": "file-uuid-r2",
                             "checksum": "md5:def456",
                             "size_bytes": 1234567891,
                             "stored_data": _stored_data("Sample1_R2.fastq.gz"),
+                            "version_replicate": "v1",
                         },
                     },
                 }
@@ -129,8 +133,36 @@ def test_manifest_file_roundtrip():
         "checksum": "md5:zzz",
         "size_bytes": 999,
         "stored_data": _stored_data("c.gz"),
+        "version_replicate": "v2",
     }
     assert ManifestFile.from_dict(original).to_dict() == original
+
+
+def test_manifest_file_version_replicate_roundtrips():
+    """version_replicate survives a from_dict / to_dict round-trip."""
+    data = {
+        "uuid": "u1",
+        "checksum": "md5:zzz",
+        "size_bytes": 1,
+        "stored_data": _stored_data("c.gz"),
+        "version_replicate": "rep-7",
+    }
+    f = ManifestFile.from_dict(data)
+    assert f.version_replicate == "rep-7"
+    assert f.to_dict()["version_replicate"] == "rep-7"
+
+
+def test_manifest_file_version_replicate_defaults_empty_when_absent():
+    """A manifest file with no version_replicate defaults it to '' (back-compat)."""
+    data = {
+        "uuid": "u1",
+        "checksum": "md5:zzz",
+        "size_bytes": 1,
+        "stored_data": _stored_data("c.gz"),
+    }
+    f = ManifestFile.from_dict(data)
+    assert f.version_replicate == ""
+    assert f.to_dict()["version_replicate"] == ""
 
 
 def test_manifest_file_from_dict_ignores_unknown_keys():
@@ -294,6 +326,7 @@ def _project_results_manifest_dict() -> dict:
                         "checksum": "md5:rrr",
                         "size_bytes": 10,
                         "stored_data": _stored_data("report.html"),
+                        "version_replicate": "",
                     }
                 },
             }
@@ -506,6 +539,63 @@ def test_geoseeq_repo_git_pull(tmp_path_with_repo):
     args = mock_run.call_args[0][0]
     assert "pull" in args
     assert "--rebase" in args
+
+
+# ---------------------------------------------------------------------------
+# classify_fastq_field tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "field_name,expected",
+    [
+        ("read_1", (1, 1)),
+        ("read_2", (2, 1)),
+        ("paired_end::read_2::lane_3", (2, 3)),
+        ("paired_end::read_1::lane_10", (1, 10)),
+        ("reads", (1, 1)),  # single-end / no pair token -> read 1, lane 1
+        ("single_end::reads", (1, 1)),
+    ],
+)
+def test_classify_fastq_field(field_name, expected):
+    """classify_fastq_field reads pair/lane from the server-style field name."""
+    assert classify_fastq_field(field_name) == expected
+
+
+# ---------------------------------------------------------------------------
+# READS_MODULE_NAMES tests
+# ---------------------------------------------------------------------------
+
+
+def test_reads_module_names_includes_server_and_legacy_names():
+    """READS_MODULE_NAMES carries the server reads folders plus legacy names."""
+    assert "raw::single_short_reads" in READS_MODULE_NAMES
+    assert "short_read::paired_end" in READS_MODULE_NAMES
+    assert "reads" in READS_MODULE_NAMES
+    assert "raw_reads" in READS_MODULE_NAMES
+
+
+def test_reads_module_names_excludes_fasta():
+    """genome::fasta is not a reads folder and must not be in READS_MODULE_NAMES."""
+    assert "genome::fasta" not in READS_MODULE_NAMES
+
+
+def test_write_pipeline_configs_uses_central_reads_module_names(tmp_path):
+    """A folder named raw::single_short_reads (in the central set) yields a config."""
+    files = {"reads": _read_file("u1", "Sample1.fastq.gz", "md5:single")}
+    repo = _repo_with_manifest(
+        tmp_path, _reads_manifest("raw::single_short_reads", files)
+    )
+    write_pipeline_configs(repo)
+    assert (tmp_path / "sample_configs" / "Sample1.json").exists()
+
+
+def test_write_pipeline_configs_skips_fasta_only_sample(tmp_path):
+    """A sample whose only folder is genome::fasta is not treated as having reads."""
+    files = {"contig": _read_file("u1", "Sample1.fasta", "md5:fasta")}
+    repo = _repo_with_manifest(tmp_path, _reads_manifest("genome::fasta", files))
+    write_pipeline_configs(repo)
+    assert not (tmp_path / "sample_configs" / "Sample1.json").exists()
 
 
 # ---------------------------------------------------------------------------
