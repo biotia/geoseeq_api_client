@@ -45,6 +45,9 @@ class GeoSeeqRepo:
         self.root = root
         self._manifest: Manifest | None = None
         self._config: RepoConfig | None = None
+        # Set True by ``clone`` when the manifest repo was refless (audit trail
+        # off) and an empty manifest was written; the CLI reads it to notify.
+        self._cloned_empty = False
 
     @property
     def manifest(self) -> Manifest:
@@ -119,7 +122,27 @@ class GeoSeeqRepo:
         write_config(geoseeq_dir, proj.uuid, server_url)
         ensure_config_gitignored(geoseeq_dir)
 
+        # When the project's audit trail is off the server never commits the
+        # manifest, so the manifest git repo is refless: ``git clone`` exits 0
+        # but checks out no ``manifest.json``.  Write an empty manifest so the
+        # clone is a valid, usable repo instead of one that errors on first
+        # ``repo.manifest`` access.  Flag the case so the CLI can notify the
+        # user (the read-only client cannot read the live mode off the Project
+        # object, which does not expose ``audit_trail_mode``).
+        manifest_path = geoseeq_dir / "manifest.json"
+        cloned_empty = not manifest_path.exists()
+        if cloned_empty:
+            Manifest(
+                version=1,
+                project_uuid=str(proj.uuid),
+                project_name=getattr(proj, "name", "") or "",
+                server_url=server_url,
+                samples={},
+                project_results={},
+            ).save(manifest_path)
+
         repo = cls(clone_path)
+        repo._cloned_empty = cloned_empty
         repo.write_pipeline_configs()
         return repo
 
