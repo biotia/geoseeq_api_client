@@ -236,7 +236,7 @@ def test_download_file_success(tmp_path):
 
 
 def test_offload_removes_file(tmp_path):
-    """offload_file deletes the local copy of a manifest file."""
+    """offload_file deletes the local copy and reports True."""
     content = b"some data"
     checksum = f"md5:{_md5_hex(content)}"
     repo, entry, local_path = _single_file_repo(tmp_path, "file.fastq.gz", checksum)
@@ -245,15 +245,14 @@ def test_offload_removes_file(tmp_path):
     disk_path.parent.mkdir(parents=True, exist_ok=True)
     disk_path.write_bytes(content)
 
-    repo.offload_file(entry)
-
+    assert repo.offload_file(entry) is True
     assert not disk_path.exists()
 
 
 def test_offload_noop_when_absent(tmp_path):
-    """offload_file is a no-op when the local file does not exist."""
+    """offload_file is a no-op (returns False) when the local file is absent."""
     repo, entry, _local_path = _single_file_repo(tmp_path, "file.fastq.gz", "md5:000")
-    repo.offload_file(entry)  # should not raise
+    assert repo.offload_file(entry) is False
 
 
 # ---------------------------------------------------------------------------

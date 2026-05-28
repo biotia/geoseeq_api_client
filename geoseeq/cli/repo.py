@@ -416,9 +416,6 @@ def offload_cmd(state, yes, quiet, path, sample, file_filter):
     if not yes:
         click.confirm(f"Offload {len(targets)} file(s)?", abort=True)
 
-    count = 0
-    for entry in targets:
-        repo.offload_file(entry)
-        count += 1
+    count = sum(1 for entry in targets if repo.offload_file(entry))
 
     click.echo(f"Offloaded {count} file(s).")

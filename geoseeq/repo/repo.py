@@ -209,11 +209,15 @@ class GeoSeeqRepo:
                 f"Expected {entry.mfile.checksum}, got md5:{actual_hex}."
             )
 
-    def offload_file(self, entry: ManifestFileEntry) -> None:
+    def offload_file(self, entry: ManifestFileEntry) -> bool:
         """Delete the local copy of *entry*; the manifest entry is preserved.
 
-        A no-op if the file does not exist on disk.
+        Returns ``True`` if a file was deleted, ``False`` if it was already
+        absent (a no-op).  Callers use the return value to count files that
+        were actually offloaded.
         """
         local_path = self.root / entry.local_path
         if local_path.exists():
             local_path.unlink()
+            return True
+        return False
