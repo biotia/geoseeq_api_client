@@ -124,18 +124,23 @@ def log(state, limit, offset, as_json, path):
         click.echo(f"{short_sha}  {ts}  {message}")
 
 
-def _filtered_entries(repo, sample=None, file_filter=None):
-    """Yield manifest file entries, optionally filtered by sample and path.
+def _filter_entries(entries, sample=None, file_filter=None):
+    """Yield manifest file entries from *entries*, optionally filtered.
 
     sample: if set, only yield entries whose ``sample_name`` matches.
     file_filter: if set, only yield entries whose ``local_path`` contains it.
     """
-    for entry in repo.manifest.iter_files():
+    for entry in entries:
         if sample and entry.sample_name != sample:
             continue
         if file_filter and file_filter not in entry.local_path:
             continue
         yield entry
+
+
+def _filtered_entries(repo, sample=None, file_filter=None):
+    """Yield this repo's manifest file entries, optionally filtered by sample and path."""
+    yield from _filter_entries(repo.manifest.iter_files(), sample, file_filter)
 
 
 @cli_repo.command("status")
@@ -247,25 +252,12 @@ def pull(state, path, sample, file_filter):
     """
     repo = GeoSeeqRepo.find(Path(path))
 
-    # Snapshot path -> version_replicate before the pull so we can tell new
-    # files from in-place version bumps after the manifest is refreshed.
-    old_versions = {
-        entry.local_path: entry.mfile.version_replicate
-        for entry in repo.manifest.iter_files()
-    }
+    new_files, updated_files = repo.pull()
 
-    repo.git_pull()
-    repo._manifest = None  # invalidate the cached manifest
-
-    new_files = []
-    updated_files = []
-    for entry in _filtered_entries(repo, sample, file_filter):
-        if entry.local_path not in old_versions:
-            new_files.append(entry)
-        elif entry.mfile.version_replicate != old_versions[entry.local_path]:
-            updated_files.append(entry)
-
-    repo.write_pipeline_configs()
+    # The method returns the full diff; the --sample/--file filters are a display
+    # concern, so apply them here to the echoed counts only.
+    new_files = list(_filter_entries(new_files, sample, file_filter))
+    updated_files = list(_filter_entries(updated_files, sample, file_filter))
 
     if new_files or updated_files:
         click.echo(

@@ -139,6 +139,35 @@ class GeoSeeqRepo:
             check=True,
         )
 
+    def pull(self) -> tuple[list[ManifestFileEntry], list[ManifestFileEntry]]:
+        """git-pull the manifest, regenerate pipeline configs, and return (new, updated) entries.
+
+        Snapshots each file's ``version_replicate`` keyed by local path, runs
+        ``git_pull`` to fetch the latest manifest, invalidates the cached
+        manifest, then classifies the refreshed entries: a file is *new* if its
+        local path was not in the snapshot, and *updated* if its path was present
+        but its ``version_replicate`` changed.  Finally regenerates the pipeline
+        configs.  Does NOT download file content.
+        """
+        old_versions = {
+            entry.local_path: entry.mfile.version_replicate
+            for entry in self.manifest.iter_files()
+        }
+
+        self.git_pull()
+        self._manifest = None  # invalidate the cached manifest
+
+        new_files: list[ManifestFileEntry] = []
+        updated_files: list[ManifestFileEntry] = []
+        for entry in self.manifest.iter_files():
+            if entry.local_path not in old_versions:
+                new_files.append(entry)
+            elif entry.mfile.version_replicate != old_versions[entry.local_path]:
+                updated_files.append(entry)
+
+        self.write_pipeline_configs()
+        return new_files, updated_files
+
     def write_pipeline_configs(self) -> None:
         """Regenerate the per-sample pipeline config JSON files for this repo."""
         from .pipeline_config import write_pipeline_configs
