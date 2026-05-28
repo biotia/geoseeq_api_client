@@ -14,6 +14,7 @@ from geoseeq.repo import (
     GeoSeeqRepo,
     Manifest,
     RepoConfig,
+    RepoExistsError,
     RepoStatus,
 )
 
@@ -389,3 +390,133 @@ def test_offload_refuses_modified_local(tmp_path):
     assert "Refusing" in result.output or "modified-local" in result.output
     # File must still be present — not deleted
     assert disk_path.exists()
+
+
+def test_offload_count_reflects_actual_deletions(tmp_path):
+    """offload reports the number of files actually deleted, not just targeted."""
+    content = b"present"
+    checksum = f"md5:{_md5_hex(content)}"
+    # Two manifest files: one present on disk, one absent.
+    md = _make_manifest_dict({
+        "read_1": {"filename": "present.fastq.gz", "checksum": checksum},
+        "read_2": {"filename": "absent.fastq.gz", "checksum": "md5:absent"},
+    })
+    repo = _build_repo(tmp_path, md)
+
+    present_entry = next(
+        e for e in repo.manifest.iter_files() if "present" in e.local_path
+    )
+    disk_path = tmp_path / present_entry.local_path
+    disk_path.parent.mkdir(parents=True, exist_ok=True)
+    disk_path.write_bytes(content)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["repo", "offload", "--yes", str(tmp_path)],
+        env={"GEOSEEQ_API_TOKEN": "fake"},
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    # Only one file existed on disk, so only one was actually offloaded.
+    assert "Offloaded 1 file(s)." in result.output
+    assert not disk_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# CLI: download command smoke test
+# ---------------------------------------------------------------------------
+
+
+def test_download_all_adds_targets_and_downloads(tmp_path):
+    """download --all builds a target per manifest file and runs the manager."""
+    md = _make_manifest_dict({
+        "read_1": {"filename": "r1.fastq.gz", "checksum": "md5:c1"},
+        "read_2": {"filename": "r2.fastq.gz", "checksum": "md5:c2"},
+    })
+    repo = _build_repo(tmp_path, md)
+    expected_paths = {e.local_path for e in repo.manifest.iter_files()}
+
+    mock_manager = MagicMock()
+    added: list[str] = []
+    mock_manager.add_download.side_effect = lambda rf, dest: added.append(dest)
+
+    runner = CliRunner()
+    with (
+        patch(
+            "geoseeq.upload_download_manager.GeoSeeqDownloadManager",
+            return_value=mock_manager,
+        ),
+        patch(
+            "geoseeq.id_constructors.from_uuids.result_file_from_uuid",
+            return_value=MagicMock(),
+        ),
+    ):
+        result = runner.invoke(
+            main,
+            ["repo", "download", "--all", "--yes", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake"},
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_manager.download_files.assert_called_once()
+    assert mock_manager.add_download.call_count == len(expected_paths)
+    added_rel = {str(Path(dest).relative_to(tmp_path)) for dest in added}
+    assert added_rel == expected_paths
+
+
+# ---------------------------------------------------------------------------
+# GeoSeeqRepo.clone server_url derivation
+# ---------------------------------------------------------------------------
+
+
+def test_clone_derives_server_url_and_remote(tmp_path):
+    """clone() strips trailing /api from endpoint_url and persists the bare host."""
+    from geoseeq.knex import Knex
+
+    knex = Knex(endpoint_url="https://backend.geoseeq.com")
+    assert knex.endpoint_url == "https://backend.geoseeq.com/api"
+    knex.add_api_token("secret-token")
+
+    proj = MagicMock()
+    proj.uuid = "proj-uuid-9999"
+
+    clone_path = tmp_path / "cloned"
+
+    def _fake_git_clone(remote_url, geoseeq_dir, token, server_url):
+        """Stand in for the git clone: just create the .geoseeq/ dir + manifest."""
+        geoseeq_dir.mkdir(parents=True, exist_ok=True)
+        Manifest.from_dict(_make_manifest_dict({})).save(
+            geoseeq_dir / "manifest.json"
+        )
+
+    with (
+        patch("geoseeq.repo.clone.git_clone", side_effect=_fake_git_clone),
+        patch.object(GeoSeeqRepo, "write_pipeline_configs"),
+    ):
+        repo = GeoSeeqRepo.clone(knex, proj, clone_path)
+
+    config = RepoConfig.load(clone_path / ".geoseeq" / "config.json")
+    assert config.server_url == "https://backend.geoseeq.com"
+    assert (
+        config.git_remote_url
+        == "https://backend.geoseeq.com/api/v1/projects/proj-uuid-9999/git"
+    )
+    assert repo.config.server_url == "https://backend.geoseeq.com"
+
+
+def test_clone_raises_when_repo_already_exists(tmp_path):
+    """clone() raises RepoExistsError (not a CLI exception) on an existing repo."""
+    from geoseeq.knex import Knex
+
+    knex = Knex(endpoint_url="https://backend.geoseeq.com")
+    proj = MagicMock()
+    proj.uuid = "proj-uuid-9999"
+
+    clone_path = tmp_path / "cloned"
+    (clone_path / ".geoseeq").mkdir(parents=True)
+
+    with pytest.raises(RepoExistsError):
+        GeoSeeqRepo.clone(knex, proj, clone_path)
