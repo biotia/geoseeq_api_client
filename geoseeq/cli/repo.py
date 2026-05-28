@@ -11,7 +11,7 @@ from geoseeq.repo import GeoSeeqRepo, RepoExistsError
 from geoseeq.repo.state import RepoState, record_for
 
 from .progress_bar import PBarManager
-from .shared_params import use_common_state, yes_option
+from .shared_params import project_id_arg, use_common_state, yes_option
 from .shared_params.id_handlers import handle_project_id
 
 
@@ -22,7 +22,7 @@ def cli_repo():
 
 @cli_repo.command("clone")
 @use_common_state
-@click.argument("project_id")
+@project_id_arg
 @click.argument("path", default=None, required=False)
 def clone(state, project_id, path):
     """Clone a GeoSeeq project repository.
