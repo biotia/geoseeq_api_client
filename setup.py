@@ -18,6 +18,7 @@ setuptools.setup(
         'pandas',
         'biopython',
         'tqdm',
+        'xxhash',
     ],
     entry_points={
         'console_scripts': [

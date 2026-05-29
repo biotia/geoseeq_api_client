@@ -1,0 +1,592 @@
+"""CLI commands for managing local geoseeq project repositories."""
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+import click
+from requests.auth import HTTPBasicAuth
+
+from geoseeq.repo import GeoSeeqRepo, RepoExistsError
+from geoseeq.repo.state import DownloadStateRecorder
+
+from .download import cores_option
+from .progress_bar import PBarManager
+from .shared_params import project_id_arg, use_common_state, yes_option
+from .shared_params.id_handlers import handle_project_id
+from .utils import format_timestamp, human_size
+
+
+@click.group("repo")
+def cli_repo():
+    """Manage local geoseeq project repositories."""
+
+
+@cli_repo.command("clone")
+@use_common_state
+@project_id_arg
+@click.argument("path", default=None, required=False)
+def clone(state, project_id, path):
+    """Clone a GeoSeeq project repository.
+
+    PROJECT_ID can be "Org/Project", a UUID, or a GRN.
+    PATH defaults to the last component of the project name.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Clone a project into a directory named after the project
+    $ geoseeq repo clone "My Org/My Project"
+
+    \b
+    # Clone a project into a specific directory
+    $ geoseeq repo clone "My Org/My Project" ./my-local-dir
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    knex = state.get_knex().set_auth_required()
+
+    proj = handle_project_id(knex, project_id, create=False)
+
+    clone_path = Path(path) if path else Path(project_id.split("/")[-1])
+
+    try:
+        repo = GeoSeeqRepo.clone(knex, proj, clone_path, profile=state.profile)
+    except RepoExistsError as exc:
+        raise click.ClickException(str(exc))
+
+    # The Project object does not expose ``audit_trail_mode``; clone signals the
+    # disabled/refless case (no committed manifest) via ``_cloned_empty``.
+    if repo._cloned_empty:
+        click.echo(
+            "Note: Audit trail is disabled for this project; cloned an empty "
+            "manifest. Enable it in the project Settings to start recording "
+            "history.",
+            err=True,
+        )
+
+    n_samples = len(repo.manifest.samples)
+    click.echo(f'Cloned "{project_id}" to {clone_path} ({n_samples} samples)')
+
+
+@cli_repo.command("log")
+@use_common_state
+@click.option("--limit", default=20, show_default=True, help="Maximum number of entries to return.")
+@click.option("--offset", default=0, show_default=True, help="Number of entries to skip.")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Print raw API response as JSON.")
+@click.argument("path", default=".")
+def log(state, limit, offset, as_json, path):
+    """Show manifest commit history for this geoseeq project.
+
+    PATH defaults to the current directory. The command walks up the
+    directory tree to find the nearest .geoseeq/config.json.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Show the last 20 entries
+    $ geoseeq repo log
+
+    \b
+    # Show 5 entries starting at offset 10
+    $ geoseeq repo log --limit 5 --offset 10
+
+    \b
+    # Emit raw JSON for scripting
+    $ geoseeq repo log --json
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    project_uuid = repo.config.project_uuid
+    server_url = repo.config.server_url.rstrip("/")
+    url = (
+        f"{server_url}/api/projects/{project_uuid}/manifest/history/"
+        f"?limit={limit}&offset={offset}"
+    )
+
+    knex = state.get_knex().set_auth_required()
+    # The manifest history view authenticates via HTTP Basic with the API token
+    # as the password (same as the git endpoints), NOT the session's default
+    # "Authorization: Token <t>" scheme.  We must override that default for this
+    # one request.  Passing ``headers={"Authorization": "Basic ..."}`` is NOT
+    # enough: the session's ``auth=TokenAuth(token)`` callable runs during
+    # request preparation and overwrites any Authorization header we set, so the
+    # request would still go out as "Token <t>" (-> 403).  A per-request ``auth``
+    # takes precedence over the session ``auth``, so use HTTPBasicAuth here.
+    token = knex.auth.token
+    response = knex.sess.get(url, auth=HTTPBasicAuth("x", token))
+    data = knex._handle_response(response, json_response=False).json()
+
+    if as_json:
+        click.echo(json.dumps(data, indent=2))
+        return
+
+    # When the project's audit trail is off the server never commits the
+    # manifest, so there is no history to show.  The history envelope reports
+    # the live mode, so we read it here rather than persisting it in config.
+    if data.get("audit_trail_mode") == "off":
+        click.echo("Audit trail is disabled for this project.")
+        return
+
+    results = data.get("results", [])
+    if not results:
+        click.echo("No manifest history yet.")
+        return
+
+    for entry in results:
+        short_sha = entry["sha1"][:10]
+        ts = format_timestamp(entry.get("timestamp", ""))
+        message = entry.get("message", "")
+        click.echo(f"{short_sha}  {ts}  {message}")
+
+
+def _filter_entries(entries, sample=None, file_filter=None):
+    """Yield manifest file entries from *entries*, optionally filtered.
+
+    sample: if set, only yield entries whose ``sample_name`` matches.
+    file_filter: if set, only yield entries whose ``local_path`` contains it.
+    """
+    for entry in entries:
+        if sample and entry.sample_name != sample:
+            continue
+        if file_filter and file_filter not in entry.local_path:
+            continue
+        yield entry
+
+
+def _filtered_entries(repo, sample=None, file_filter=None):
+    """Yield this repo's manifest file entries, optionally filtered by sample and path."""
+    yield from _filter_entries(repo.manifest.iter_files(), sample, file_filter)
+
+
+@cli_repo.command("status")
+@use_common_state
+@click.option("--sample", "-s", default=None, help="Filter to one sample")
+@click.argument("path", default=".", required=False)
+def status_cmd(state, path, sample):
+    """Show sync status of a local project repo.
+
+    Compares the manifest against local files and reports which files are
+    absent, modified, or present locally but not in the manifest.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Show status for the current directory
+    $ geoseeq repo status
+
+    \b
+    # Show status for a specific sample
+    $ geoseeq repo status --sample MySample
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    repo_status = repo.compute_status()
+    project_name = repo.manifest.project_name
+
+    if sample:
+        sample_paths = {
+            entry.local_path
+            for entry in repo.manifest.iter_files()
+            if entry.sample_name == sample
+        }
+        sample_prefix = f"samples/{sample}/"
+        repo_status.absent = [p for p in repo_status.absent if p in sample_paths]
+        repo_status.modified_local = [
+            p for p in repo_status.modified_local if p in sample_paths
+        ]
+        repo_status.outdated = [
+            p for p in repo_status.outdated if p in sample_paths
+        ]
+        repo_status.new_local = [
+            p for p in repo_status.new_local if p.startswith(sample_prefix)
+        ]
+
+    if not (
+        repo_status.absent
+        or repo_status.new_local
+        or repo_status.modified_local
+        or repo_status.outdated
+    ):
+        click.echo(f'Project "{project_name}" is fully synced.')
+        return
+
+    click.echo(f"Project: {project_name}\n")
+    if repo_status.absent:
+        click.echo("absent (not downloaded):")
+        for p in repo_status.absent:
+            click.echo(f"  {p}")
+    if repo_status.outdated:
+        click.echo("\noutdated (newer version on server):")
+        for p in repo_status.outdated:
+            click.echo(f"  {p}")
+    if repo_status.new_local:
+        click.echo("\nnew-local (not in manifest):")
+        for p in repo_status.new_local:
+            click.echo(f"  {p}")
+    if repo_status.modified_local:
+        click.echo("\nmodified-local:")
+        for p in repo_status.modified_local:
+            click.echo(f"  {p}")
+
+
+@cli_repo.command("pull")
+@use_common_state
+@click.option("--sample", "-s", default=None, help="Filter to one sample")
+@click.option("--file", "-f", "file_filter", default=None, help="Filter to files whose path contains this string")
+@click.argument("path", default=".", required=False)
+def pull(state, path, sample, file_filter):
+    """Pull latest manifest from server.
+
+    Runs git pull on the .geoseeq/ sub-repo to fetch the latest manifest
+    and regenerates pipeline configs.  Does NOT download file content;
+    use ``geoseeq repo download`` to fetch new files.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Pull the latest manifest
+    $ geoseeq repo pull
+
+    \b
+    # Pull and see new files for a specific sample
+    $ geoseeq repo pull --sample MySample
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    new_files, updated_files = repo.pull()
+
+    # The method returns the full diff; the --sample/--file filters are a display
+    # concern, so apply them here to the echoed counts only.
+    # repo.pull() always reconciles the full manifest regardless of these filters,
+    # so --sample X can report "Already up to date" even when a different sample changed.
+    new_files = list(_filter_entries(new_files, sample, file_filter))
+    updated_files = list(_filter_entries(updated_files, sample, file_filter))
+
+    if new_files or updated_files:
+        click.echo(
+            f"Pulled manifest: {len(new_files)} new, {len(updated_files)} updated "
+            "— run 'geoseeq repo download' to fetch"
+        )
+    else:
+        click.echo("Already up to date.")
+
+
+@cli_repo.command("download")
+@use_common_state
+@yes_option
+@cores_option
+@click.option("--sample", "-s", default=None, help="Filter to one sample")
+@click.option("--file", "-f", "file_filter", default=None, help="Filter to files whose path contains this string")
+@click.option("--all", "download_all", is_flag=True, help="Re-download files even if already present on disk")
+@click.argument("path", default=".", required=False)
+def download_cmd(state, yes, cores, path, sample, file_filter, download_all):
+    """Download absent and outdated files from the manifest.
+
+    By default files not yet present on disk, plus files for which a newer
+    server version exists (outdated), are downloaded.  Pass --all to
+    re-download every file regardless of local state.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Download all absent files
+    $ geoseeq repo download
+
+    \b
+    # Download all absent files for a specific sample
+    $ geoseeq repo download --sample MySample
+
+    \b
+    # Re-download every file in the manifest
+    $ geoseeq repo download --all
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    from geoseeq.id_constructors.from_uuids import result_file_from_uuid
+    from geoseeq.upload_download_manager import GeoSeeqDownloadManager
+
+    repo = GeoSeeqRepo.find(Path(path))
+
+    knex = state.get_knex().set_auth_required()
+
+    repo_status = repo.compute_status()
+    # Default targets are files missing locally OR superseded by a newer server
+    # version; --all re-downloads everything.
+    fetch_set = set(repo_status.absent) | set(repo_status.outdated)
+
+    targets = [
+        entry
+        for entry in _filtered_entries(repo, sample, file_filter)
+        if download_all or entry.local_path in fetch_set
+    ]
+
+    if not targets:
+        click.echo("Nothing to download.")
+        return
+
+    download_manager = GeoSeeqDownloadManager(
+        n_parallel_downloads=cores,
+        log_level=state.log_level,
+        progress_tracker_factory=PBarManager().get_new_bar,
+    )
+    geoseeq_dir = str(repo.root / ".geoseeq")
+    for entry in targets:
+        rf = result_file_from_uuid(knex, entry.mfile.uuid)
+        local_path = repo.root / entry.local_path
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        # Record each file's state as soon as it downloads, via a per-file
+        # callback, so an interrupted run still leaves completed files tracked
+        # (resumable).  The callback must be picklable for multiprocessing under
+        # --cores>1 and serializes its state.json writes with a flock — hence
+        # the module-level DownloadStateRecorder rather than a local closure.
+        download_manager.add_download(
+            rf,
+            str(local_path),
+            key=entry.local_path,
+            callback=DownloadStateRecorder(
+                geoseeq_dir, entry.mfile.version_replicate
+            ),
+        )
+
+    click.echo(download_manager.get_preview_string(), err=True)
+    if not yes:
+        click.confirm(f"Download {len(targets)} file(s)?", abort=True)
+    download_manager.download_files()
+
+
+@cli_repo.command("offload")
+@use_common_state
+@yes_option
+@click.option("--quiet", "-q", is_flag=True, help="Suppress file list output")
+@click.option("--sample", "-s", default=None, help="Filter to one sample")
+@click.option("--file", "-f", "file_filter", default=None, help="Filter to files whose path contains this string")
+@click.argument("path", default=".", required=False)
+def offload_cmd(state, yes, quiet, path, sample, file_filter):
+    """Remove local file copies while keeping manifest entries.
+
+    Refuses to offload files that have been edited locally (their on-disk
+    content no longer matches the recorded download state) to prevent
+    accidental data loss.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Offload all downloaded files for the current project
+    $ geoseeq repo offload
+
+    \b
+    # Offload only files for a specific sample
+    $ geoseeq repo offload --sample MySample
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    repo_status = repo.compute_status()
+    modified_set = set(repo_status.modified_local)
+
+    targets = list(_filtered_entries(repo, sample, file_filter))
+
+    blocked = [
+        entry.local_path
+        for entry in targets
+        if entry.local_path in modified_set
+    ]
+    if blocked:
+        paths_str = "\n  ".join(blocked)
+        raise click.ClickException(
+            f"Refusing to offload modified-local files:\n  {paths_str}\n"
+            "Commit or revert your local changes before offloading."
+        )
+
+    total_bytes = 0
+    for entry in targets:
+        local_path = repo.root / entry.local_path
+        if local_path.exists():
+            size = local_path.stat().st_size
+            total_bytes += size
+            if not quiet:
+                click.echo(f"  {entry.local_path} ({human_size(size)})")
+
+    if not quiet:
+        click.echo(f"\nTotal disk space to free: {human_size(total_bytes)}")
+
+    if not yes:
+        click.confirm(f"Offload {len(targets)} file(s)?", abort=True)
+
+    count = sum(1 for entry in targets if repo.offload_file(entry))
+
+    click.echo(f"Offloaded {count} file(s).")
+
+
+@cli_repo.command("push")
+@use_common_state
+@cores_option
+@click.option("--sample", "-s", default=None, help="Limit push to one sample")
+@click.argument("path", default=".", required=False)
+def push(state, cores, sample, path):
+    """Upload new-local and modified-local files to GeoSeeq.
+
+    Uploads every file that is new on disk or edited since download (optionally
+    filtered to --sample), then pulls the server's freshly-committed manifest.
+    The server is the sole commit authority; this command never writes or
+    commits the manifest itself.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Push all new/modified files
+    $ geoseeq repo push
+
+    \b
+    # Push only files for a specific sample
+    $ geoseeq repo push --sample MySample
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    knex = state.get_knex().set_auth_required()
+    pushed = repo.push(
+        knex,
+        sample=sample,
+        cores=cores,
+        log_level=state.log_level,
+        progress_tracker_factory=PBarManager().get_new_bar,
+    )
+
+    if not pushed:
+        click.echo("Nothing to push.")
+        return
+
+    names = sorted({Path(p).parts[1] for p in pushed})
+    click.echo(f"Pushed {len(pushed)} files for {', '.join(names)}")
+
+
+@cli_repo.command("new-sample")
+@use_common_state
+@click.option(
+    "--metadata-file",
+    "metadata_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to a JSON file with sample metadata",
+)
+@click.argument("name")
+@click.argument("path", default=".", required=False)
+def new_sample(state, name, metadata_file, path):
+    """Create a new sample in a GeoSeeq project.
+
+    Creates the sample on the server and a local ``samples/<name>/`` directory,
+    then pulls the server's updated manifest.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Add a sample with no metadata
+    $ geoseeq repo new-sample "My Sample"
+
+    \b
+    # Add a sample with metadata from a file
+    $ geoseeq repo new-sample "My Sample" --metadata-file meta.json
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    metadata = {}
+    if metadata_file:
+        with open(metadata_file, "r") as fh:
+            metadata = json.load(fh)
+
+    knex = state.get_knex().set_auth_required()
+    repo.new_sample(name, metadata, knex)
+
+    click.echo(f"Created sample '{name}'")
+
+
+@cli_repo.command("rm")
+@use_common_state
+@click.argument("path", default=".", required=False)
+def rm(state, path):
+    """Remove a local geoseeq repo directory.
+
+    Refuses to remove the repo if any local files are out of sync (new-local or
+    modified-local) to prevent accidental data loss.  Run 'geoseeq repo status'
+    to see what is out of sync, then push or discard the changes before removing.
+
+    ---
+
+    Example Usage:
+
+    \b
+    # Remove the repo in the current directory
+    $ geoseeq repo rm
+
+    \b
+    # Remove a repo at a specific path
+    $ geoseeq repo rm /path/to/my-project
+
+    ---
+
+    Use of this tool implies acceptance of the GeoSeeq End User License Agreement.
+    Run `geoseeq eula show` to view the EULA.
+    """
+    repo = GeoSeeqRepo.find(Path(path))
+
+    if not repo.is_fully_synced():
+        raise click.ClickException(
+            "Error: project is not fully synced. "
+            "Run 'geoseeq repo status' to see what's out of sync."
+        )
+
+    shutil.rmtree(repo.root)
+    click.echo(f"Removed local repo at {repo.root}")
