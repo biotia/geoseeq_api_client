@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 import click
+from requests.auth import HTTPBasicAuth
 
 from geoseeq.repo import GeoSeeqRepo, RepoExistsError
 from geoseeq.repo.state import DownloadStateRecorder
@@ -112,12 +113,21 @@ def log(state, limit, offset, as_json, path):
     project_uuid = repo.config.project_uuid
     server_url = repo.config.server_url.rstrip("/")
     url = (
-        f"{server_url}/api/v1/projects/{project_uuid}/manifest/history/"
+        f"{server_url}/api/projects/{project_uuid}/manifest/history/"
         f"?limit={limit}&offset={offset}"
     )
 
     knex = state.get_knex().set_auth_required()
-    response = knex.sess.get(url)
+    # The manifest history view authenticates via HTTP Basic with the API token
+    # as the password (same as the git endpoints), NOT the session's default
+    # "Authorization: Token <t>" scheme.  We must override that default for this
+    # one request.  Passing ``headers={"Authorization": "Basic ..."}`` is NOT
+    # enough: the session's ``auth=TokenAuth(token)`` callable runs during
+    # request preparation and overwrites any Authorization header we set, so the
+    # request would still go out as "Token <t>" (-> 403).  A per-request ``auth``
+    # takes precedence over the session ``auth``, so use HTTPBasicAuth here.
+    token = knex.auth.token
+    response = knex.sess.get(url, auth=HTTPBasicAuth("x", token))
     data = knex._handle_response(response, json_response=False).json()
 
     if as_json:

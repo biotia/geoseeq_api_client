@@ -111,7 +111,7 @@ class GeoSeeqRepo:
         if server_url.endswith("/api"):
             server_url = server_url[: -len("/api")]
         token = knex.auth.token if knex.auth is not None else None
-        git_remote_url = f"{server_url}/api/v1/projects/{proj.uuid}/git"
+        git_remote_url = f"{server_url}/api/projects/{proj.uuid}/git"
 
         geoseeq_dir = clone_path / ".geoseeq"
         if geoseeq_dir.exists():

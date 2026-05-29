@@ -966,7 +966,7 @@ def test_repo_config_git_remote_url_is_computed():
     )
     assert (
         config.git_remote_url
-        == "https://backend.geoseeq.com/api/v1/projects/proj-uuid-1234/git"
+        == "https://backend.geoseeq.com/api/projects/proj-uuid-1234/git"
     )
 
 
@@ -984,7 +984,7 @@ def test_repo_config_from_dict_ignores_legacy_keys():
     assert config.server_url == "https://x.com"
     assert not hasattr(config, "auth_profile")
     # git_remote_url is recomputed, never the stale persisted value
-    assert config.git_remote_url == "https://x.com/api/v1/projects/p/git"
+    assert config.git_remote_url == "https://x.com/api/projects/p/git"
 
 
 def test_ensure_config_gitignored_appends_to_existing_gitignore(tmp_path):
