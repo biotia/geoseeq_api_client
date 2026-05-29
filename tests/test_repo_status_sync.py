@@ -1200,7 +1200,10 @@ def test_clone_derives_server_url_and_remote(tmp_path):
 
     clone_path = tmp_path / "cloned"
 
+    captured = {}
+
     def _fake_git_clone(remote_url, geoseeq_dir, token, server_url):
+        captured["remote_url"] = remote_url
         geoseeq_dir.mkdir(parents=True, exist_ok=True)
         Manifest.from_dict(_make_manifest_dict({})).save(
             geoseeq_dir / "manifest.json"
@@ -1214,9 +1217,15 @@ def test_clone_derives_server_url_and_remote(tmp_path):
 
     config = RepoConfig.load(clone_path / ".geoseeq" / "config.json")
     assert config.server_url == "https://backend.geoseeq.com"
+    # The manifest routes are mounted at /api/projects/... (no /v1 prefix).
     assert (
         config.git_remote_url
-        == "https://backend.geoseeq.com/api/v1/projects/proj-uuid-9999/git"
+        == "https://backend.geoseeq.com/api/projects/proj-uuid-9999/git"
+    )
+    # clone() must pass the same (no-/v1) remote URL to git_clone.
+    assert (
+        captured["remote_url"]
+        == "https://backend.geoseeq.com/api/projects/proj-uuid-9999/git"
     )
     assert repo.config.server_url == "https://backend.geoseeq.com"
 

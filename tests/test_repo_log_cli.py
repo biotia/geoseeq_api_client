@@ -224,6 +224,77 @@ def test_log_pagination_params(tmp_path):
     assert "offset=10" in captured_urls[0]
 
 
+def test_log_uses_manifest_history_path_without_v1(tmp_path):
+    """The history URL is /api/projects/<uuid>/manifest/history/ (no /v1 prefix)."""
+    make_mock_repo(tmp_path)
+    runner = CliRunner()
+
+    mock_resp = _mock_http_response(EMPTY_API_RESPONSE)
+    captured_urls = []
+
+    def fake_get(url, **kwargs):
+        captured_urls.append(url)
+        return mock_resp
+
+    with patch("geoseeq.cli.repo.GeoSeeqRepo.find", return_value=_mock_repo()), patch(
+        "requests.Session.get", side_effect=fake_get
+    ):
+        result = runner.invoke(
+            main,
+            ["repo", "log", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake-token"},
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0, result.output
+    assert len(captured_urls) == 1
+    assert (
+        captured_urls[0].startswith(
+            "https://test.geoseeq.com/api/projects/test-uuid-1234/manifest/history/"
+        )
+    )
+    assert "/api/v1/" not in captured_urls[0]
+
+
+def test_log_sends_http_basic_auth(tmp_path):
+    """log authenticates the history request via HTTP Basic with the token as password.
+
+    The ManifestHistoryView authenticates via HTTP Basic (token as the password),
+    NOT the session's default "Authorization: Token <t>" scheme.  A per-request
+    ``auth=HTTPBasicAuth("x", token)`` is used because it overrides the session's
+    TokenAuth callable; passing the header via ``headers=`` would be silently
+    clobbered by that callable during request preparation.
+    """
+    from requests.auth import HTTPBasicAuth
+
+    make_mock_repo(tmp_path)
+    runner = CliRunner()
+
+    mock_resp = _mock_http_response(EMPTY_API_RESPONSE)
+    captured_auth = []
+
+    def fake_get(url, **kwargs):
+        captured_auth.append(kwargs.get("auth"))
+        return mock_resp
+
+    with patch("geoseeq.cli.repo.GeoSeeqRepo.find", return_value=_mock_repo()), patch(
+        "requests.Session.get", side_effect=fake_get
+    ):
+        result = runner.invoke(
+            main,
+            ["repo", "log", str(tmp_path)],
+            env={"GEOSEEQ_API_TOKEN": "fake-token"},
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0, result.output
+    assert len(captured_auth) == 1
+    auth = captured_auth[0]
+    assert isinstance(auth, HTTPBasicAuth)
+    assert auth.username == "x"
+    assert auth.password == "fake-token"
+
+
 def test_format_timestamp_invalid_returns_raw():
     """format_timestamp returns the raw string unchanged when parsing fails."""
     from geoseeq.cli.utils import format_timestamp

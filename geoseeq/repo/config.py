@@ -24,7 +24,7 @@ class RepoConfig:
         Derived from ``server_url`` and ``project_uuid`` rather than persisted,
         so it can never drift from the project it points at.
         """
-        return f"{self.server_url.rstrip('/')}/api/v1/projects/{self.project_uuid}/git"
+        return f"{self.server_url.rstrip('/')}/api/projects/{self.project_uuid}/git"
 
     def to_dict(self) -> dict:
         """Serialize to a dict for JSON output."""
