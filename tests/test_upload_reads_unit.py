@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from geoseeq.cli.upload.upload_reads import _group_files
+from geoseeq.cli._grouping import group_files
 
 
 class DummyKnex:
@@ -26,7 +26,7 @@ def test_group_files_applies_name_map(tmp_path: Path):
 
     filepaths = {"old_name_R1.fastq": "/tmp/old_name_R1.fastq"}
 
-    updated_groups = _group_files(
+    updated_groups = group_files(
         knex,
         filepaths,
         "short_read::single_end",
