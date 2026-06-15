@@ -95,6 +95,11 @@ class S3Source:
     def list_keys(self, filter_pattern: str = "*.fastq.gz") -> Iterator[str]:
         """Yield keys under ``prefix`` matching ``filter_pattern`` (fnmatch).
 
+        ``filter_pattern`` is matched against the full S3 key, not the
+        basename. The default ``"*.fastq.gz"`` works because ``fnmatch``'s
+        ``*`` crosses ``/``; to constrain by basename use a pattern like
+        ``"*/sample_*.fastq.gz"`` or do the basename split in the caller.
+
         Uses the ``list_objects_v2`` paginator so buckets with more than
         1000 matching objects are handled transparently.
         """
