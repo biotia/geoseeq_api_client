@@ -37,7 +37,7 @@ def get_regex(knex, filepaths, module_name, lib, regex):
     return regex
 
 
-def group_files(knex, filepaths, module_name, regex, yes, name_map):
+def group_files(knex, filepaths, module_name, regex, yes, name_map=None):
     """Group the files into samples, confirm, and return the groups."""
     name_map_lookup = None
     if name_map is not None:
