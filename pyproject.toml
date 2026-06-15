@@ -32,6 +32,9 @@ test = [
     "pytest-mock>=3.10",
     "requests-mock>=1.11",
 ]
+s3 = [
+    "boto3>=1.28",
+]
 
 [project.urls]
 Homepage = "https://github.com/biotia/geoseeq_api_client"
