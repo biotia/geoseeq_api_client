@@ -195,3 +195,32 @@ def test_import_succeeds_without_boto3():
         assert src.prefix == "reads/"
         assert src.endpoint_url is None
         assert src.to_s3_uri("x") == "s3://bkt/x"
+
+
+# ---------------------------------------------------------------------------
+# Edge cases — added to close genuine coverage gaps
+# ---------------------------------------------------------------------------
+
+
+def test_from_uri_rejects_malformed_no_double_slash():
+    """``s3:bucket/foo`` (missing ``//``) has no netloc and is rejected with ValueError."""
+    with pytest.raises(ValueError, match="missing a bucket"):
+        S3Source.from_uri("s3:bucket/foo")
+
+
+def test_list_keys_skips_entries_with_no_key():
+    """Contents entries that lack a ``Key`` field are silently skipped (line 112 guard)."""
+    pages = [
+        {
+            "Contents": [
+                {},  # no "Key" field
+                {"Key": "reads/a_R1.fastq.gz"},
+                {"Key": None},  # explicit None
+            ]
+        }
+    ]
+    boto3_mock, _, _ = _fake_boto3_with_pages(pages)
+    with patch("geoseeq.sources.s3._import_boto3", return_value=boto3_mock):
+        src = S3Source("bkt", "reads/")
+        keys = list(src.list_keys("*.fastq.gz"))
+    assert keys == ["reads/a_R1.fastq.gz"]
