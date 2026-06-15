@@ -2,10 +2,9 @@ import logging
 import click
 import requests
 from os.path import basename, getsize
+from geoseeq.cli._grouping import get_regex, group_files
 from .upload_reads import (
     _make_in_process_logger,
-    _get_regex,
-    _group_files,
     flatten_list_of_fastxs,
 )
 
@@ -50,7 +49,7 @@ def _get_url_for_one_file(args):
     """Return a tuple of the filepath and the url to upload it to"""
     result_file, filepath, overwrite, log_level = args
     _make_in_process_logger(log_level)
-    if result_file.exists() and not overwrite:  
+    if result_file.exists() and not overwrite:
         return
     result_file = result_file.idem()
     file_size = getsize(filepath)
@@ -96,15 +95,15 @@ def cli_find_urls_for_reads(state, cores, overwrite, yes, regex, private, module
     proj = handle_project_id(knex, project_id, yes, private)
     filepaths = {basename(line): line for line in flatten_list_of_fastxs(fastq_files)}
     click.echo(f'Found {len(filepaths)} files to upload.', err=True)
-    regex = _get_regex(knex, filepaths, module_name, proj, regex)
-    groups = _group_files(knex, filepaths, module_name, regex, yes)
+    regex = get_regex(knex, filepaths, module_name, proj, regex)
+    groups = group_files(knex, filepaths, module_name, regex, yes)
     for file_name, target_url in _find_target_urls(groups, module_name, proj, filepaths, overwrite, cores, state):
         print(f'{file_name}\t{target_url}', file=state.outfile)
 
 
 def _get_result_file_from_record_with_ids(knex, record: Dict) -> Dict:
     """Get all relevant objects from a record, handling GRNs, UUIDs, and absolute names without requiring parent objects.
-    
+
     Returns a dict with 'org', 'project', 'sample', 'folder', and 'result_file' keys.
     Objects may be None if not needed/specified.
     Guaranteed that at least org is not None.
@@ -163,16 +162,16 @@ def _get_result_file_from_record_with_ids(knex, record: Dict) -> Dict:
     except ValueError:
         pass  # Not a GRN/UUID, continue
 
-    
+
     if objects['org'] is None: # Get org directly if we don't have one yet
         objects['org'] = org_from_id(knex, record['organization'])
-    
+
     return objects
 
 
 def _get_result_file_from_record(knex, record: Dict) -> Dict:
     """Get all relevant objects from a record, handling GRNs/UUIDs without requiring parent objects.
-    
+
     Returns a dict with 'org', 'project', 'sample', 'folder', and 'result_file' keys.
     Objects may be None if not needed/specified.
     """
@@ -206,18 +205,18 @@ def _add_record_to_upload_manager_local_file(record: Dict, result_file, upload_m
 
 def _add_record_to_upload_manager_s3_file(record: Dict, result_file, upload_manager: GeoSeeqUploadManager) -> None:
     """Add an S3 file link to the upload manager.
-    
+
     Handles two types of S3 URLs:
     1. https://endpoint/bucket/key - Full URL with endpoint included
     2. s3://bucket/key - S3 protocol URL that needs endpoint added
     """
     path = record['path']
-    
+
     if path.startswith('s3://'):
         # Convert s3:// URL to https:// URL
         if not record['endpoint_url']:
             raise ValueError("endpoint_url is required for s3:// URLs")
-        
+
         # Remove s3:// prefix and combine with endpoint
         bucket_and_key = path[5:]  # len('s3://') == 5
         path = f"{record['endpoint_url'].rstrip('/')}/{bucket_and_key}"
@@ -245,7 +244,7 @@ def _upload_one_record(knex, record: Dict, overwrite: bool, upload_manager: GeoS
 
 
 REQUIRED_COLUMNS = [
-    'organization', 'project', 'sample', 'folder', 
+    'organization', 'project', 'sample', 'folder',
     'filename', 'path', 'type', 'endpoint_url'
 ]
 
@@ -290,13 +289,13 @@ def cli_upload_from_config(state, cores, sep, overwrite, yes, config_file):
     $ geoseeq upload advanced from-config --sep $'\t' config.tsv
     """
     knex = state.get_knex()
-    
+
     # Read and validate config file
     df = pd.read_csv(config_file, sep=sep)
     missing_cols = set(REQUIRED_COLUMNS) - set(df.columns)
     if missing_cols:
         raise click.UsageError(f"Config file missing required columns: {missing_cols}")
-    
+
     # Create upload manager
     upload_manager = GeoSeeqUploadManager(
         n_parallel_uploads=cores,
@@ -305,18 +304,18 @@ def cli_upload_from_config(state, cores, sep, overwrite, yes, config_file):
         overwrite=overwrite,
         use_cache=state.use_cache,
     )
-    
+
     # Process records and add to upload manager
     objects_by_record = {}  # Store objects for human readable paths
     for _, record in df.iterrows():
         objects = _upload_one_record(knex, record, overwrite, upload_manager)
         objects_by_record[record['path']] = objects
-    
+
     # Show preview with both technical and human readable paths
     click.echo(upload_manager.get_preview_string(), err=True)
-    
+
     if not yes:
         click.confirm('Do you want to proceed with these uploads?', abort=True)
-    
+
     # Perform uploads
     upload_manager.upload_files()
