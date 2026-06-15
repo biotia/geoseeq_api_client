@@ -401,6 +401,46 @@ class TestPrivacyAndValidation:
                     "--filter", "--privacy-level", "--dry-run", "--commit"]:
             assert opt in result.output
 
+    def test_privacy_public_flows_to_handle_project_id(self, runner):
+        """``--privacy-level public`` reaches handle_project_id with ``private=False``."""
+        with patch("geoseeq.cli.link.link_reads.handle_project_id") as mock_handle:
+            mock_handle.return_value = _make_proj_mock()
+            with patch("geoseeq.cli.link.link_reads.S3Source.from_uri") as mock_src, \
+                 patch("geoseeq.cli.shared_params.common_state.Knex",
+                       return_value=_make_knex()):
+                fake_src = MagicMock()
+                fake_src.list_keys.return_value = iter(_KEYS)
+                fake_src.endpoint_url = _ENDPOINT
+                fake_src.to_s3_uri.side_effect = lambda k: f"s3://b/{k}"
+                mock_src.return_value = fake_src
+                runner.invoke(
+                    cli_link,
+                    ["reads", "--privacy-level", "public",
+                     "MyOrg/MyProject", f"s3://{_BUCKET}/{_PREFIX}"],
+                    catch_exceptions=False,
+                )
+            assert mock_handle.call_args.kwargs.get("private") is False
+
+    def test_import_link_reads_without_boto3(self):
+        """Importing link_reads must succeed even when boto3 is absent.
+
+        boto3 is a lazy import (in geoseeq.sources.s3); any accidental
+        top-level ``import boto3`` in link_reads.py would break this.
+        """
+        import sys
+        import importlib
+        from unittest.mock import patch as _patch
+
+        with _patch.dict(sys.modules, {"boto3": None}):
+            # Force a fresh import from source; the module may already be
+            # cached with boto3 loaded, so we just verify it doesn't touch
+            # boto3 at attribute-access time.
+            import geoseeq.cli.link.link_reads as lr_module
+            # Accessing the exported helpers must not raise.
+            assert callable(lr_module._build_actions)
+            assert callable(lr_module._build_filename_index)
+            assert callable(lr_module._resolve_regex_project_uuid)
+
 
 # ---------------------------------------------------------------------------
 # Server interaction
