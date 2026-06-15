@@ -174,10 +174,10 @@ def _resolve_target_project(knex, project_id, yes, privacy_level, commit):
     grouping endpoints. On commit we create the project up-front using
     the existing ``handle_project_id`` flow.
     """
-    private = privacy_level != "public"
+    is_public = privacy_level == "public"
     try:
         return handle_project_id(
-            knex, project_id, yes=yes, private=private, create=commit
+            knex, project_id, yes=yes, private=not is_public, create=commit
         )
     except GeoseeqNotFoundError:
         if commit:
@@ -212,12 +212,14 @@ def _resolve_target_project(knex, project_id, yes, privacy_level, commit):
 )
 @click.option(
     "--privacy-level",
-    type=click.Choice(["public", "shareable", "private"]),
+    type=click.Choice(["public", "private"]),
     default="private",
     help=(
         "Privacy level for newly-created projects. Default 'private'. "
         "Do NOT pass 'public' for clinical or sample data without "
-        "explicit approval."
+        "explicit approval. "
+        "'shareable' will be available once the api-client's "
+        "project-creation accepts privacy_level; tracked separately."
     ),
 )
 @click.option(
