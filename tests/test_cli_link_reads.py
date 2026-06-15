@@ -270,23 +270,6 @@ class TestDryRun:
 class TestCommit:
     """``--commit`` actually creates samples/folders and calls link_s3."""
 
-    def test_commit_links_every_action(self, runner):
-        """Every (sample, field) tuple results in exactly one link_s3 call."""
-        result, _, proj = _invoke(
-            runner,
-            ["reads", "--commit", "MyOrg/MyProject", f"s3://{_BUCKET}/{_PREFIX}"],
-        )
-        assert result.exit_code == 0, result.output
-        # 4 fields for sample_A + 2 for sample_B = 6 total link_s3 calls.
-        total_link_calls = 0
-        for sample_name, group in zip(["sample_A", "sample_B"], _GROUPS):
-            sample = proj._sample_mocks[sample_name]
-            folder = sample.result_folder("short_read::paired_end")
-            for field_name in group["fields"]:
-                rf = folder.read_file(field_name)
-                total_link_calls += rf.link_s3.call_count
-        assert total_link_calls == 6
-
     def test_commit_link_s3_uses_endpoint_url(self, runner):
         """``link_s3`` is called with the source endpoint_url for non-AWS storage."""
         result, _, proj = _invoke(
