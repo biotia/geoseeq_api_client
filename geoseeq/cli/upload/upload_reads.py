@@ -21,6 +21,11 @@ from geoseeq.cli.shared_params import (
 )
 from geoseeq.upload_download_manager import GeoSeeqUploadManager
 
+from geoseeq.bulk_creators import (
+    bulk_create_samples,
+    bulk_create_sample_result_folders,
+    bulk_create_sample_result_files,
+)
 from geoseeq.constants import FASTQ_MODULE_NAMES
 from geoseeq.cli.progress_bar import PBarManager
 
@@ -46,6 +51,123 @@ def _upload_one_file(args):
         result_file.link_file(link_type, filepath)
 
 
+def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids):
+    """Pre-create samples, result folders, and result files for ``groups`` in three bulk POSTs.
+
+    Replaces the previous O(N) per-group ``Sample().idem()`` /
+    ``ResultFolder().idem()`` / ``read_file()`` chain with three round-trips
+    total (one per phase), then falls back to per-object ``.idem()`` for any
+    names the bulk POST did not return (the "already-exists" case — the bulk
+    endpoints silently skip duplicates and only return *newly created* rows).
+
+    Args:
+        knex: GeoSeeq client used for the bulk POSTs and fallback GETs.
+        lib: Project the samples belong to. ``lib.sample(name)`` is the
+            in-memory constructor used to build sample objects.
+        groups: List of grouping dicts as produced by ``group_files`` —
+            each entry has a ``sample_name`` and a ``fields`` mapping
+            ``{field_name: path}``.
+        module_name: Module name for the read folder (e.g.
+            ``short_read::paired_end``).
+        need_file_uuids: If ``True``, fall back to ``.idem()`` for any file
+            whose UUID wasn't returned by the bulk POST. The non-atomic
+            upload path (``upload_advanced._find_target_urls``) needs file
+            UUIDs to call ``/ar_fields/{uuid}/create_upload``. The atomic
+            upload path (``_do_upload``) does not — it uses the *folder*
+            UUID via ``/ars/{folder_uuid}/create_atomic_upload`` (see
+            ``geoseeq/result/file_upload.py:_create_multipart_upload``), so
+            the bulk POST is fire-and-forget for the manifest side-effect.
+
+    Returns:
+        Dict mapping ``(sample_name, field_name)`` to the corresponding
+        result-file object, in the same iteration order as ``groups``.
+
+    Raises:
+        RuntimeError: If any bulk POST fails — the message names the phase
+            (samples / folders / files) and the original exception is
+            chained. No partial fallback is attempted; the caller aborts.
+    """
+    # Phase 1: samples.
+    unique_names = []
+    samples_by_name = {}
+    for group in groups:
+        name = group['sample_name']
+        if name in samples_by_name:
+            continue
+        samples_by_name[name] = lib.sample(name)
+        unique_names.append(name)
+    try:
+        created_samples = bulk_create_samples(knex, list(samples_by_name.values()))
+    except Exception as exc:
+        raise RuntimeError(f"Bulk create failed during 'samples' phase: {exc}") from exc
+    created_sample_names = {s.name for s in created_samples}
+    for created in created_samples:
+        samples_by_name[created.name] = created
+    for name in unique_names:
+        if name not in created_sample_names:
+            samples_by_name[name].idem()  # populates the in-memory object
+
+    # Phase 2: result folders (one per sample).
+    folders_by_sample_name = {
+        name: samples_by_name[name].result_folder(module_name)
+        for name in unique_names
+    }
+    try:
+        created_folders = bulk_create_sample_result_folders(
+            knex, list(folders_by_sample_name.values())
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Bulk create failed during 'folders' phase: {exc}") from exc
+    # Bulk folder responses are keyed by their parent sample's UUID; build a
+    # uuid -> sample_name lookup so we can rewire by sample name.
+    sample_name_by_uuid = {samples_by_name[name].uuid: name for name in unique_names}
+    created_folder_sample_names = set()
+    for created in created_folders:
+        sample_name = sample_name_by_uuid.get(created.parent.uuid)
+        if sample_name is not None:
+            folders_by_sample_name[sample_name] = created
+            created_folder_sample_names.add(sample_name)
+    for name in unique_names:
+        if name not in created_folder_sample_names:
+            folders_by_sample_name[name].idem()
+
+    # Phase 3: result files. Build the (sample_name, field_name) -> file map
+    # in the same iteration order as `groups`.
+    files_by_key = {}
+    for group in groups:
+        folder = folders_by_sample_name[group['sample_name']]
+        for field_name in group['fields']:
+            files_by_key[(group['sample_name'], field_name)] = folder.read_file(field_name)
+    try:
+        created_files = bulk_create_sample_result_files(knex, list(files_by_key.values()))
+    except Exception as exc:
+        raise RuntimeError(f"Bulk create failed during 'files' phase: {exc}") from exc
+    if need_file_uuids:
+        # The bulk endpoint returns rows keyed by canonical file name +
+        # parent folder UUID, not by the bare field_name we hand in. Index
+        # the in-memory files by (folder uuid, canonical file name) so we
+        # can rewire any matches; .idem() the rest.
+        files_by_match = {
+            (in_memory.parent.uuid, in_memory.name): key
+            for key, in_memory in files_by_key.items()
+        }
+        created_keys = set()
+        for created in created_files:
+            key = files_by_match.get((created.parent.uuid, created.name))
+            if key is not None:
+                files_by_key[key] = created
+                created_keys.add(key)
+        for key, in_memory_file in list(files_by_key.items()):
+            if key not in created_keys:
+                in_memory_file.idem()
+    # When need_file_uuids is False (atomic upload path), the in-memory
+    # `read_file()` objects are sufficient — the upload path only reads the
+    # parent folder's UUID, never the file's. The bulk POST above is still
+    # made for the server-side manifest side effect.
+
+    return files_by_key
+
+
 def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state):
 
     with requests.Session() as session:
@@ -60,11 +182,12 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
             no_new_versions=no_new_versions,
             use_atomic_upload=True,
         )
+        files_by_key = _bulk_prepare(
+            lib.knex, lib, groups, module_name, need_file_uuids=False
+        )
         for group in groups:
-            sample = lib.sample(group['sample_name']).idem()
-            read_folder = sample.result_folder(module_name).idem()
             for field_name, path in group['fields'].items():
-                result_file = read_folder.read_file(field_name)
+                result_file = files_by_key[(group['sample_name'], field_name)]
                 upload_manager.add_result_file(result_file, filepaths[path])
         upload_manager.upload_files()
 

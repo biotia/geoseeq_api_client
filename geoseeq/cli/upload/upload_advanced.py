@@ -4,6 +4,7 @@ import requests
 from os.path import basename, getsize
 from geoseeq.cli._grouping import get_regex, group_files
 from .upload_reads import (
+    _bulk_prepare,
     _make_in_process_logger,
     flatten_list_of_fastxs,
 )
@@ -59,15 +60,23 @@ def _get_url_for_one_file(args):
 
 
 def _find_target_urls(groups, module_name, lib, filepaths, overwrite, cores, state):
-    """Use GeoSeeq to get target urls for a set of files"""
+    """Use GeoSeeq to get target urls for a set of files.
+
+    Pre-creates samples / result folders / result files for every group
+    via three bulk POSTs (see ``_bulk_prepare``), then builds the
+    per-file ``find_url_args`` list from the returned mapping. The
+    non-atomic upload path here reads ``result_file.uuid`` inside
+    ``_get_url_for_one_file`` (via ``/ar_fields/{uuid}/create_upload``),
+    so ``need_file_uuids=True``.
+    """
     with requests.Session() as session:
+        files_by_key = _bulk_prepare(
+            lib.knex, lib, groups, module_name, need_file_uuids=True
+        )
         find_url_args = []
         for group in groups:
-            sample = lib.sample(group['sample_name']).idem()
-            read_folder = sample.result_folder(module_name).idem()
-
             for field_name, path in group['fields'].items():
-                result_file = read_folder.read_file(field_name)
+                result_file = files_by_key[(group['sample_name'], field_name)]
                 filepath = filepaths[path]
                 find_url_args.append((
                     result_file, filepath, overwrite, state.log_level
