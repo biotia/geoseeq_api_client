@@ -163,3 +163,34 @@ def test_link_type_s3_with_s3_uri_paths_does_not_warn(capsys):
 
     assert caught == []
     assert capsys.readouterr().err == ""
+
+
+def test_deprecation_warning_stacklevel_attributes_to_caller():
+    """stacklevel=2 must attribute the warning to the direct caller, not the helper.
+
+    This guards against regression where changing stacklevel would make the
+    warning appear to originate from inside ``_maybe_warn_link_type_s3_deprecated``
+    (upload_reads.py) rather than the call-site in the enclosing command function.
+    We simulate the one-level-of-indirection present in the real usage
+    (cli_upload_reads_wizard -> helper) by wrapping the call in a local function
+    and asserting the recorded filename points at THIS test file, not at
+    upload_reads.py.
+    """
+    import os
+
+    def _simulate_cli_call_site():
+        """Represents the call inside cli_upload_reads_wizard."""
+        _maybe_warn_link_type_s3_deprecated("s3", _local_filepaths())
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _simulate_cli_call_site()
+
+    assert len(caught) == 1
+    w = caught[0]
+    # stacklevel=2 means: skip the helper frame, attribute to *its* caller.
+    # Here that caller is _simulate_cli_call_site defined in this file.
+    assert os.path.basename(w.filename) == "test_upload_reads_unit.py", (
+        f"Warning attributed to {w.filename!r}; expected this test file. "
+        "stacklevel inside _maybe_warn_link_type_s3_deprecated is wrong."
+    )
