@@ -182,11 +182,12 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
             no_new_versions=no_new_versions,
             use_atomic_upload=True,
         )
+        files_by_key = _bulk_prepare(
+            lib.knex, lib, groups, module_name, need_file_uuids=False
+        )
         for group in groups:
-            sample = lib.sample(group['sample_name']).idem()
-            read_folder = sample.result_folder(module_name).idem()
             for field_name, path in group['fields'].items():
-                result_file = read_folder.read_file(field_name)
+                result_file = files_by_key[(group['sample_name'], field_name)]
                 upload_manager.add_result_file(result_file, filepaths[path])
         upload_manager.upload_files()
 
