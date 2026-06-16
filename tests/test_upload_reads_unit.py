@@ -456,6 +456,8 @@ def test_do_upload_does_no_bulk_posts_when_user_declines(monkeypatch):
     This guards the invariant that the click.confirm in group_files
     runs before any server writes.
     """
+    import click
+
     # Patch the bulk creators to record any (unexpected) calls.
     posts = []
     monkeypatch.setattr(
@@ -471,6 +473,13 @@ def test_do_upload_does_no_bulk_posts_when_user_declines(monkeypatch):
         lambda *a, **kw: posts.append("files") or [],
     )
 
+    # Patch click.confirm with a MagicMock so we can both (a) trigger the
+    # decline by raising click.Abort and (b) prove that the abort actually
+    # came from the confirm gate (not from some earlier exception in the
+    # fake knex / group_files plumbing).
+    mock_confirm = MagicMock(side_effect=click.Abort())
+    monkeypatch.setattr("geoseeq.cli._grouping.click.confirm", mock_confirm)
+
     # group_files calls knex.post('bulk_upload/group_files') then
     # click.confirm(); declining raises click.Abort.
     groups_response = [
@@ -479,11 +488,7 @@ def test_do_upload_does_no_bulk_posts_when_user_declines(monkeypatch):
     knex = DummyKnex(groups_response)
     filepaths = {"A_R1.fastq": "/tmp/A_R1.fastq"}
 
-    from click.testing import CliRunner
-    import click
-
-    @click.command()
-    def _run():
+    with pytest.raises(click.Abort):
         groups = group_files(
             knex, filepaths,
             "short_read::single_end",
@@ -504,8 +509,13 @@ def test_do_upload_does_no_bulk_posts_when_user_declines(monkeypatch):
             state=MagicMock(),
         )
 
-    result = CliRunner().invoke(_run, input="n\n")
-    assert result.exit_code != 0  # click.Abort
+    # Sanity: the abort must have come from the confirm gate, not from an
+    # earlier failure in the fake knex setup. Without this assertion the
+    # ``posts == []`` check could pass vacuously.
+    assert mock_confirm.call_count >= 1, (
+        "click.confirm was never reached — the abort came from somewhere "
+        "upstream, so this test is not actually exercising the confirm gate."
+    )
     assert posts == [], f"Bulk POSTs fired before user confirmed: {posts}"
 
 
@@ -541,15 +551,17 @@ def test_confirm_gates_all_bulk_posts(monkeypatch):
         lambda *a, **kw: posts.append("files") or [],
     )
 
-    def _always_abort(*args, **kwargs):
-        raise click.Abort()
-
     # Patch click.confirm in both modules where a future regression could
-    # add it (group_files today, _do_upload under the mutation).
-    monkeypatch.setattr("geoseeq.cli._grouping.click.confirm", _always_abort)
+    # add it (group_files today, _do_upload under the mutation). We use a
+    # MagicMock so the test can prove the abort actually came from the
+    # confirm gate — without this, the ``posts == []`` assertion below
+    # could pass vacuously if some upstream code in the fake plumbing
+    # raised before click.confirm was ever reached.
+    mock_confirm = MagicMock(side_effect=click.Abort())
+    monkeypatch.setattr("geoseeq.cli._grouping.click.confirm", mock_confirm)
     monkeypatch.setattr(
         "geoseeq.cli.upload.upload_reads.click.confirm",
-        _always_abort,
+        mock_confirm,
         raising=False,
     )
 
@@ -586,6 +598,12 @@ def test_confirm_gates_all_bulk_posts(monkeypatch):
             state=MagicMock(),
         )
 
+    # Sanity: the abort must have come from the confirm gate, not from an
+    # earlier failure in the fake knex / _bulk_prepare plumbing.
+    assert mock_confirm.call_count >= 1, (
+        "click.confirm was never reached — the abort came from somewhere "
+        "upstream, so this test is not actually exercising the confirm gate."
+    )
     assert posts == [], (
         f"bulk POSTs fired before the confirm gate aborted: {posts}. "
         "The click.confirm in group_files must run before any bulk_* POST."
