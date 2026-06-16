@@ -507,3 +507,146 @@ def test_do_upload_does_no_bulk_posts_when_user_declines(monkeypatch):
     result = CliRunner().invoke(_run, input="n\n")
     assert result.exit_code != 0  # click.Abort
     assert posts == [], f"Bulk POSTs fired before user confirmed: {posts}"
+
+
+def test_confirm_gates_all_bulk_posts(monkeypatch):
+    """The click.confirm gate must run BEFORE any bulk_* POST is issued.
+
+    Stronger version of ``test_do_upload_does_no_bulk_posts_when_user_declines``:
+    explicitly constructs a scenario where ``_bulk_prepare`` *would* be
+    invoked if anyone reordered the call sites, and asserts that no bulk
+    POST is hit.
+
+    Patches ``click.confirm`` to raise ``click.Abort`` directly (no CliRunner
+    stdin needed), and drives the same ``group_files`` -> ``_do_upload`` chain
+    that ``cli_upload_reads_wizard`` uses. With ``_do_upload`` and
+    ``_bulk_prepare`` fully wired up to the bulk creator stubs, the test will
+    fail if anyone moves the confirm into ``_do_upload`` *after*
+    ``_bulk_prepare`` — because the bulk POSTs would fire before the relocated
+    confirm aborts.
+    """
+    import click
+
+    posts = []
+    monkeypatch.setattr(
+        "geoseeq.cli.upload.upload_reads.bulk_create_samples",
+        lambda *a, **kw: posts.append("samples") or [],
+    )
+    monkeypatch.setattr(
+        "geoseeq.cli.upload.upload_reads.bulk_create_sample_result_folders",
+        lambda *a, **kw: posts.append("folders") or [],
+    )
+    monkeypatch.setattr(
+        "geoseeq.cli.upload.upload_reads.bulk_create_sample_result_files",
+        lambda *a, **kw: posts.append("files") or [],
+    )
+
+    def _always_abort(*args, **kwargs):
+        raise click.Abort()
+
+    # Patch click.confirm in both modules where a future regression could
+    # add it (group_files today, _do_upload under the mutation).
+    monkeypatch.setattr("geoseeq.cli._grouping.click.confirm", _always_abort)
+    monkeypatch.setattr(
+        "geoseeq.cli.upload.upload_reads.click.confirm",
+        _always_abort,
+        raising=False,
+    )
+
+    groups_response = [
+        {"sample_name": "A", "fields": {"R1": "A_R1.fastq", "R2": "A_R2.fastq"}},
+    ]
+    knex = DummyKnex(groups_response)
+    filepaths = {
+        "A_R1.fastq": "/tmp/A_R1.fastq",
+        "A_R2.fastq": "/tmp/A_R2.fastq",
+    }
+    lib = _FakeLib()
+
+    with pytest.raises(click.Abort):
+        groups = group_files(
+            knex,
+            filepaths,
+            "short_read::paired_end",
+            regex=r"(?P<sample_name>.+)",
+            yes=False,
+        )
+        # If a future change removes the confirm from group_files and puts
+        # it inside _do_upload after _bulk_prepare, this call will execute
+        # and _bulk_prepare will fire the bulk POSTs *before* the abort.
+        _do_upload(
+            groups,
+            "short_read::paired_end",
+            "upload",
+            lib=lib,
+            filepaths=filepaths,
+            overwrite=False,
+            no_new_versions=False,
+            cores=1,
+            state=MagicMock(),
+        )
+
+    assert posts == [], (
+        f"bulk POSTs fired before the confirm gate aborted: {posts}. "
+        "The click.confirm in group_files must run before any bulk_* POST."
+    )
+
+
+def test_bulk_prepare_all_existing_returns_full_mapping(monkeypatch):
+    """All-existing path: every bulk POST returns [] and ``.idem()`` rehydrates.
+
+    Covers the end-of-spectrum case where every sample, folder, and file
+    already exists on the server. The three ``bulk_*`` POSTs return empty
+    lists (server silently skipped all duplicates), so the helper must fall
+    back to ``.idem()`` on every in-memory object and still return a fully
+    populated ``(sample_name, field_name) -> file`` mapping.
+
+    If anyone deletes the fallback ``.idem()`` loop in any phase, this test
+    fails because the mapping would have no UUIDs and ``idem_called`` would
+    stay ``False``.
+    """
+    lib = _FakeLib()
+    groups = [
+        {"sample_name": "A", "fields": {"R1": "A_R1.fastq", "R2": "A_R2.fastq"}},
+        {"sample_name": "B", "fields": {"R1": "B_R1.fastq"}},
+    ]
+
+    # Every bulk endpoint returns [] -> "all rows already existed".
+    calls = _patch_bulk(
+        monkeypatch,
+        samples_cb=lambda _samples: [],
+        folders_cb=lambda _folders: [],
+        files_cb=lambda _files: [],
+    )
+
+    mapping = _bulk_prepare(
+        lib.knex, lib, groups, "short_read::paired_end", need_file_uuids=True
+    )
+
+    # Mapping is fully populated for every (sample, field) pair.
+    assert set(mapping.keys()) == {("A", "R1"), ("A", "R2"), ("B", "R1")}
+
+    # All three bulk phases fired exactly once.
+    assert calls == {"samples": 1, "folders": 1, "files": 1}
+
+    # Every sample fell back to .idem() (none were returned by bulk POST).
+    for sample_name in ("A", "B"):
+        assert lib._samples[sample_name].idem_called is True, (
+            f"sample {sample_name!r} was not .idem()'d despite missing from bulk response"
+        )
+        assert lib._samples[sample_name].uuid is not None
+
+    # Every folder fell back to .idem().
+    for sample_name in ("A", "B"):
+        folder = lib._samples[sample_name]._folders["short_read::paired_end"]
+        assert folder.idem_called is True, (
+            f"folder under {sample_name!r} was not .idem()'d"
+        )
+        assert folder.uuid is not None
+
+    # Every file fell back to .idem() and has a uuid.
+    for key, in_memory_file in mapping.items():
+        assert in_memory_file.idem_called is True, (
+            f"file {key!r} was not .idem()'d despite missing from bulk response"
+        )
+        assert in_memory_file.uuid is not None
