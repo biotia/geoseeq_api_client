@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from geoseeq.cli._grouping import group_files
 
 
@@ -66,7 +64,10 @@ def test_group_files_without_name_map():
 
 
 def test_group_files_confirm_aborts_when_not_yes():
-    """group_files() with yes=False raises SystemExit when the user declines the prompt."""
+    """group_files() with yes=False aborts (via click.Abort) when the user declines the prompt.
+
+    CliRunner surfaces the abort as a non-zero exit code.
+    """
     from click.testing import CliRunner
     import click
 
