@@ -285,6 +285,38 @@ class TestCommit:
         assert args[0].startswith(f"s3://{_BUCKET}/myproject/sample_A")
         assert kwargs.get("endpoint_url") == _ENDPOINT
 
+    def test_commit_defaults_endpoint_url_for_aws_s3(self, runner):
+        """When --endpoint-url is omitted, link_s3 gets the AWS S3 default.
+
+        Regression guard: link_s3 raises ValueError for s3:// URIs without
+        endpoint_url, so the AWS-S3 case (the common default) was previously
+        broken at --commit. Default to https://s3.amazonaws.com when the
+        source has no explicit endpoint.
+        """
+        proj = _make_proj_mock()
+
+        def factory(uri, **kwargs):
+            src = MagicMock()
+            src.bucket = _BUCKET
+            src.prefix = _PREFIX
+            src.endpoint_url = None  # no explicit --endpoint-url
+            src.list_keys.return_value = iter(_KEYS)
+            src.to_s3_uri.side_effect = lambda k: f"s3://{_BUCKET}/{k}"
+            return src
+
+        result, _, _ = _invoke(
+            runner,
+            ["reads", "--commit", "MyOrg/MyProject", f"s3://{_BUCKET}/{_PREFIX}"],
+            proj=proj,
+            source_factory=factory,
+        )
+        assert result.exit_code == 0
+        sample = proj._sample_mocks["sample_A"]
+        folder = sample.result_folder("short_read::paired_end")
+        rf = folder.read_file("paired_end::read_1::lane_001")
+        _, kwargs = rf.link_s3.call_args
+        assert kwargs.get("endpoint_url") == "https://s3.amazonaws.com"
+
     def test_commit_idempotent_field_names_pass_through(self, runner):
         """Field names with the seq-type prefix flow through unchanged.
 

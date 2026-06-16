@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from geoseeq.cli._grouping import group_files
 
 

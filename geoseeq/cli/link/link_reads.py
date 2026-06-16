@@ -303,5 +303,10 @@ def cli_link_reads(
         click.echo("\n(dry-run) pass --commit to actually link files.", err=True)
         return
 
-    linked = _commit_actions(proj, module_name, actions, source.endpoint_url)
+    # link_s3 raises for s3:// URIs without endpoint_url. Default to the
+    # standard AWS S3 endpoint so the AWS-S3 case (the typical default)
+    # works out of the box; explicit --endpoint-url still wins for B2,
+    # Wasabi, MinIO, etc.
+    link_endpoint = source.endpoint_url or "https://s3.amazonaws.com"
+    linked = _commit_actions(proj, module_name, actions, link_endpoint)
     click.echo(f"\nLinked {linked} files.", err=True)
