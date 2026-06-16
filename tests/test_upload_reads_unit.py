@@ -668,3 +668,100 @@ def test_bulk_prepare_all_existing_returns_full_mapping(monkeypatch):
             f"file {key!r} was not .idem()'d despite missing from bulk response"
         )
         assert in_memory_file.uuid is not None
+
+
+def test_bulk_prepare_deduplicates_repeated_sample_names(monkeypatch):
+    """Groups with the same sample_name are deduplicated before the bulk POST.
+
+    When two groups share a sample_name (e.g. different lanes of the same
+    sample), _bulk_prepare must hit the samples bulk-create endpoint exactly
+    once per unique name (not once per group), and must still return a key
+    for every (sample_name, field_name) pair across all groups.
+
+    Covers the ``continue`` branch on line 96 of upload_reads.py.
+    """
+    lib = _FakeLib()
+    groups = [
+        {"sample_name": "A", "fields": {"R1": "A_L1_R1.fastq"}},
+        {"sample_name": "A", "fields": {"R2": "A_L1_R2.fastq"}},  # same sample, second group
+    ]
+
+    seen_sample_names = []
+
+    def samples_cb(in_memory_samples):
+        seen_sample_names.extend(s.name for s in in_memory_samples)
+        for s in in_memory_samples:
+            s.uuid = f"sample-uuid-{s.name}"
+        return in_memory_samples
+
+    calls = _patch_bulk(
+        monkeypatch,
+        samples_cb=samples_cb,
+        folders_cb=lambda fs: [setattr(f, "uuid", f"folder-uuid-{f.parent.name}") or f for f in fs],
+        files_cb=lambda files: [],  # all fall back to .idem()
+    )
+
+    mapping = _bulk_prepare(
+        lib.knex, lib, groups, "short_read::paired_end", need_file_uuids=False
+    )
+
+    # Only one unique sample name should have been sent to the bulk POST.
+    assert seen_sample_names == ["A"], (
+        f"Expected exactly one 'A' sent to bulk_create_samples; got {seen_sample_names!r}"
+    )
+    # Both (sample, field) keys are present in the mapping despite dedup.
+    assert set(mapping.keys()) == {("A", "R1"), ("A", "R2")}
+    assert calls["samples"] == 1
+
+
+def test_bulk_prepare_raises_phase_named_error_on_folders_failure(monkeypatch):
+    """A folders-phase failure aborts with a 'folders'-named RuntimeError.
+
+    The files phase must not be attempted after a folder failure.
+    Covers lines 119-120 of upload_reads.py.
+    """
+    lib = _FakeLib()
+    groups = [{"sample_name": "A", "fields": {"R1": "A_R1.fastq"}}]
+
+    files_called = {"n": 0}
+
+    def folders_cb(_folders):
+        raise ConnectionError("folders backend down")
+
+    def files_cb(_files):
+        files_called["n"] += 1
+        return []
+
+    _patch_bulk(
+        monkeypatch,
+        samples_cb=lambda ss: [setattr(s, "uuid", f"uuid-{s.name}") or s for s in ss],
+        folders_cb=folders_cb,
+        files_cb=files_cb,
+    )
+
+    with pytest.raises(RuntimeError, match="folders"):
+        _bulk_prepare(lib.knex, lib, groups, "short_read::single_end", need_file_uuids=False)
+
+    assert files_called["n"] == 0
+
+
+def test_bulk_prepare_raises_phase_named_error_on_files_failure(monkeypatch):
+    """A files-phase failure aborts with a 'files'-named RuntimeError.
+
+    Covers lines 143-144 of upload_reads.py.
+    """
+    lib = _FakeLib()
+    groups = [{"sample_name": "A", "fields": {"R1": "A_R1.fastq"}}]
+
+    def files_cb(_files):
+        raise IOError("files backend down")
+
+    _patch_bulk(
+        monkeypatch,
+        samples_cb=lambda ss: [setattr(s, "uuid", f"uuid-{s.name}") or s for s in ss],
+        folders_cb=lambda fs: [setattr(f, "uuid", f"folder-uuid-{f.parent.name}") or f for f in fs],
+        files_cb=files_cb,
+    )
+
+    with pytest.raises(RuntimeError, match="files"):
+        _bulk_prepare(lib.knex, lib, groups, "short_read::single_end", need_file_uuids=False)
