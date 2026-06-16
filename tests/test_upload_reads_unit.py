@@ -400,8 +400,8 @@ def test_bulk_prepare_skips_file_fallback_when_need_file_uuids_false(monkeypatch
 
     calls = _patch_bulk(
         monkeypatch,
-        samples_cb=lambda ss: [s for s in ss if (setattr(s, "uuid", f"sample-uuid-{s.name}") or True)],
-        folders_cb=lambda fs: [f for f in fs if (setattr(f, "uuid", f"folder-uuid-{f.parent.name}") or True)],
+        samples_cb=lambda ss: [setattr(s, "uuid", f"uuid-{s.name}") or s for s in ss],
+        folders_cb=lambda fs: [setattr(f, "uuid", f"folder-uuid-{f.parent.name}") or f for f in fs],
         files_cb=lambda fs: [],  # nothing returned
     )
 
