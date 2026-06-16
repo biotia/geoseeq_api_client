@@ -20,6 +20,9 @@ setuptools.setup(
         'tqdm',
         'xxhash',
     ],
+    extras_require={
+        's3': ['boto3>=1.28'],
+    },
     entry_points={
         'console_scripts': [
             'geoseeq=geoseeq.cli:main'
