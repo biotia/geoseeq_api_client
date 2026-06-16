@@ -1,6 +1,7 @@
 import hashlib
 import os
 import logging
+import subprocess
 from ftplib import FTP
 from threading import Timer
 from .file_system_cache import FileSystemCache
@@ -13,14 +14,26 @@ logger = logging.getLogger('geoseeq_api')  # Same name as calling module
 logger.addHandler(logging.NullHandler())  # No output unless configured by calling program
 
 
+def resolve_secret(val):
+    """Resolve `op://...` 1Password URIs via the `op` CLI; pass other values through."""
+    if isinstance(val, str) and val.startswith("op://"):
+        try:
+            return subprocess.check_output(["op", "read", val], text=True).rstrip("\n")
+        except FileNotFoundError as e:
+            raise RuntimeError("Profile contains an op:// URI but the `op` CLI is not installed.") from e
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"`op read` failed for {val!r} (exit {e.returncode}); is your 1Password session signed in?") from e
+    return val
+
+
 def load_auth_profile(profile=""):
-    """Return an endpoit and a token"""
+    """Return an endpoint and a token"""
     profile = profile or "__default__"
     try:
         with open(PROFILES_PATH, "r") as f:
             profiles = json.load(f)
         if profile in profiles:
-            return profiles[profile]["endpoint"], profiles[profile]["token"]
+            return resolve_secret(profiles[profile]["endpoint"]), resolve_secret(profiles[profile]["token"])
         raise KeyError(f"Profile {profile} not found.")
     except FileNotFoundError:
         endpoint, token = environ.get("GEOSEEQ_ENDPOINT", DEFAULT_ENDPOINT), environ.get("GEOSEEQ_API_TOKEN", None)
@@ -28,7 +41,7 @@ def load_auth_profile(profile=""):
             logger.debug("Using environment variables for authentication.")
         else:
             logger.warning("Accessing anonymously, functionality may be limited. Configure profiles or set GEOSEEQ_API_TOKEN to authenticate.")
-        return endpoint, token
+        return resolve_secret(endpoint), resolve_secret(token)
 
 
 def set_profile(token, endpoint=DEFAULT_ENDPOINT, profile="", overwrite=False):
