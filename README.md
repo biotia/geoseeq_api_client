@@ -99,6 +99,47 @@ $ geoseeq upload reads --name-map sample_map.csv current_name new_name "GeoSeeq/
 
 Note: You will need to have an API token set to use this command (see above)
 
+If your reads already live in an S3-compatible bucket (AWS S3, Backblaze
+B2, Wasabi, MinIO, ...) and you want GeoSeeq to point at them in place
+rather than upload the bytes, see [Linking remote files](#linking-remote-files) below.
+
+#### Linking remote files
+
+If your fastq files already exist in an S3-compatible bucket — AWS S3,
+Backblaze B2, Wasabi, MinIO, etc. — you can register them with GeoSeeq
+as links instead of uploading the bytes. Pick the right command for the
+shape of the work:
+
+| Command | Use when |
+|---------|----------|
+| `geoseeq link reads`   | You have a whole S3 prefix of fastq files to register in bulk. GeoSeeq lists the prefix, groups files into samples server-side, and links each file in place. |
+| `geoseeq upload reads` | You want GeoSeeq to manage the bytes — local files copied into managed storage. |
+| `geoseeq s3 register`  | You have a single file already staged in GeoSeeq's per-project staging credentials flow. |
+
+`link reads` requires the optional `[s3]` extras (boto3):
+
+```
+pip install 'geoseeq[s3]'
+```
+
+Example — register a Backblaze B2 prefix of paired-end reads:
+
+```
+$ geoseeq link reads "MyOrg/MyProject" \
+      s3://my-bucket/path/to/reads/ \
+      --endpoint-url https://s3.us-east-005.backblazeb2.com \
+      --commit
+```
+
+Without `--commit` the command runs in dry-run mode and prints the
+proposed `(sample, field, s3-uri)` tuples without writing. AWS
+credentials follow the standard boto3 chain (env vars, shared config,
+instance profile) — there are no new secrets for the CLI to manage.
+
+Note: `geoseeq upload reads --link-type s3 <local-file-list>` is
+deprecated as of this release; prefer `geoseeq link reads` (bulk) or
+`geoseeq s3 register` (single staged file).
+
 ## Using the Python API in a program
 
 

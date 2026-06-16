@@ -1,5 +1,6 @@
 # pylint: disable=line-too-long
 import logging
+import warnings
 import click
 import requests
 from os.path import basename
@@ -67,6 +68,38 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
                 upload_manager.add_result_file(result_file, filepaths[path])
         upload_manager.upload_files()
 
+
+
+_LINK_TYPE_S3_DEPRECATION_MSG = (
+    "`geoseeq upload reads --link-type s3` is deprecated; use "
+    "`geoseeq link reads` to register S3 files in bulk, or "
+    "`geoseeq s3 register` for single staged files."
+)
+
+
+def _maybe_warn_link_type_s3_deprecated(link_type, filepaths):
+    """Emit a deprecation warning when ``--link-type s3`` is used with local paths.
+
+    The legitimate "register pre-existing S3 files" workflow now lives in
+    ``geoseeq link reads`` (LR-03). The local-file-list form of
+    ``upload reads --link-type s3`` is retained for one release with a
+    warning before removal.
+
+    No warning is emitted when ``link_type != 's3'`` (e.g. the default
+    byte-upload mode) or when the supplied file values are themselves
+    ``s3://`` URIs (an edge case kept out of scope by the spec).
+    """
+    if link_type != 's3':
+        return
+    values = filepaths.values() if hasattr(filepaths, 'values') else filepaths
+    if any(str(v).startswith('s3://') for v in values):
+        return
+    warnings.warn(
+        _LINK_TYPE_S3_DEPRECATION_MSG,
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    click.echo(f'DeprecationWarning: {_LINK_TYPE_S3_DEPRECATION_MSG}', err=True)
 
 
 def _is_fastq(path, fq_exts=['.fastq', '.fq'], compression_exts=['.gz', '.bz2', '']):
@@ -202,6 +235,7 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     proj = handle_project_id(knex, project_id, yes, private)
     filepaths = {basename(line): line for line in flatten_list_of_fastxs(fastq_files)}
     click.echo(f'Found {len(filepaths)} files to upload.', err=True)
+    _maybe_warn_link_type_s3_deprecated(link_type, filepaths)
     regex = get_regex(knex, filepaths, module_name, proj, regex)
     groups = group_files(knex, filepaths, module_name, regex, yes, name_map)
     _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state)
