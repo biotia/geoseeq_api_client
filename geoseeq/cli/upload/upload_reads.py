@@ -87,6 +87,14 @@ def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids):
             (samples / folders / files) and the original exception is
             chained. No partial fallback is attempted; the caller aborts.
     """
+    # The server's ``bulk_upload/group_files`` endpoint already prefixes
+    # field names with the seq-type (e.g. ``single_end::read_1::lane_1``).
+    # Build the canonical fully-prefixed file name from the top-level
+    # ``seq_length`` (e.g. ``short_read``) here so we match the preview
+    # rendered by ``_grouping.group_files`` exactly and avoid relying on
+    # ``read_file``'s defensive normalization at the call site.
+    seq_length = module_name.split('::')[0]
+
     # Phase 1: samples.
     unique_names = []
     samples_by_name = {}
@@ -137,7 +145,8 @@ def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids):
     for group in groups:
         folder = folders_by_sample_name[group['sample_name']]
         for field_name in group['fields']:
-            files_by_key[(group['sample_name'], field_name)] = folder.read_file(field_name)
+            full_name = f'{seq_length}::{field_name}'
+            files_by_key[(group['sample_name'], field_name)] = folder.result_file(full_name)
     try:
         created_files = bulk_create_sample_result_files(knex, list(files_by_key.values()))
     except Exception as exc:

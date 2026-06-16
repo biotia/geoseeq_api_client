@@ -241,6 +241,18 @@ class _FakeFolder:
             self._files[field_name] = _FakeFile(self, field_name)
         return self._files[field_name]
 
+    def result_file(self, field_name):
+        """Stand-in for ``SampleResultFolder.result_file``.
+
+        ``_bulk_prepare`` calls this directly with the fully-prefixed
+        canonical name (e.g. ``short_read::single_end::read_1::lane_1``),
+        bypassing ``read_file`` so the call site doesn't rely on the
+        defensive prefix-normalization in ``SampleBioInfoFolder.read_file``.
+        """
+        if field_name not in self._files:
+            self._files[field_name] = _FakeFile(self, field_name)
+        return self._files[field_name]
+
     def idem(self):
         self.idem_called = True
         self.uuid = f"folder-uuid-{self.parent.name}"
@@ -352,9 +364,15 @@ def test_bulk_prepare_mixed_created_and_existing_need_file_uuids_true(monkeypatc
         return []
 
     def files_cb(in_memory_files):
-        # Server says only the A/R1 file is newly created.
+        # Server says only the A/R1 file is newly created. The file's
+        # name is now built by ``_bulk_prepare`` from
+        # ``seq_length`` + ``field_name`` — in this test the bare field
+        # names (``R1``/``R2``) give ``short_read::R1``/``short_read::R2``.
+        # Real ``field_name`` values from ``bulk_upload/group_files`` are
+        # already seq-type-prefixed (``paired_end::read_1::lane_1``); the
+        # canonical-name regression test below exercises that shape.
         for f in in_memory_files:
-            if f.parent.parent.name == "A" and f.name == "R1":
+            if f.parent.parent.name == "A" and f.name == "short_read::R1":
                 f.uuid = "file-uuid-A-R1"
                 return [f]
         return []
@@ -765,3 +783,54 @@ def test_bulk_prepare_raises_phase_named_error_on_files_failure(monkeypatch):
 
     with pytest.raises(RuntimeError, match="files"):
         _bulk_prepare(lib.knex, lib, groups, "short_read::single_end", need_file_uuids=False)
+
+
+def test_bulk_prepare_builds_canonical_file_name_without_double_prefix(monkeypatch):
+    """Regression: the file name passed to the bulk creator is fully prefixed exactly once.
+
+    The server's ``bulk_upload/group_files`` endpoint returns ``field_name``
+    values already prefixed with the seq-type (e.g.
+    ``single_end::read_1::lane_1``). ``_bulk_prepare`` must build the
+    canonical file name by prepending only the top-level ``seq_length``
+    (``short_read``), yielding ``short_read::single_end::read_1::lane_1``
+    — not the doubled ``short_read::single_end::single_end::read_1::lane_1``
+    that the original ``folder.read_file(field_name)`` call produced when
+    paired with the un-normalized ``read_file`` contract.
+
+    This locks the call-site fix and matches the canonical name rendered
+    by the upload preview in ``_grouping.group_files``.
+    """
+    lib = _FakeLib()
+    groups = [
+        {
+            "sample_name": "S1",
+            "fields": {"single_end::read_1::lane_1": "S1_L1_R1.fastq.gz"},
+        },
+    ]
+
+    seen_file_names = []
+
+    def files_cb(in_memory_files):
+        seen_file_names.extend(f.name for f in in_memory_files)
+        return []
+
+    _patch_bulk(
+        monkeypatch,
+        samples_cb=lambda ss: [setattr(s, "uuid", f"uuid-{s.name}") or s for s in ss],
+        folders_cb=lambda fs: [setattr(f, "uuid", f"folder-uuid-{f.parent.name}") or f for f in fs],
+        files_cb=files_cb,
+    )
+
+    _bulk_prepare(
+        lib.knex, lib, groups, "short_read::single_end", need_file_uuids=False
+    )
+
+    assert seen_file_names == ["short_read::single_end::read_1::lane_1"], (
+        f"Expected single sub-type prefix; got {seen_file_names!r}. "
+        "Double prefix indicates _bulk_prepare is re-applying the seq-type "
+        "that the server already added to field_name."
+    )
+    # Explicit guard against the double-prefix bug shape.
+    assert "single_end::single_end" not in seen_file_names[0], (
+        f"Doubled sub-type prefix in {seen_file_names[0]!r}"
+    )
