@@ -10,6 +10,7 @@ from .detail import cli_detail
 from .download import cli_download
 from .find_grn import cli_find_grn
 from .get_eula import cli_eula
+from .link import cli_link
 from .manage import cli_manage
 from .repo import cli_repo
 from .run import cli_app
@@ -40,6 +41,7 @@ def main():
 
 main.add_command(cli_download)
 main.add_command(cli_upload)
+main.add_command(cli_link)
 main.add_command(cli_manage)
 main.add_command(cli_repo)
 main.add_command(cli_s3)
