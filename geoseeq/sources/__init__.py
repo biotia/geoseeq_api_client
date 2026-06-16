@@ -10,6 +10,6 @@ counterpart is planned; a shared base class will be introduced when the
 second backend lands so the abstraction stays grounded in real usage.
 """
 
-from geoseeq.sources.s3 import S3Source
+from .s3 import S3Source
 
 __all__ = ["S3Source"]

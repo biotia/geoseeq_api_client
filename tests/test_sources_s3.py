@@ -209,7 +209,7 @@ def test_from_uri_rejects_malformed_no_double_slash():
 
 
 def test_list_keys_skips_entries_with_no_key():
-    """Contents entries that lack a ``Key`` field are silently skipped (line 112 guard)."""
+    """Contents entries that lack (or have ``None`` for) a ``Key`` field are silently skipped."""
     pages = [
         {
             "Contents": [

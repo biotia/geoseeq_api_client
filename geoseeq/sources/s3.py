@@ -110,5 +110,5 @@ class S3Source:
                 key = entry.get("Key")
                 if key is None:
                     continue
-                if fnmatch.fnmatch(key, filter_pattern):
+                if fnmatch.fnmatchcase(key, filter_pattern):
                     yield key
