@@ -18,16 +18,16 @@ def resolve_secret(val):
     """Resolve `op://...` 1Password URIs via the `op` CLI; pass other values through."""
     if isinstance(val, str) and val.startswith("op://"):
         try:
-            return subprocess.check_output(["op", "read", val], text=True).strip()
-        except FileNotFoundError:
-            raise RuntimeError("Profile contains an op:// URI but the `op` CLI is not installed.")
+            return subprocess.check_output(["op", "read", val], text=True).rstrip("\n")
+        except FileNotFoundError as e:
+            raise RuntimeError("Profile contains an op:// URI but the `op` CLI is not installed.") from e
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"`op read` failed for {val!r} (exit {e.returncode}); is your 1Password session signed in?")
+            raise RuntimeError(f"`op read` failed for {val!r} (exit {e.returncode}); is your 1Password session signed in?") from e
     return val
 
 
 def load_auth_profile(profile=""):
-    """Return an endpoit and a token"""
+    """Return an endpoint and a token"""
     profile = profile or "__default__"
     try:
         with open(PROFILES_PATH, "r") as f:
