@@ -54,9 +54,10 @@ _KEYS = [
 ]
 
 # Server returns field names with the seq-type prefix already in place
-# (e.g. "paired_end::read_1::lane_001"). The absorbed PR #44 fix is what
-# lets us pass these straight to folder.read_file() without
-# double-prefixing.
+# (e.g. "paired_end::read_1::lane_001"). ``_commit_actions`` prepends the
+# top-level ``seq_length`` (e.g. ``short_read``) and calls
+# ``folder.result_file`` directly so the call site doesn't depend on
+# ``read_file``'s defensive prefix-normalization.
 _GROUPS = [
     {
         "sample_name": "sample_A",
@@ -131,6 +132,11 @@ def _make_proj_mock():
                         return file_mocks[field_name]
 
                     folder.read_file.side_effect = _read_file
+                    # ``_commit_actions`` calls ``folder.result_file`` with
+                    # the fully-prefixed canonical name; share the same
+                    # file_mocks dict so tests can look up files by either
+                    # the bare or canonical name.
+                    folder.result_file.side_effect = _read_file
                     folder_mocks[module_name] = folder
                 return folder_mocks[module_name]
 
@@ -279,7 +285,7 @@ class TestCommit:
         assert result.exit_code == 0
         sample = proj._sample_mocks["sample_A"]
         folder = sample.result_folder("short_read::paired_end")
-        rf = folder.read_file("paired_end::read_1::lane_001")
+        rf = folder.result_file("short_read::paired_end::read_1::lane_001")
         rf.link_s3.assert_called_once()
         args, kwargs = rf.link_s3.call_args
         assert args[0].startswith(f"s3://{_BUCKET}/myproject/sample_A")
@@ -313,17 +319,21 @@ class TestCommit:
         assert result.exit_code == 0
         sample = proj._sample_mocks["sample_A"]
         folder = sample.result_folder("short_read::paired_end")
-        rf = folder.read_file("paired_end::read_1::lane_001")
+        rf = folder.result_file("short_read::paired_end::read_1::lane_001")
         _, kwargs = rf.link_s3.call_args
         assert kwargs.get("endpoint_url") == "https://s3.amazonaws.com"
 
-    def test_commit_idempotent_field_names_pass_through(self, runner):
-        """Field names with the seq-type prefix flow through unchanged.
+    def test_commit_builds_canonical_file_name_without_double_prefix(self, runner):
+        """``_commit_actions`` calls ``folder.result_file`` with the fully-prefixed name.
 
-        Regression guard against the double-prefix bug fixed by the
-        absorbed PR #44 change: ``folder.read_file`` is called with the
-        prefixed name from group_files, and the read_file logic is what
-        normalizes — the command does not strip the prefix client-side.
+        Regression guard against the double-prefix bug: server-side
+        ``bulk_upload/group_files`` returns ``paired_end::read_1::lane_001``;
+        the commit loop must prepend ``short_read`` (the top-level
+        seq_length) and call ``folder.result_file`` with
+        ``short_read::paired_end::read_1::lane_001`` — not the doubled
+        ``short_read::paired_end::paired_end::read_1::lane_001`` that the
+        original ``folder.read_file(field_name)`` call produced when paired
+        with the un-normalized ``read_file`` contract.
         """
         result, _, proj = _invoke(
             runner,
@@ -332,12 +342,17 @@ class TestCommit:
         assert result.exit_code == 0
         sample = proj._sample_mocks["sample_A"]
         folder = sample.result_folder("short_read::paired_end")
-        called_field_names = {
-            c.args[0] for c in folder.read_file.call_args_list
+        called_names = {
+            c.args[0] for c in folder.result_file.call_args_list
         }
-        # The prefixed names from group_files reach read_file as-is.
-        assert "paired_end::read_1::lane_001" in called_field_names
-        assert "paired_end::read_2::lane_002" in called_field_names
+        # Canonical fully-prefixed names reach result_file.
+        assert "short_read::paired_end::read_1::lane_001" in called_names
+        assert "short_read::paired_end::read_2::lane_002" in called_names
+        # Double-prefix bug guard.
+        for name in called_names:
+            assert "paired_end::paired_end" not in name, (
+                f"Doubled sub-type prefix in {name!r}"
+            )
 
     def test_per_sample_dedup_call_count(self, runner):
         """Perf-regression guard: ``sample.idem`` runs once per sample, not per field.

@@ -109,9 +109,9 @@ def _build_actions(groups, filename_to_key, source) -> List[Tuple[str, str, str]
     """Flatten grouped output to ``(sample_name, field_name, s3_uri)`` tuples.
 
     The server's ``bulk_upload/group_files`` returns field names already
-    seq-type-prefixed (e.g. ``paired_end::read_1::lane_001``); we pass
-    those through as-is — ``SampleBioInfoFolder.read_file`` now detects
-    the prefix and avoids double-prefixing (see the absorbed #44 change).
+    seq-type-prefixed (e.g. ``paired_end::read_1::lane_001``); the caller
+    (``_commit_actions``) builds the canonical fully-prefixed file name
+    by prepending the ``seq_length`` from ``module_name``.
     """
     actions: List[Tuple[str, str, str]] = []
     for group in groups:
@@ -150,12 +150,20 @@ def _commit_actions(proj, module_name, actions, endpoint_url):
     for sample_name, field_name, uri in actions:
         by_sample[sample_name].append((field_name, uri))
 
+    # The server's ``bulk_upload/group_files`` endpoint already prefixes
+    # field names with the seq-type (e.g. ``single_end::read_1::lane_1``).
+    # Build the canonical fully-prefixed file name from the top-level
+    # ``seq_length`` (e.g. ``short_read``) here so we match the preview
+    # rendered by ``_grouping.group_files`` exactly and avoid relying on
+    # ``read_file``'s defensive normalization at the call site.
+    seq_length = module_name.split('::')[0]
+
     linked = 0
     for sample_name, fields in by_sample.items():
         sample = proj.sample(sample_name).idem()
         folder = sample.result_folder(module_name).idem()
         for field_name, uri in fields:
-            result_file = folder.read_file(field_name)
+            result_file = folder.result_file(f'{seq_length}::{field_name}')
             # idem before link_s3 — link_s3 calls save() which requires
             # the row to exist. New files get empty stored_data first,
             # then link_s3 overwrites with the s3 link payload.
