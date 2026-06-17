@@ -2,7 +2,6 @@
 from .blob_constructors import (
     sample_from_blob,
     sample_result_folder_from_blob,
-    sample_result_file_from_blob,
 )
 import json
 
@@ -41,15 +40,33 @@ def bulk_create_sample_result_folders(knex, sample_results):
 
 def bulk_create_sample_result_files(knex, sample_result_fields):
     """Create multiple sample result fields at once. Returns a list of created sample result fields.
-    
+
     Only returns sample result fields which were newly created.
-    If a sample result field already exists on the server, it will not be returned.    
+    If a sample result field already exists on the server, it will not be returned.
+
+    The server uses ``SampleAnalysisResultFieldListSerializer`` for this
+    endpoint's response, which intentionally omits ``analysis_result_obj``
+    to keep the payload small. So instead of building fresh objects via
+    ``sample_result_file_from_blob`` (which requires that nested key), we
+    reuse the in-memory objects we already passed in, matching them back
+    to the created blobs by ``(parent.uuid, name)`` and writing the
+    server-assigned ``uuid`` + cached blob onto them.
     """
     result = knex.post(
         "bulk_sample_result_fields",
-        json={"sample_result_fields": [sample_result_field.get_post_data() for sample_result_field in sample_result_fields]},
+        json={"sample_result_fields": [f.get_post_data() for f in sample_result_fields]},
     )
-    created_sample_result_files = [
-        sample_result_file_from_blob(knex, result_blob) for result_blob in result['sample_result_fields'] if result_blob
-    ]
-    return created_sample_result_files
+    in_memory_by_key = {(f.parent.uuid, f.name): f for f in sample_result_fields}
+    created = []
+    for blob in result['sample_result_fields']:
+        if not blob:
+            continue
+        in_memory = in_memory_by_key.get((blob['analysis_result'], blob['name']))
+        if in_memory is None:
+            continue
+        in_memory.uuid = blob['uuid']
+        in_memory.load_blob(blob, allow_overwrite=True)
+        in_memory._already_fetched = True
+        in_memory.cache_blob(blob)
+        created.append(in_memory)
+    return created
