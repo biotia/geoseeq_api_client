@@ -3,16 +3,20 @@ import types
 from unittest.mock import MagicMock, patch
 
 # Stub azure.storage.blob so tests run without the optional [azure] extra installed.
+# Note: `azure` is a namespace package shared by many azure-* libs, so it may already
+# be in sys.modules without `.storage.blob`. Always force-attach the stub submodules.
 try:
     import azure.storage.blob  # noqa: F401
 except ImportError:
-    _azure = types.ModuleType("azure")
+    _azure = sys.modules.get("azure") or types.ModuleType("azure")
     _azure_storage = types.ModuleType("azure.storage")
     _azure_blob = types.ModuleType("azure.storage.blob")
     _azure_blob.BlobClient = types.SimpleNamespace(from_blob_url=lambda url: None)
-    sys.modules.setdefault("azure", _azure)
-    sys.modules.setdefault("azure.storage", _azure_storage)
-    sys.modules.setdefault("azure.storage.blob", _azure_blob)
+    _azure_storage.blob = _azure_blob
+    _azure.storage = _azure_storage
+    sys.modules["azure"] = _azure
+    sys.modules["azure.storage"] = _azure_storage
+    sys.modules["azure.storage.blob"] = _azure_blob
 
 from geoseeq.result import file_download
 from geoseeq.result.file_download import _download_azure_sdk, download_url
