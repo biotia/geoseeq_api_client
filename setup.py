@@ -22,6 +22,7 @@ setuptools.setup(
     ],
     extras_require={
         's3': ['boto3>=1.28'],
+        'azure': ['azure-storage-blob>=12.19'],
     },
     entry_points={
         'console_scripts': [

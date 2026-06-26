@@ -35,6 +35,9 @@ test = [
 s3 = [
     "boto3>=1.28",
 ]
+azure = [
+    "azure-storage-blob>=12.19",
+]
 
 [project.urls]
 Homepage = "https://github.com/biotia/geoseeq_api_client"
