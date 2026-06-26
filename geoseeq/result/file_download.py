@@ -128,7 +128,7 @@ def download_url(url, kind='guess', filename=None, head=None, progress_tracker=N
                 "azure-storage-blob not installed; falling back to single-threaded ranged GETs. "
                 "Install geoseeq[azure] for multipart downloads."
             )
-            return _download_head(url, filename, head=head)
+            return _download_head(url, filename, head=head, progress_tracker=progress_tracker)
     elif kind == 'ftp':
         return download_ftp(url, filename, head=head)
     elif kind == 'http':

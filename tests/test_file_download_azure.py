@@ -1,4 +1,18 @@
+import sys
+import types
 from unittest.mock import MagicMock, patch
+
+# Stub azure.storage.blob so tests run without the optional [azure] extra installed.
+try:
+    import azure.storage.blob  # noqa: F401
+except ImportError:
+    _azure = types.ModuleType("azure")
+    _azure_storage = types.ModuleType("azure.storage")
+    _azure_blob = types.ModuleType("azure.storage.blob")
+    _azure_blob.BlobClient = types.SimpleNamespace(from_blob_url=lambda url: None)
+    sys.modules.setdefault("azure", _azure)
+    sys.modules.setdefault("azure.storage", _azure_storage)
+    sys.modules.setdefault("azure.storage.blob", _azure_blob)
 
 from geoseeq.result import file_download
 from geoseeq.result.file_download import _download_azure_sdk, download_url
@@ -56,18 +70,22 @@ def test_download_url_azure_falls_back_when_sdk_missing(tmp_path, monkeypatch):
 
     called = {}
 
-    def fake_head(url, filename, head=None):
+    def fake_head(url, filename, head=None, progress_tracker=None):
         called["url"] = url
         called["filename"] = filename
+        called["progress_tracker"] = progress_tracker
         return filename
 
     monkeypatch.setattr(file_download, "_download_head", fake_head)
 
+    sentinel_tracker = object()
     result = download_url(
         "https://example.blob.core.windows.net/c/b?sig=x",
         kind="azure",
         filename=str(out),
+        progress_tracker=sentinel_tracker,
     )
 
     assert result == str(out)
     assert called["url"].startswith("https://example.blob.core.windows.net")
+    assert called["progress_tracker"] is sentinel_tracker
