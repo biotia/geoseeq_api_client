@@ -77,6 +77,7 @@ def _download_generic(url, filename, head=None):
 def _download_azure_sdk(url, filename, head=None, progress_tracker=None, max_concurrency=8):
     # ponytail: presigned blob URL works as-is with from_blob_url, no auth rework
     from azure.storage.blob import BlobClient
+    logger.info(f"azure-storage-blob SDK: downloading {filename} with max_concurrency={max_concurrency}")
     client = BlobClient.from_blob_url(url)
     kwargs = {"max_concurrency": max_concurrency}
     if head and head > 0:
