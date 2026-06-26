@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geoseeq"
-version = "0.7.14"
+version = "0.7.15"
 authors = [
   { name="David C. Danko", email="dcdanko@biotia.io" },
 ]
@@ -34,6 +34,9 @@ test = [
 ]
 s3 = [
     "boto3>=1.28",
+]
+azure = [
+    "azure-storage-blob>=12.19",
 ]
 
 [project.urls]

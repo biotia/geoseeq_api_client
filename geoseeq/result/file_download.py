@@ -74,6 +74,24 @@ def _download_generic(url, filename, head=None):
     return filename
 
 
+def _download_azure_sdk(url, filename, head=None, progress_tracker=None, max_concurrency=8):
+    # ponytail: presigned blob URL works as-is with from_blob_url, no auth rework
+    from azure.storage.blob import BlobClient
+    client = BlobClient.from_blob_url(url)
+    kwargs = {"max_concurrency": max_concurrency}
+    if head and head > 0:
+        kwargs["offset"] = 0
+        kwargs["length"] = head + 1
+    stream = client.download_blob(**kwargs)
+    if progress_tracker:
+        progress_tracker.set_num_chunks(stream.size)
+    with open(filename, "wb") as f:
+        stream.readinto(f)
+    if progress_tracker:
+        progress_tracker.update(stream.size)
+    return filename
+
+
 def guess_download_kind(url):
     if 'azure' in url:
         return 'azure'
@@ -103,7 +121,14 @@ def download_url(url, kind='guess', filename=None, head=None, progress_tracker=N
     elif kind == 's3':
         return _download_head(url, filename, head=head, progress_tracker=progress_tracker)
     elif kind == 'azure':
-        return _download_head(url, filename, head=head)
+        try:
+            return _download_azure_sdk(url, filename, head=head, progress_tracker=progress_tracker)
+        except ImportError:
+            logger.warning(
+                "azure-storage-blob not installed; falling back to single-threaded ranged GETs. "
+                "Install geoseeq[azure] for multipart downloads."
+            )
+            return _download_head(url, filename, head=head, progress_tracker=progress_tracker)
     elif kind == 'ftp':
         return download_ftp(url, filename, head=head)
     elif kind == 'http':
