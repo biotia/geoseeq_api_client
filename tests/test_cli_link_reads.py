@@ -523,3 +523,34 @@ class TestServerInteraction:
             "bulk_upload/validate_filenames",
             "bulk_upload/group_files",
         ]
+
+    def test_group_files_payload_uses_matched_subset(self, runner):
+        """``group_files`` receives only the matched filenames, not the full list.
+
+        Regression guard: previously the full ``filenames`` list was forwarded,
+        causing the server to reject the call with
+        ``400 ["The provided regex does not match all the files"]`` whenever
+        any file in the listing failed the regex.
+        """
+        matched_basenames = [k.split("/")[-1] for k in _KEYS]
+        validate = {
+            "regex_used": r".*",
+            "unmatched": ["stray_unmatched.fastq.gz"],
+            "matched": matched_basenames,
+        }
+        knex = _make_knex(validate=validate)
+        # Include an extra key that the server would mark unmatched.
+        keys_with_stray = list(_KEYS) + ["myproject/stray_unmatched.fastq.gz"]
+        result, knex, _ = _invoke(
+            runner,
+            ["reads", "MyOrg/MyProject", f"s3://{_BUCKET}/{_PREFIX}"],
+            knex=knex,
+            keys=keys_with_stray,
+        )
+        assert result.exit_code == 0, result.output
+        group_calls = [c for c in knex.post.call_args_list
+                       if c.args[0] == "bulk_upload/group_files"]
+        assert len(group_calls) == 1
+        payload = group_calls[0].kwargs["json"]
+        assert payload["filenames"] == matched_basenames
+        assert "stray_unmatched.fastq.gz" not in payload["filenames"]

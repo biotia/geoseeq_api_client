@@ -98,9 +98,10 @@ def _validate_and_group(knex, filename_to_key, module_name, regex_project_uuid, 
             "or pass --regex explicitly."
         )
 
+    matched = validation.get("matched", filenames) or filenames
     groups = knex.post(
         "bulk_upload/group_files",
-        json={"filenames": filenames, "sequence_type": seq_type, "regex": regex},
+        json={"filenames": matched, "sequence_type": seq_type, "regex": regex},
     )
     return regex, groups
 
