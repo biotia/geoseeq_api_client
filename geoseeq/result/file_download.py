@@ -74,7 +74,7 @@ def _download_generic(url, filename, head=None):
     return filename
 
 
-def _download_azure_sdk(url, filename, head=None, progress_tracker=None, max_concurrency=8):
+def _download_azure_sdk(url, filename, head=None, progress_tracker=None, max_concurrency=8, n_tries=3):
     # ponytail: presigned blob URL works as-is with from_blob_url, no auth rework
     from azure.storage.blob import BlobClient
     logger.info(f"azure-storage-blob SDK: downloading {filename} with max_concurrency={max_concurrency}")
@@ -83,14 +83,30 @@ def _download_azure_sdk(url, filename, head=None, progress_tracker=None, max_con
     if head and head > 0:
         kwargs["offset"] = 0
         kwargs["length"] = head + 1
-    stream = client.download_blob(**kwargs)
-    if progress_tracker:
-        progress_tracker.set_num_chunks(stream.size)
-    with open(filename, "wb") as f:
-        stream.readinto(f)
-    if progress_tracker:
-        progress_tracker.update(stream.size)
-    return filename
+    # Download to a temp file and rename on success. A mid-stream transport failure
+    # (e.g. `[SYS] unknown error (_ssl.c:2578)` under the parallel path) must not leave
+    # a truncated file at `filename`: download_url() only checks isfile()+size>0, so a
+    # non-empty partial would be treated as a valid cached download forever, making the
+    # caller's retry loop a no-op. Temp + os.replace() keeps `filename` all-or-nothing,
+    # and the inner retry self-heals transient blips without re-running the whole batch.
+    tmp_path = filename + ".partial"
+    for attempt in range(n_tries):
+        try:
+            stream = client.download_blob(**kwargs)
+            if progress_tracker:
+                progress_tracker.set_num_chunks(stream.size)
+            with open(tmp_path, "wb") as f:
+                stream.readinto(f)
+            os.replace(tmp_path, filename)
+            if progress_tracker:
+                progress_tracker.update(stream.size)
+            return filename
+        except Exception as e:
+            logger.warning(f"azure SDK download failed (attempt {attempt + 1}/{n_tries}) for {filename}: {e}")
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)
+            if attempt + 1 == n_tries:
+                raise
 
 
 def guess_download_kind(url):
