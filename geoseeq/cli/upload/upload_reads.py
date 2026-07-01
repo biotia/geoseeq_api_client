@@ -14,7 +14,6 @@ from geoseeq.cli.shared_params import (
     link_option,
     module_option,
     project_id_arg,
-    overwrite_option,
     yes_option,
     use_common_state,
     no_new_versions_option
@@ -51,7 +50,45 @@ def _upload_one_file(args):
         result_file.link_file(link_type, filepath)
 
 
-def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids):
+# Canonical replicate for a sample's primary reads folder. Matches the
+# staging endpoint's default (`get_or_create(..., replicate="1")`) so a plain
+# `upload reads` lands on one stable folder instead of the server minting a
+# fresh random replicate on every run.
+DEFAULT_READ_REPLICATE = "1"
+
+
+def _resolve_read_replicate(sample, module_name, default=DEFAULT_READ_REPLICATE):
+    """Pick which replicate to upload reads into for a pre-existing sample.
+
+    Default behaviour is "replace / new version": reuse the sample's existing
+    reads folder for ``module_name`` so repeated sequencing versions the reads
+    in place rather than spawning a sibling folder under a random replicate.
+
+    - no existing folder -> the canonical default (``"1"``)
+    - exactly one existing folder -> adopt its replicate (covers samples whose
+      first upload got a random replicate under the old default)
+    - more than one -> ambiguous legacy state; use the most recently updated
+      and warn, pointing the user at ``--replicate`` to disambiguate.
+    """
+    existing = [
+        f for f in sample.get_result_folders() if f.module_name == module_name
+    ]
+    if not existing:
+        return default
+    if len(existing) == 1:
+        return existing[0].replicate or default
+    existing.sort(key=lambda f: getattr(f, "updated_at", "") or "", reverse=True)
+    chosen = existing[0].replicate or default
+    click.echo(
+        f"Warning: sample '{sample.name}' has {len(existing)} '{module_name}' read "
+        f"folders; uploading into replicate '{chosen}'. Pass --replicate to target a "
+        f"specific one.",
+        err=True,
+    )
+    return chosen
+
+
+def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids, replicate=None):
     """Pre-create samples, result folders, and result files for ``groups`` in three bulk POSTs.
 
     Replaces the previous O(N) per-group ``Sample().idem()`` /
@@ -77,6 +114,10 @@ def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids):
             UUID via ``/ars/{folder_uuid}/create_atomic_upload`` (see
             ``geoseeq/result/file_upload.py:_create_multipart_upload``), so
             the bulk POST is fire-and-forget for the manifest side-effect.
+        replicate: Explicit replicate to upload every reads folder into. When
+            ``None`` (the default) the replicate is resolved per sample via
+            ``_resolve_read_replicate`` — new samples get ``DEFAULT_READ_REPLICATE``
+            and pre-existing samples reuse their current reads folder.
 
     Returns:
         Dict mapping ``(sample_name, field_name)`` to the corresponding
@@ -115,11 +156,22 @@ def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids):
         if name not in created_sample_names:
             samples_by_name[name].idem()  # populates the in-memory object
 
-    # Phase 2: result folders (one per sample).
-    folders_by_sample_name = {
-        name: samples_by_name[name].result_folder(module_name)
-        for name in unique_names
-    }
+    # Phase 2: result folders (one per sample). Resolve which replicate each
+    # folder targets so a repeat upload lands on the sample's existing reads
+    # folder (replace / new version) instead of the server minting a fresh
+    # random replicate. Brand-new samples (returned by the samples bulk POST)
+    # can't have existing reads, so skip the lookup and use the default.
+    folders_by_sample_name = {}
+    for name in unique_names:
+        if replicate is not None:
+            rep = replicate
+        elif name in created_sample_names:
+            rep = DEFAULT_READ_REPLICATE
+        else:
+            rep = _resolve_read_replicate(samples_by_name[name], module_name)
+        folders_by_sample_name[name] = samples_by_name[name].result_folder(
+            module_name, replicate=rep
+        )
     try:
         created_folders = bulk_create_sample_result_folders(
             knex, list(folders_by_sample_name.values())
@@ -177,7 +229,7 @@ def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids):
     return files_by_key
 
 
-def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state):
+def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state, replicate=None):
 
     with requests.Session() as session:
         upload_manager = GeoSeeqUploadManager(
@@ -192,7 +244,7 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
             use_atomic_upload=True,
         )
         files_by_key = _bulk_prepare(
-            lib.knex, lib, groups, module_name, need_file_uuids=False
+            lib.knex, lib, groups, module_name, need_file_uuids=False, replicate=replicate
         )
         for group in groups:
             for field_name, path in group['fields'].items():
@@ -291,7 +343,8 @@ def flatten_list_of_bams(filepaths):
 @click.command('reads')
 @use_common_state
 @click.option('--cores', default=1, help='Number of uploads to run in parallel')
-@overwrite_option
+@click.option('--overwrite/--no-overwrite', default=True, help='Replace reads already present on the sample with a new version (default). Pass --no-overwrite to fail instead if reads already exist.')
+@click.option('--replicate', default=None, help='Upload into this explicit replicate id (advanced). By default reads replace/version the sample\'s existing reads folder; pass a replicate to keep a separate copy.')
 @yes_option
 @click.option('--regex', default=None, help='An optional regex to use to extract sample names from the file names')
 @private_option
@@ -307,7 +360,7 @@ def flatten_list_of_bams(filepaths):
 @module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
 @click.argument('fastq_files', type=click.Path(exists=True), nargs=-1)
-def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_type, no_new_versions, name_map, module_name, project_id, fastq_files):
+def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, private, link_type, no_new_versions, name_map, module_name, project_id, fastq_files):
     """Upload fastq read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number
@@ -370,7 +423,7 @@ def cli_upload_reads_wizard(state, cores, overwrite, yes, regex, private, link_t
     _maybe_warn_link_type_s3_deprecated(link_type, filepaths)
     regex = get_regex(knex, filepaths, module_name, proj, regex)
     groups = group_files(knex, filepaths, module_name, regex, yes, name_map)
-    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state)
+    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state, replicate=replicate)
 
 
 # @click.command('bam')

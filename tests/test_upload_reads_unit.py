@@ -7,9 +7,11 @@ import pytest
 from geoseeq.cli._grouping import group_files
 from geoseeq.cli.upload.upload_reads import (
     _LINK_TYPE_S3_DEPRECATION_MSG,
+    DEFAULT_READ_REPLICATE,
     _bulk_prepare,
     _do_upload,
     _maybe_warn_link_type_s3_deprecated,
+    _resolve_read_replicate,
 )
 
 
@@ -227,9 +229,11 @@ class _FakeFile:
 class _FakeFolder:
     """In-memory stand-in for a SampleResultFolder."""
 
-    def __init__(self, sample, module_name):
+    def __init__(self, sample, module_name, replicate=None, updated_at=None):
         self.parent = sample
         self.module_name = module_name
+        self.replicate = replicate
+        self.updated_at = updated_at
         # SampleResultFolder name attribute is the module_name for our purposes.
         self.name = module_name
         self.uuid = None
@@ -262,17 +266,25 @@ class _FakeFolder:
 class _FakeSample:
     """In-memory stand-in for a Sample."""
 
-    def __init__(self, lib, name):
+    def __init__(self, lib, name, existing_folders=None):
         self.parent = lib
         self.name = name
         self.uuid = None
         self.idem_called = False
         self._folders = {}
+        # Folders the server already has for this sample; drives the
+        # replicate-resolution lookup in _bulk_prepare.
+        self._existing_folders = list(existing_folders or [])
 
-    def result_folder(self, module_name):
+    def result_folder(self, module_name, replicate=None):
         if module_name not in self._folders:
-            self._folders[module_name] = _FakeFolder(self, module_name)
+            folder = _FakeFolder(self, module_name)
+            folder.replicate = replicate
+            self._folders[module_name] = folder
         return self._folders[module_name]
+
+    def get_result_folders(self):
+        return self._existing_folders
 
     def idem(self):
         self.idem_called = True
@@ -834,3 +846,103 @@ def test_bulk_prepare_builds_canonical_file_name_without_double_prefix(monkeypat
     assert "single_end::single_end" not in seen_file_names[0], (
         f"Doubled sub-type prefix in {seen_file_names[0]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# TKT-101: replicate resolution -- make "replace / new version" the default
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_read_replicate_no_existing_returns_default():
+    """A sample with no reads folder for the module gets the canonical '1'."""
+    lib = _FakeLib()
+    sample = _FakeSample(lib, "S")  # no existing folders
+    assert (
+        _resolve_read_replicate(sample, "short_read::single_end")
+        == DEFAULT_READ_REPLICATE
+    )
+
+
+def test_resolve_read_replicate_adopts_single_existing():
+    """One existing folder (even under a random replicate) is reused in place."""
+    lib = _FakeLib()
+    module = "short_read::single_end"
+    existing = _FakeFolder(None, module, replicate="a1b2c3d4e5f6")
+    sample = _FakeSample(lib, "S", existing_folders=[existing])
+    assert _resolve_read_replicate(sample, module) == "a1b2c3d4e5f6"
+
+
+def test_resolve_read_replicate_ignores_other_modules():
+    """Existing folders for a different module don't count."""
+    lib = _FakeLib()
+    other = _FakeFolder(None, "long_read::nanopore", replicate="zzz")
+    sample = _FakeSample(lib, "S", existing_folders=[other])
+    assert (
+        _resolve_read_replicate(sample, "short_read::single_end")
+        == DEFAULT_READ_REPLICATE
+    )
+
+
+def test_resolve_read_replicate_multiple_picks_most_recent_and_warns(capsys):
+    """Ambiguous legacy state: use most-recently-updated folder, warn the user."""
+    lib = _FakeLib()
+    module = "short_read::single_end"
+    older = _FakeFolder(None, module, replicate="old", updated_at="2020-01-01")
+    newer = _FakeFolder(None, module, replicate="new", updated_at="2024-06-01")
+    sample = _FakeSample(lib, "S", existing_folders=[older, newer])
+    assert _resolve_read_replicate(sample, module) == "new"
+    err = capsys.readouterr().err
+    assert "2 'short_read::single_end' read folders" in err
+    assert "--replicate" in err
+
+
+def test_bulk_prepare_new_sample_uses_default_replicate(monkeypatch):
+    """Brand-new samples upload into DEFAULT_READ_REPLICATE (no lookup)."""
+    lib = _FakeLib()
+    groups = [{"sample_name": "A", "fields": {"R1": "A_R1.fastq"}}]
+    _patch_bulk(
+        monkeypatch,
+        samples_cb=lambda ss: [setattr(s, "uuid", f"uuid-{s.name}") or s for s in ss],
+        folders_cb=lambda fs: [setattr(f, "uuid", f"folder-uuid-{f.parent.name}") or f for f in fs],
+        files_cb=lambda fs: fs,
+    )
+    _bulk_prepare(lib.knex, lib, groups, "short_read::single_end", need_file_uuids=False)
+    folder = lib._samples["A"]._folders["short_read::single_end"]
+    assert folder.replicate == DEFAULT_READ_REPLICATE
+
+
+def test_bulk_prepare_existing_sample_adopts_existing_replicate(monkeypatch):
+    """A pre-existing sample reuses its existing reads folder's replicate."""
+    lib = _FakeLib()
+    module = "short_read::single_end"
+    # Pre-seed the sample as already existing with a random-replicate folder.
+    existing = _FakeFolder(None, module, replicate="rand123")
+    sample = _FakeSample(lib, "A", existing_folders=[existing])
+    lib._samples["A"] = sample
+    groups = [{"sample_name": "A", "fields": {"R1": "A_R1.fastq"}}]
+    _patch_bulk(
+        monkeypatch,
+        samples_cb=lambda ss: [],  # server reports none created -> pre-existing
+        folders_cb=lambda fs: [],
+        files_cb=lambda fs: [],
+    )
+    _bulk_prepare(lib.knex, lib, groups, module, need_file_uuids=False)
+    assert sample._folders[module].replicate == "rand123"
+
+
+def test_bulk_prepare_explicit_replicate_overrides(monkeypatch):
+    """An explicit replicate is used verbatim, skipping resolution."""
+    lib = _FakeLib()
+    module = "short_read::single_end"
+    existing = _FakeFolder(None, module, replicate="rand123")
+    sample = _FakeSample(lib, "A", existing_folders=[existing])
+    lib._samples["A"] = sample
+    groups = [{"sample_name": "A", "fields": {"R1": "A_R1.fastq"}}]
+    _patch_bulk(
+        monkeypatch,
+        samples_cb=lambda ss: [],
+        folders_cb=lambda fs: [],
+        files_cb=lambda fs: [],
+    )
+    _bulk_prepare(lib.knex, lib, groups, module, need_file_uuids=False, replicate="lane2")
+    assert sample._folders[module].replicate == "lane2"
