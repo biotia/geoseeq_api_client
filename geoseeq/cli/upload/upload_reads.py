@@ -57,7 +57,7 @@ def _upload_one_file(args):
 DEFAULT_READ_REPLICATE = "1"
 
 
-def _resolve_read_replicate(sample, module_name, default=DEFAULT_READ_REPLICATE):
+def _resolve_read_replicate(sample, module_name):
     """Pick which replicate to upload reads into for a pre-existing sample.
 
     Default behaviour is "replace / new version": reuse the sample's existing
@@ -69,16 +69,23 @@ def _resolve_read_replicate(sample, module_name, default=DEFAULT_READ_REPLICATE)
       first upload got a random replicate under the old default)
     - more than one -> ambiguous legacy state; use the most recently updated
       and warn, pointing the user at ``--replicate`` to disambiguate.
+
+    Relies on ``get_result_folders`` returning the sample's full folder list.
+    That endpoint reads only the first page, but a sample carries at most a
+    handful of reads folders (one per fastq module), far below any page size,
+    so the count is reliable in practice. A sample large enough to paginate
+    could miscount and fall back to replicate "1"; pass ``--replicate`` to be
+    explicit in that (unrealistic) case.
     """
     existing = [
         f for f in sample.get_result_folders() if f.module_name == module_name
     ]
     if not existing:
-        return default
+        return DEFAULT_READ_REPLICATE
     if len(existing) == 1:
-        return existing[0].replicate or default
+        return existing[0].replicate or DEFAULT_READ_REPLICATE
     existing.sort(key=lambda f: getattr(f, "updated_at", "") or "", reverse=True)
-    chosen = existing[0].replicate or default
+    chosen = existing[0].replicate or DEFAULT_READ_REPLICATE
     click.echo(
         f"Warning: sample '{sample.name}' has {len(existing)} '{module_name}' read "
         f"folders; uploading into replicate '{chosen}'. Pass --replicate to target a "
