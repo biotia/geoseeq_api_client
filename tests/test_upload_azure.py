@@ -5,16 +5,25 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Stub azure.storage.blob so tests run without the optional [azure] extra installed.
-# `azure` is a namespace package, so it may already be in sys.modules without the
-# storage.blob submodule; always force-attach the stub (mirrors test_file_download_azure).
+# Another test module (test_file_download_azure) may have already inserted a partial
+# stub exposing only BlobClient, so force-attach BOTH BlobClient and BlobBlock rather
+# than skipping when the module is merely present. When the real SDK is installed (CI
+# installs the [test] extra, which pulls azure-storage-blob) this leaves it untouched.
+_BlobBlockStub = type("BlobBlock", (), {"__init__": lambda self, block_id=None: setattr(self, "id", block_id)})
 try:
     import azure.storage.blob  # noqa: F401
+
+    _blob_mod = sys.modules["azure.storage.blob"]
+    if not hasattr(_blob_mod, "BlobClient"):
+        _blob_mod.BlobClient = types.SimpleNamespace(from_blob_url=lambda url: None)
+    if not hasattr(_blob_mod, "BlobBlock"):
+        _blob_mod.BlobBlock = _BlobBlockStub
 except ImportError:
     _azure = sys.modules.get("azure") or types.ModuleType("azure")
     _azure_storage = types.ModuleType("azure.storage")
     _azure_blob = types.ModuleType("azure.storage.blob")
     _azure_blob.BlobClient = types.SimpleNamespace(from_blob_url=lambda url: None)
-    _azure_blob.BlobBlock = type("BlobBlock", (), {"__init__": lambda self, block_id=None: setattr(self, "block_id", block_id)})
+    _azure_blob.BlobBlock = _BlobBlockStub
     _azure_storage.blob = _azure_blob
     _azure.storage = _azure_storage
     sys.modules["azure"] = _azure
