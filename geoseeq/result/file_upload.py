@@ -2,6 +2,7 @@
 import time
 import json
 import os
+import base64
 from os.path import basename, getsize, join, dirname, isfile, getctime
 from pathlib import Path
 from random import random
@@ -15,6 +16,9 @@ from .utils import *
 from geoseeq.file_system_cache import GEOSEEQ_CACHE_DIR
 from .file_chunker import FileChunker
 from .resumable_upload_tracker import ResumableUploadTracker
+
+# Synthetic upload_id the server returns for Azure-backed projects (design D5).
+AZURE_UPLOAD_ID = "azure"
 
 
 class ResultFileUpload:
@@ -116,6 +120,62 @@ class ResultFileUpload:
         response = self.knex.post(url, json=data, json_response=False)
         response.raise_for_status()
 
+    @staticmethod
+    def _azure_block_id(num):
+        """Return a base64 block id; Azure requires equal-length base64 ids per blob."""
+        return base64.b64encode(f"{num:08d}".encode()).decode()
+
+    def _azure_upload_file(self, filepath, file_size, sas_url, chunk_size, progress_tracker=None, atomic=True):
+        """Stage blocks to Azure via a write SAS URL, commit the block list, then register the field.
+
+        The server mints one write SAS (design D5); the client stages the block list itself and the
+        complete endpoint verifies the blob exists (AZU-03) rather than presigning a completion URL.
+        """
+        try:
+            from azure.storage.blob import BlobClient, BlobBlock
+        except ImportError:
+            raise GeoseeqGeneralError(
+                'azure-storage-blob is required to upload to Azure-backed projects. '
+                'Install the optional extra: pip install "geoseeq[azure]".'
+            )
+        logger.info(f"Uploading {filepath} to Azure block blob.")
+        blob_client = BlobClient.from_blob_url(sas_url)
+        if progress_tracker:
+            progress_tracker.set_num_chunks(file_size)
+        if file_size <= chunk_size:
+            # Small file: one PUT, no block staging needed.
+            with open(filepath, "rb") as f:
+                blob_client.upload_blob(f, length=file_size, overwrite=True)
+            if progress_tracker:
+                progress_tracker.update(file_size)
+        else:
+            self._azure_stage_blocks(blob_client, BlobBlock, filepath, chunk_size, progress_tracker)
+        self._finish_multipart_upload(AZURE_UPLOAD_ID, [], atomic=atomic)
+        logger.info(f'Finished Azure upload for "{filepath}"')
+        if atomic:
+            # The field may not have existed on the server before this atomic upload.
+            self.get()
+        return self
+
+    def _azure_stage_blocks(self, blob_client, blob_block_cls, filepath, chunk_size, progress_tracker=None):
+        """Stage each file chunk as an Azure block and commit the ordered block list."""
+        file_chunker = FileChunker(filepath, chunk_size)
+        # n_parts includes a trailing empty part when file_size is an exact multiple of
+        # chunk_size; that part is skipped below, so log the true (non-empty) block count.
+        n_blocks = -(-file_chunker.file_size // chunk_size)  # ceil division
+        block_list = []
+        for num in range(file_chunker.n_parts):
+            chunk = file_chunker.get_chunk(num)
+            if not chunk:
+                continue
+            block_id = self._azure_block_id(num)
+            blob_client.stage_block(block_id, chunk)
+            block_list.append(blob_block_cls(block_id=block_id))
+            if progress_tracker:
+                progress_tracker.update(file_chunker.get_chunk_size(num))
+            logger.info(f'Staged block {num + 1} of {n_blocks} for "{filepath}"')
+        blob_client.commit_block_list(block_list)
+
     def _upload_parts(self, file_chunker, urls, max_retries, session, progress_tracker, threads, resumable_upload_tracker=None):
         if threads == 1:
             logger.info(f"Uploading parts in series for {file_chunker.filepath}")
@@ -159,8 +219,8 @@ class ResultFileUpload:
         use_cache=True,
         use_atomic_upload=False,
     ):
-        """Upload a file to S3 using the multipart upload process."""
-        logger.info(f"Uploading {filepath} to S3 using multipart upload.")
+        """Upload a file using the multipart upload process (S3), or block staging for Azure-backed projects."""
+        logger.info(f"Starting multipart/atomic upload for {filepath}.")
         if not chunk_size:
             chunk_size = FIVE_MB
             if file_size >= 10 * FIVE_MB:
@@ -179,9 +239,17 @@ class ResultFileUpload:
             logger.info(f'Resuming upload for "{filepath}", upload_id: "{upload_id}"')
         else:
             upload_id, urls = self._prep_multipart_upload(filepath, file_size, chunk_size, optional_fields, atomic=use_atomic_upload)
-            if resumable_upload_tracker:
+            # Azure has no multipart parts to resume, so skip the S3 resumable tracker.
+            if resumable_upload_tracker and upload_id != AZURE_UPLOAD_ID:
                 logger.info(f'Creating new resumable upload for "{filepath}", upload_id: "{upload_id}"')
                 resumable_upload_tracker.start_upload(upload_id, urls, is_atomic_upload=use_atomic_upload)
+
+        if upload_id == AZURE_UPLOAD_ID:
+            # Azure-backed project: the server returned one write SAS URL (design D5).
+            return self._azure_upload_file(
+                filepath, file_size, urls, chunk_size,
+                progress_tracker=progress_tracker, atomic=use_atomic_upload,
+            )
 
         logger.info(f'Starting upload for "{filepath}"')
         complete_parts = []

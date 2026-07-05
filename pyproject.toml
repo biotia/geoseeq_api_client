@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geoseeq"
-version = "0.7.19"
+version = "0.7.20"
 authors = [
   { name="David C. Danko", email="dcdanko@biotia.io" },
 ]
@@ -31,6 +31,8 @@ test = [
     "pytest-cov>=4.0",
     "pytest-mock>=3.10",
     "requests-mock>=1.11",
+    # Azure up/download tests exercise the real SDK; kept out of the base install.
+    "azure-storage-blob>=12.19",
 ]
 s3 = [
     "boto3>=1.28",
