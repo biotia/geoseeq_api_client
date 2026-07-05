@@ -160,6 +160,9 @@ class ResultFileUpload:
     def _azure_stage_blocks(self, blob_client, blob_block_cls, filepath, chunk_size, progress_tracker=None):
         """Stage each file chunk as an Azure block and commit the ordered block list."""
         file_chunker = FileChunker(filepath, chunk_size)
+        # n_parts includes a trailing empty part when file_size is an exact multiple of
+        # chunk_size; that part is skipped below, so log the true (non-empty) block count.
+        n_blocks = -(-file_chunker.file_size // chunk_size)  # ceil division
         block_list = []
         for num in range(file_chunker.n_parts):
             chunk = file_chunker.get_chunk(num)
@@ -170,7 +173,7 @@ class ResultFileUpload:
             block_list.append(blob_block_cls(block_id=block_id))
             if progress_tracker:
                 progress_tracker.update(file_chunker.get_chunk_size(num))
-            logger.info(f'Staged block {num + 1} of {file_chunker.n_parts} for "{filepath}"')
+            logger.info(f'Staged block {num + 1} of {n_blocks} for "{filepath}"')
         blob_client.commit_block_list(block_list)
 
     def _upload_parts(self, file_chunker, urls, max_retries, session, progress_tracker, threads, resumable_upload_tracker=None):
@@ -216,8 +219,8 @@ class ResultFileUpload:
         use_cache=True,
         use_atomic_upload=False,
     ):
-        """Upload a file to S3 using the multipart upload process."""
-        logger.info(f"Uploading {filepath} to S3 using multipart upload.")
+        """Upload a file using the multipart upload process (S3), or block staging for Azure-backed projects."""
+        logger.info(f"Starting multipart/atomic upload for {filepath}.")
         if not chunk_size:
             chunk_size = FIVE_MB
             if file_size >= 10 * FIVE_MB:

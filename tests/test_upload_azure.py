@@ -80,6 +80,28 @@ def test_azure_upload_stages_blocks_and_commits(tmp_path):
     assert result is rf
 
 
+def test_azure_upload_exact_multiple_block_count(tmp_path, caplog):
+    """When file_size is an exact multiple of chunk_size, the trailing empty part is not staged
+    and the logged block count is accurate (not off by one from FileChunker.n_parts)."""
+    import logging
+
+    payload = b"01234567"  # 8 bytes, chunk_size 4 -> exactly 2 blocks (n_parts would be 3)
+    filepath = tmp_path / "exact.bin"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    rf = _FakeResultFile()
+
+    with caplog.at_level(logging.INFO, logger="geoseeq_api"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4)
+
+    assert blob_client.stage_block.call_count == 2
+    assert len(blob_client.commit_block_list.call_args.args[0]) == 2
+    assert "Staged block 2 of 2" in caplog.text
+    assert "of 3" not in caplog.text
+
+
 def test_azure_upload_small_file_single_put(tmp_path):
     """A file that fits in one chunk uploads with a single PUT and no block staging."""
     payload = b"tiny"  # 4 bytes, chunk_size 8 -> single PUT
