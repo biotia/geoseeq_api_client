@@ -1,8 +1,12 @@
+import base64
+import threading
+import time
 import sys
 import types
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 # Stub azure.storage.blob so tests run without the optional [azure] extra installed.
 # Another test module (test_file_download_azure) may have already inserted a partial
@@ -136,5 +140,130 @@ def test_azure_block_id_is_base64_and_fixed_length():
     """Block ids are base64 and equal-length across sequential indices."""
     ids = [ResultFileUpload._azure_block_id(n) for n in (0, 1, 42, 9999)]
     assert len({len(i) for i in ids}) == 1
-    import base64
     assert base64.b64decode(ids[0]) == b"00000000"
+
+
+def _block_index(block_id):
+    """Recover the integer chunk index encoded in an Azure block id."""
+    return int(base64.b64decode(block_id).decode())
+
+
+class _ConcurrencyTracker:
+    """Records max concurrent stage_block calls and their completion order.
+
+    Earlier blocks are made to sleep longer so completion order is reversed from
+    submission order — this proves the committed block list is ordered by index,
+    not by staging completion.
+    """
+
+    def __init__(self, n_blocks, unit_delay=0.02):
+        self._lock = threading.Lock()
+        self._n_blocks = n_blocks
+        self._unit_delay = unit_delay
+        self.current = 0
+        self.max_in_flight = 0
+        self.completion_order = []
+
+    def stage(self, block_id, chunk):
+        with self._lock:
+            self.current += 1
+            self.max_in_flight = max(self.max_in_flight, self.current)
+        # Earlier indices sleep longer -> finish later than later indices.
+        idx = _block_index(block_id)
+        time.sleep((self._n_blocks - idx) * self._unit_delay)
+        with self._lock:
+            self.current -= 1
+            self.completion_order.append(idx)
+
+
+def test_azure_upload_parallel_staging_bounded_and_committed_in_order(tmp_path):
+    """threads>1 stages blocks concurrently (bounded by threads) yet commits in ascending index order."""
+    n_blocks = 5
+    chunk_size = 4
+    payload = b"x" * (n_blocks * chunk_size)  # 20 bytes -> 5 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    threads = 3
+    tracker = _ConcurrencyTracker(n_blocks)
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = tracker.stage
+    rf = _FakeResultFile()
+
+    with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+        rf._azure_upload_file(str(filepath), len(payload), SAS_URL, chunk_size, threads=threads)
+
+    assert blob_client.stage_block.call_count == n_blocks
+    # Concurrency was real (more than one in flight) but never exceeded the thread bound.
+    assert tracker.max_in_flight > 1
+    assert tracker.max_in_flight <= threads
+    # Blocks finished out of submission order (earlier indices slept longer)...
+    assert tracker.completion_order != sorted(tracker.completion_order)
+    # ...yet the committed block list is strictly ascending by index.
+    committed = blob_client.commit_block_list.call_args.args[0]
+    committed_indices = [_block_index(b.id) for b in committed]
+    assert committed_indices == list(range(n_blocks))
+
+
+def test_azure_upload_serial_threads_one(tmp_path):
+    """threads==1 keeps the simple serial path and still commits every block in order."""
+    payload = b"0123456789"  # 10 bytes, chunk_size 4 -> 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    rf = _FakeResultFile()
+
+    with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+        rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1)
+
+    assert blob_client.stage_block.call_count == 3
+    committed = blob_client.commit_block_list.call_args.args[0]
+    assert [_block_index(b.id) for b in committed] == [0, 1, 2]
+
+
+def test_azure_upload_retries_transient_stage_error(tmp_path):
+    """A block that raises a transient error once then succeeds still completes the upload."""
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    calls = {"n": 0}
+
+    def flaky_stage(block_id, chunk):
+        # Fail the very first stage attempt only, then succeed for everything.
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise requests.exceptions.ConnectionError("transient")
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = flaky_stage
+    rf = _FakeResultFile()
+
+    with patch("geoseeq.result.file_upload.time.sleep"):  # skip backoff sleep
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=3)
+
+    # 3 blocks + 1 retry for the first failure = 4 stage_block calls.
+    assert blob_client.stage_block.call_count == 4
+    blob_client.commit_block_list.assert_called_once()
+    assert rf.finish_calls == [(AZURE_UPLOAD_ID, [], True)]
+
+
+def test_azure_upload_raises_and_skips_commit_on_persistent_failure(tmp_path):
+    """A block that always fails exhausts retries, raises, and never commits a partial block list."""
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = requests.exceptions.ConnectionError("always fails")
+    rf = _FakeResultFile()
+
+    with patch("geoseeq.result.file_upload.time.sleep"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            with pytest.raises(requests.exceptions.ConnectionError):
+                rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=2)
+
+    blob_client.commit_block_list.assert_not_called()
+    assert rf.finish_calls == []

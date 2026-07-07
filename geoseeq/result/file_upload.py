@@ -125,11 +125,33 @@ class ResultFileUpload:
         """Return a base64 block id; Azure requires equal-length base64 ids per blob."""
         return base64.b64encode(f"{num:08d}".encode()).decode()
 
-    def _azure_upload_file(self, filepath, file_size, sas_url, chunk_size, progress_tracker=None, atomic=True):
+    @staticmethod
+    def _azure_transient_errors():
+        """Exception types worth retrying when staging an Azure block.
+
+        Covers requests connection/SSL/HTTP errors plus the azure-storage transient
+        exceptions. azure.core is imported lazily so this works even when the optional
+        [azure] extra (or a test stub) exposes only azure.storage.blob.
+        """
+        errors = [
+            requests.exceptions.ConnectionError,
+            requests.exceptions.SSLError,
+            requests.exceptions.HTTPError,
+        ]
+        try:
+            from azure.core.exceptions import AzureError, HttpResponseError
+            errors.extend([AzureError, HttpResponseError])
+        except ImportError:
+            pass
+        return tuple(errors)
+
+    def _azure_upload_file(self, filepath, file_size, sas_url, chunk_size,
+                           progress_tracker=None, atomic=True, threads=1, max_retries=3):
         """Stage blocks to Azure via a write SAS URL, commit the block list, then register the field.
 
         The server mints one write SAS (design D5); the client stages the block list itself and the
         complete endpoint verifies the blob exists (AZU-03) rather than presigning a completion URL.
+        Blocks stage in parallel (bounded by ``threads``) with per-block retry (``max_retries``).
         """
         try:
             from azure.storage.blob import BlobClient, BlobBlock
@@ -149,7 +171,10 @@ class ResultFileUpload:
             if progress_tracker:
                 progress_tracker.update(file_size)
         else:
-            self._azure_stage_blocks(blob_client, BlobBlock, filepath, chunk_size, progress_tracker)
+            self._azure_stage_blocks(
+                blob_client, BlobBlock, filepath, chunk_size,
+                progress_tracker=progress_tracker, threads=threads, max_retries=max_retries,
+            )
         self._finish_multipart_upload(AZURE_UPLOAD_ID, [], atomic=atomic)
         logger.info(f'Finished Azure upload for "{filepath}"')
         if atomic:
@@ -157,23 +182,68 @@ class ResultFileUpload:
             self.get()
         return self
 
-    def _azure_stage_blocks(self, blob_client, blob_block_cls, filepath, chunk_size, progress_tracker=None):
-        """Stage each file chunk as an Azure block and commit the ordered block list."""
+    def _azure_stage_one_block(self, blob_client, file_chunker, num, block_id, max_retries):
+        """Stage a single Azure block, retrying transient errors with exponential backoff.
+
+        Mirrors ``_upload_one_part``: raises on the final failed attempt so the caller
+        aborts before committing a partial block list.
+        """
+        chunk = file_chunker.get_chunk(num)
+        transient_errors = self._azure_transient_errors()
+        attempts = 0
+        while attempts < max_retries:
+            try:
+                blob_client.stage_block(block_id, chunk)
+                return
+            except transient_errors as e:
+                attempts += 1
+                logger.debug(
+                    f"Staging block {num + 1} failed. Attempt {attempts} of {max_retries}. Error: {e}"
+                )
+                if attempts >= max_retries:
+                    raise
+                retry_time = min(8 ** attempts, 120)  # exponential backoff, max 120s
+                retry_time *= 0.6 + (random() * 0.8)  # randomize to avoid thundering herd
+                logger.debug(f"Retrying staging of block {num + 1} in {retry_time} seconds.")
+                time.sleep(retry_time)
+
+    def _azure_stage_blocks(self, blob_client, blob_block_cls, filepath, chunk_size,
+                            progress_tracker=None, threads=1, max_retries=3):
+        """Stage each file chunk as an Azure block (in parallel) and commit the ordered block list.
+
+        Block ids are index-derived and built up front so the committed block list is in ascending
+        index order regardless of the order blocks finish staging. FileChunker.n_parts includes a
+        trailing empty part when file_size is an exact multiple of chunk_size; that part is excluded
+        via the ceil-division block count.
+        """
         file_chunker = FileChunker(filepath, chunk_size)
-        # n_parts includes a trailing empty part when file_size is an exact multiple of
-        # chunk_size; that part is skipped below, so log the true (non-empty) block count.
-        n_blocks = -(-file_chunker.file_size // chunk_size)  # ceil division
-        block_list = []
-        for num in range(file_chunker.n_parts):
-            chunk = file_chunker.get_chunk(num)
-            if not chunk:
-                continue
-            block_id = self._azure_block_id(num)
-            blob_client.stage_block(block_id, chunk)
-            block_list.append(blob_block_cls(block_id=block_id))
+        n_blocks = -(-file_chunker.file_size // chunk_size)  # ceil division; trailing empty part excluded
+        blocks = [(num, self._azure_block_id(num)) for num in range(n_blocks)]
+
+        def _record_staged(num):
+            """Advance progress and log a completed block (called from the main thread only)."""
             if progress_tracker:
                 progress_tracker.update(file_chunker.get_chunk_size(num))
             logger.info(f'Staged block {num + 1} of {n_blocks} for "{filepath}"')
+
+        if threads == 1:
+            for num, block_id in blocks:
+                self._azure_stage_one_block(blob_client, file_chunker, num, block_id, max_retries)
+                _record_staged(num)
+        else:
+            with ThreadPoolExecutor(max_workers=threads) as executor:
+                futures = {
+                    executor.submit(
+                        self._azure_stage_one_block, blob_client, file_chunker, num, block_id, max_retries
+                    ): num
+                    for num, block_id in blocks
+                }
+                for future in as_completed(futures):
+                    future.result()  # re-raise staging failures before committing anything
+                    _record_staged(futures[future])
+
+        # Commit in ascending index order even though blocks may have staged out of order.
+        block_list = [blob_block_cls(block_id=block_id) for _, block_id in blocks]
         blob_client.commit_block_list(block_list)
 
     def _upload_parts(self, file_chunker, urls, max_retries, session, progress_tracker, threads, resumable_upload_tracker=None):
@@ -249,6 +319,7 @@ class ResultFileUpload:
             return self._azure_upload_file(
                 filepath, file_size, urls, chunk_size,
                 progress_tracker=progress_tracker, atomic=use_atomic_upload,
+                threads=threads, max_retries=max_retries,
             )
 
         logger.info(f'Starting upload for "{filepath}"')
