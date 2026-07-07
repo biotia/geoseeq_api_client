@@ -298,3 +298,22 @@ def test_azure_upload_raises_and_skips_commit_on_persistent_failure(tmp_path):
 
     blob_client.commit_block_list.assert_not_called()
     assert rf.finish_calls == []
+
+
+def test_azure_upload_parallel_raises_and_skips_commit_on_persistent_failure(tmp_path):
+    """In parallel mode, a block that always fails propagates the exception and never commits."""
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = requests.exceptions.ConnectionError("always fails")
+    rf = _FakeResultFile()
+
+    with patch("geoseeq.result.file_upload.time.sleep"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            with pytest.raises(requests.exceptions.ConnectionError):
+                rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=3, max_retries=2)
+
+    blob_client.commit_block_list.assert_not_called()
+    assert rf.finish_calls == []
