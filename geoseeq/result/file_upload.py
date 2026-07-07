@@ -103,8 +103,7 @@ class ResultFileUpload:
         etag = http_response.headers["ETag"].replace('"', "")
         blob = {"ETag": etag, "PartNumber": num + 1}
         if resumable_upload_tracker:
-            # TODO technically not thread safe, but should be fine for now
-            resumable_upload_tracker.add_part(blob)
+            resumable_upload_tracker.add_part(blob)  # add_part is internally locked
         return blob
     
     def _finish_multipart_upload(self, upload_id, complete_parts, atomic=False):
@@ -125,12 +124,61 @@ class ResultFileUpload:
         """Return a base64 block id; Azure requires equal-length base64 ids per blob."""
         return base64.b64encode(f"{num:08d}".encode()).decode()
 
-    def _azure_upload_file(self, filepath, file_size, sas_url, chunk_size, progress_tracker=None, atomic=True):
+    @staticmethod
+    def _is_transient_upload_error(exc):
+        """Return True only for genuinely transient block-staging errors worth retrying.
+
+        Retries connection/SSL/timeout failures and 408/429/5xx HTTP responses. Permanent
+        failures (auth, expired/invalid SAS, not-found, other 4xx) return False so the caller
+        fails fast instead of burning minutes on retries that will never succeed. azure.core is
+        imported lazily so classification still works when only azure.storage.blob is installed.
+        """
+        if isinstance(exc, (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.SSLError,
+            requests.exceptions.Timeout,  # covers ReadTimeout and ConnectTimeout
+        )):
+            return True
+        if isinstance(exc, requests.exceptions.HTTPError):
+            response = exc.response
+            if response is None:
+                return False
+            return response.status_code in (408, 429) or response.status_code >= 500
+        try:
+            from azure.core.exceptions import (
+                HttpResponseError,
+                ServiceRequestError,
+                ServiceResponseError,
+            )
+        except ImportError:
+            return False
+        if isinstance(exc, (ServiceRequestError, ServiceResponseError)):
+            return True
+        if isinstance(exc, HttpResponseError):
+            status = exc.status_code
+            return status in (408, 429) or bool(status and status >= 500)
+        return False  # bare AzureError (and anything else) is treated as permanent
+
+    def _azure_upload_file(self, filepath, file_size, sas_url, chunk_size,
+                           progress_tracker=None, atomic=True, threads=1, max_retries=3,
+                           resumable_upload_tracker=None):
         """Stage blocks to Azure via a write SAS URL, commit the block list, then register the field.
 
         The server mints one write SAS (design D5); the client stages the block list itself and the
         complete endpoint verifies the blob exists (AZU-03) rather than presigning a completion URL.
+        Blocks stage in parallel (bounded by ``threads``) with per-block retry (``max_retries``).
+
+        When ``resumable_upload_tracker`` is provided, block indices already staged in a prior run
+        are skipped (their blocks remain uncommitted on the blob under the reused SAS) and newly
+        staged indices are recorded so a later interruption can resume again. The tracker is cleaned
+        up only after the block list commits and the field is registered.
         """
+        if threads < 1:
+            raise ValueError(f"threads must be >= 1 to stage Azure blocks, got {threads}.")
+        if max_retries < 1:
+            # max_retries < 1 would skip the staging loop entirely, treating a block as
+            # "staged" without ever calling stage_block and committing an empty/partial blob.
+            raise ValueError(f"max_retries must be >= 1 to stage Azure blocks, got {max_retries}.")
         try:
             from azure.storage.blob import BlobClient, BlobBlock
         except ImportError:
@@ -149,31 +197,105 @@ class ResultFileUpload:
             if progress_tracker:
                 progress_tracker.update(file_size)
         else:
-            self._azure_stage_blocks(blob_client, BlobBlock, filepath, chunk_size, progress_tracker)
+            self._azure_stage_blocks(
+                blob_client, BlobBlock, filepath, chunk_size,
+                progress_tracker=progress_tracker, threads=threads, max_retries=max_retries,
+                resumable_upload_tracker=resumable_upload_tracker,
+            )
         self._finish_multipart_upload(AZURE_UPLOAD_ID, [], atomic=atomic)
+        # Commit + field registration both succeeded, so the resume state is no longer needed.
+        if resumable_upload_tracker:
+            resumable_upload_tracker.cleanup()
         logger.info(f'Finished Azure upload for "{filepath}"')
         if atomic:
             # The field may not have existed on the server before this atomic upload.
             self.get()
         return self
 
-    def _azure_stage_blocks(self, blob_client, blob_block_cls, filepath, chunk_size, progress_tracker=None):
-        """Stage each file chunk as an Azure block and commit the ordered block list."""
+    def _azure_stage_one_block(self, blob_client, file_chunker, num, block_id, max_retries):
+        """Stage a single Azure block, retrying transient errors with exponential backoff.
+
+        Mirrors ``_upload_one_part``: transient failures back off and retry; permanent failures
+        (auth, expired/invalid SAS, not-found, other 4xx) re-raise immediately so the caller aborts
+        before committing a partial block list.
+        """
+        chunk = file_chunker.get_chunk(num)
+        attempts = 0
+        while attempts < max_retries:
+            try:
+                blob_client.stage_block(block_id, chunk)
+                return
+            except Exception as e:
+                if not self._is_transient_upload_error(e):
+                    raise  # permanent failure -> fail fast rather than retry
+                attempts += 1
+                logger.debug(
+                    f"Staging block {num + 1} failed. Attempt {attempts} of {max_retries}. Error: {e}"
+                )
+                if attempts >= max_retries:
+                    raise
+                retry_time = min(8 ** attempts, 120)  # exponential backoff, max 120s
+                retry_time *= 0.6 + (random() * 0.8)  # randomize to avoid thundering herd
+                logger.debug(f"Retrying staging of block {num + 1} in {retry_time} seconds.")
+                time.sleep(retry_time)
+
+    def _azure_stage_blocks(self, blob_client, blob_block_cls, filepath, chunk_size,
+                            progress_tracker=None, threads=1, max_retries=3,
+                            resumable_upload_tracker=None):
+        """Stage each file chunk as an Azure block (in parallel) and commit the ordered block list.
+
+        Block ids are index-derived and built up front so the committed block list is in ascending
+        index order regardless of the order blocks finish staging. FileChunker.n_parts includes a
+        trailing empty part when file_size is an exact multiple of chunk_size; that part is excluded
+        via the ceil-division block count.
+
+        Azure block ids are deterministic (``_azure_block_id(num)``), so the committed list is fully
+        determined by the block count and is independent of which blocks were staged in this run.
+        The tracker therefore only records which block indices were already staged; a resumed run
+        skips re-staging those (their uncommitted blocks persist on the blob for ~7 days under the
+        reused SAS) and the full ordered id list is committed regardless. Note: if a resume happens
+        after Azure has garbage-collected the uncommitted blocks (>7 days), commit_block_list will
+        fail — acceptable for now (the tracker's own freshness check already expires it well before).
+        """
         file_chunker = FileChunker(filepath, chunk_size)
-        # n_parts includes a trailing empty part when file_size is an exact multiple of
-        # chunk_size; that part is skipped below, so log the true (non-empty) block count.
-        n_blocks = -(-file_chunker.file_size // chunk_size)  # ceil division
-        block_list = []
-        for num in range(file_chunker.n_parts):
-            chunk = file_chunker.get_chunk(num)
-            if not chunk:
-                continue
-            block_id = self._azure_block_id(num)
-            blob_client.stage_block(block_id, chunk)
-            block_list.append(blob_block_cls(block_id=block_id))
+        n_blocks = -(-file_chunker.file_size // chunk_size)  # ceil division; trailing empty part excluded
+        blocks = [(num, self._azure_block_id(num)) for num in range(n_blocks)]
+
+        def _stage(num, block_id):
+            """Stage one block unless the tracker shows this index was already staged; then record it.
+
+            Part numbers are 1-based to match the S3 tracker convention (block index ``num`` -> part
+            ``num + 1``). Runs on worker threads when ``threads > 1``; the tracker's add_part is locked.
+            """
+            if resumable_upload_tracker and resumable_upload_tracker.part_has_been_uploaded(num + 1):
+                logger.info(f'Block {num + 1} already staged in a previous run for "{filepath}". Skipping.')
+                return
+            self._azure_stage_one_block(blob_client, file_chunker, num, block_id, max_retries)
+            if resumable_upload_tracker:
+                resumable_upload_tracker.add_part({"PartNumber": num + 1})
+
+        def _record_staged(num):
+            """Advance progress and log a completed block (called from the main thread only)."""
             if progress_tracker:
                 progress_tracker.update(file_chunker.get_chunk_size(num))
             logger.info(f'Staged block {num + 1} of {n_blocks} for "{filepath}"')
+
+        if threads == 1:
+            for num, block_id in blocks:
+                _stage(num, block_id)
+                _record_staged(num)
+        else:
+            with ThreadPoolExecutor(max_workers=threads) as executor:
+                futures = {
+                    executor.submit(_stage, num, block_id): num
+                    for num, block_id in blocks
+                }
+                for future in as_completed(futures):
+                    future.result()  # re-raise staging failures before committing anything
+                    _record_staged(futures[future])
+
+        # Commit in ascending index order even though blocks may have staged out of order.
+        block_list = [blob_block_cls(block_id=block_id) for _, block_id in blocks]
         blob_client.commit_block_list(block_list)
 
     def _upload_parts(self, file_chunker, urls, max_retries, session, progress_tracker, threads, resumable_upload_tracker=None):
@@ -239,8 +361,10 @@ class ResultFileUpload:
             logger.info(f'Resuming upload for "{filepath}", upload_id: "{upload_id}"')
         else:
             upload_id, urls = self._prep_multipart_upload(filepath, file_size, chunk_size, optional_fields, atomic=use_atomic_upload)
-            # Azure has no multipart parts to resume, so skip the S3 resumable tracker.
-            if resumable_upload_tracker and upload_id != AZURE_UPLOAD_ID:
+            # Persist the upload for both S3 (part urls) and Azure (single write SAS). For
+            # Azure this records the SAS so a resumed run reuses the same blob (with its
+            # already-staged, still-uncommitted blocks) instead of minting a fresh SAS.
+            if resumable_upload_tracker:
                 logger.info(f'Creating new resumable upload for "{filepath}", upload_id: "{upload_id}"')
                 resumable_upload_tracker.start_upload(upload_id, urls, is_atomic_upload=use_atomic_upload)
 
@@ -249,6 +373,8 @@ class ResultFileUpload:
             return self._azure_upload_file(
                 filepath, file_size, urls, chunk_size,
                 progress_tracker=progress_tracker, atomic=use_atomic_upload,
+                threads=threads, max_retries=max_retries,
+                resumable_upload_tracker=resumable_upload_tracker,
             )
 
         logger.info(f'Starting upload for "{filepath}"')
