@@ -24,6 +24,20 @@ from geoseeq.upload_download_manager import (
 )
 
 
+class _UnpicklableError(Exception):
+    """Carries a threading.Lock so pickle.dumps raises TypeError.
+
+    With the old process Pool, exceptions crossed the IPC boundary via pickle.
+    An unpicklable exception would be caught by the pool machinery and
+    re-raised as MaybeEncodingError, losing the original type and message.
+    ThreadPool shares memory: no pickling occurs, so the original exception
+    propagates unchanged.
+    """
+    def __init__(self, msg):
+        super().__init__(msg)
+        self._unpicklable = threading.Lock()
+
+
 class TestUploadManagerParallel(unittest.TestCase):
     """Parallel and series behaviour of GeoSeeqUploadManager.upload_files()."""
 
@@ -41,6 +55,22 @@ class TestUploadManagerParallel(unittest.TestCase):
         mgr.add_result_file(MagicMock(), "good.fastq")
 
         with pytest.raises(ValueError):
+            mgr.upload_files()
+
+    def test_parallel_unpicklable_exception_propagates_as_real_type(self):
+        """cores>1: an exception that cannot be pickled propagates as itself.
+
+        With the old process Pool, any unpicklable exception was caught by the
+        IPC machinery and re-raised as MaybeEncodingError (the #82 bug).
+        ThreadPool shares memory so no pickling occurs; the original type and
+        message survive intact.
+        """
+        bad = MagicMock()
+        bad.upload_file.side_effect = _UnpicklableError("cannot-pickle-me")
+        mgr = self._manager(cores=2, ignore_errors=False)
+        mgr.add_result_file(bad, "bad.fastq")
+
+        with pytest.raises(_UnpicklableError, match="cannot-pickle-me"):
             mgr.upload_files()
 
     def test_parallel_ignore_errors_preserves_results(self):
@@ -93,6 +123,18 @@ class TestDownloadManagerParallel(unittest.TestCase):
 
         with patch.object(udm, "download_url", self._fake_download_url):
             with pytest.raises(ValueError):
+                mgr.download_files()
+
+    def test_parallel_unpicklable_exception_propagates_as_real_type(self):
+        """cores>1: unpicklable download error propagates as itself, not MaybeEncodingError."""
+        def bad_download_url(url, filename=None, progress_tracker=None, head=False):
+            raise _UnpicklableError("cannot-pickle-me")
+
+        mgr = GeoSeeqDownloadManager(n_parallel_downloads=2, ignore_errors=False)
+        mgr.add_download("http://x/f0", "f0.fastq", key="f0")
+
+        with patch.object(udm, "download_url", bad_download_url):
+            with pytest.raises(_UnpicklableError, match="cannot-pickle-me"):
                 mgr.download_files()
 
     def test_parallel_ignore_errors_preserves_results(self):
