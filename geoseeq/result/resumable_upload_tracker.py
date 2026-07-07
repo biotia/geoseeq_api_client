@@ -1,4 +1,5 @@
 
+import threading
 import time
 import json
 import os
@@ -21,6 +22,9 @@ class ResumableUploadTracker:
     def __init__(self, filepath, chunk_size, upload_target_uuid, tracker_file_prefix="gs_resumable_upload_tracker"):
         self.open, self.upload_started = True, False
         self.upload_id, self.urls, self.is_atomic_upload = None, None, None
+        # Guards concurrent add_part() calls: Azure blocks stage in parallel and each
+        # records itself here, so the file append + in-memory dict update must be atomic.
+        self._add_part_lock = threading.Lock()
         self.upload_target_uuid = upload_target_uuid
         self.filepath = filepath
         self.tracker_file_dir = join(GEOSEEQ_CACHE_DIR, 'upload')
@@ -55,14 +59,21 @@ class ResumableUploadTracker:
     def add_part(self, part_upload_info):
         if not self.open:
             return
-        part_id = part_upload_info["PartNumber"]
-        serialized = json.dumps(part_upload_info)
-        with open(self.tracker_file, "a") as f:
-            f.write(serialized + "\n")
-        self._loaded_parts[part_id] = part_upload_info
-        if len(self._loaded_parts) == len(self.urls):
-            self.cleanup()
-            self.open = False
+        # Lock so parallel stagers (Azure block staging runs in a ThreadPoolExecutor)
+        # can't interleave the append + dict update and corrupt the tracker file.
+        with self._add_part_lock:
+            part_id = part_upload_info["PartNumber"]
+            serialized = json.dumps(part_upload_info)
+            with open(self.tracker_file, "a") as f:
+                f.write(serialized + "\n")
+            self._loaded_parts[part_id] = part_upload_info
+            # S3 stores a dict of per-part urls, so a full part count means the upload is
+            # done and the tracker can self-clean. Azure stores a single SAS string in
+            # self.urls (len != part count), so this never fires for Azure — the Azure
+            # path cleans up explicitly after commit_block_list succeeds.
+            if isinstance(self.urls, dict) and len(self._loaded_parts) == len(self.urls):
+                self.cleanup()
+                self.open = False
     
     def _load_parts_from_file(self):
         if not isfile(self.tracker_file):
