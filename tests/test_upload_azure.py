@@ -250,6 +250,37 @@ def test_azure_upload_retries_transient_stage_error(tmp_path):
     assert rf.finish_calls == [(AZURE_UPLOAD_ID, [], True)]
 
 
+def test_azure_upload_retries_read_timeout_stage_error(tmp_path):
+    """A block that raises a requests Timeout once then succeeds still completes the upload.
+
+    Timeouts (ReadTimeout/ConnectTimeout) are common transient failures on large block
+    uploads and must be retried rather than propagating on the first occurrence.
+    """
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    calls = {"n": 0}
+
+    def flaky_stage(block_id, chunk):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise requests.exceptions.ReadTimeout("read timed out")
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = flaky_stage
+    rf = _FakeResultFile()
+
+    with patch("geoseeq.result.file_upload.time.sleep"):  # skip backoff sleep
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=3)
+
+    # 3 blocks + 1 retry for the first timeout = 4 stage_block calls.
+    assert blob_client.stage_block.call_count == 4
+    blob_client.commit_block_list.assert_called_once()
+    assert rf.finish_calls == [(AZURE_UPLOAD_ID, [], True)]
+
+
 def test_azure_upload_raises_and_skips_commit_on_persistent_failure(tmp_path):
     """A block that always fails exhausts retries, raises, and never commits a partial block list."""
     payload = b"0123456789"  # 3 blocks

@@ -129,14 +129,15 @@ class ResultFileUpload:
     def _azure_transient_errors():
         """Exception types worth retrying when staging an Azure block.
 
-        Covers requests connection/SSL/HTTP errors plus the azure-storage transient
-        exceptions. azure.core is imported lazily so this works even when the optional
-        [azure] extra (or a test stub) exposes only azure.storage.blob.
+        Covers requests connection/SSL/HTTP/timeout errors plus the azure-storage
+        transient exceptions. azure.core is imported lazily so this works even when the
+        optional [azure] extra (or a test stub) exposes only azure.storage.blob.
         """
         errors = [
             requests.exceptions.ConnectionError,
             requests.exceptions.SSLError,
             requests.exceptions.HTTPError,
+            requests.exceptions.Timeout,  # covers ReadTimeout and ConnectTimeout
         ]
         try:
             from azure.core.exceptions import AzureError, HttpResponseError
