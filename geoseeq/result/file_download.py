@@ -43,8 +43,20 @@ def _download_head(url, filename, head=None, start=0, progress_tracker=None):
     
 
 def _ranged_get_part(url, part_filename, start, end):
-    """Fetch one inclusive byte range via a ranged GET (works for S3/HTTP presigned URLs)."""
-    _download_head(url, part_filename, head=end, start=start, progress_tracker=None)
+    """Fetch one inclusive byte range via a ranged GET (works for S3/HTTP presigned URLs).
+
+    Writes to a temp path and atomically renames on success, mirroring the azure part
+    downloader. A crash mid-write leaves only the temp file (cleaned up here), never a
+    truncated file at ``part_filename`` that a resume could mistake for a complete part.
+    """
+    tmp_path = part_filename + ".partial"
+    try:
+        _download_head(url, tmp_path, head=end, start=start, progress_tracker=None)
+        os.replace(tmp_path, part_filename)
+    except Exception:
+        if os.path.isfile(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 
 def _concatenate_parts(filename, tracker, n_chunks):
@@ -188,6 +200,21 @@ def _download_azure_single_shot(client, filename, head=None, progress_tracker=No
                 raise
 
 
+def _azure_blob_size(client, n_tries=3):
+    """Return the blob size via get_blob_properties, retrying transient failures.
+
+    The size probe happens before any bytes are fetched, so a transient connection/service
+    error here must not abort the whole download; retry it the same way the download paths do.
+    """
+    for attempt in range(n_tries):
+        try:
+            return client.get_blob_properties().size
+        except Exception as e:
+            logger.warning(f"azure blob size probe failed (attempt {attempt + 1}/{n_tries}): {e}")
+            if attempt + 1 == n_tries:
+                raise
+
+
 def _download_azure_sdk(url, filename, head=None, progress_tracker=None,
                         max_concurrency=8, chunk_size=5 * FIVE_MB, n_tries=3):
     """Download an azure blob via the azure-storage-blob SDK.
@@ -205,7 +232,7 @@ def _download_azure_sdk(url, filename, head=None, progress_tracker=None,
     from azure.storage.blob import BlobClient
     client = BlobClient.from_blob_url(url)
     if not head or head <= 0:
-        total_size = client.get_blob_properties().size
+        total_size = _azure_blob_size(client, n_tries=n_tries)
         if total_size > 10 * FIVE_MB:
             return _download_azure_resumable(
                 url, filename, total_size, progress_tracker=progress_tracker,

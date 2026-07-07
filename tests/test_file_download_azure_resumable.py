@@ -3,6 +3,7 @@
 These mock the azure-storage-blob SDK (BlobClient.download_blob / get_blob_properties)
 so they run without the optional [azure] extra installed and without any network.
 """
+import os
 import sys
 import types
 from unittest.mock import MagicMock, patch
@@ -29,6 +30,7 @@ from geoseeq.result import file_download, resumable_download_tracker
 from geoseeq.result.file_download import (
     _download_azure_resumable,
     _download_azure_sdk,
+    _ranged_get_part,
     download_url,
 )
 
@@ -228,3 +230,64 @@ def test_small_azure_file_uses_single_shot_path(tmp_path, isolated_cache):
     assert not resumable_called  # single-shot path only
     # single-shot => one full download_blob call with no ranged offset/length
     client.download_blob.assert_called_once_with(max_concurrency=8)
+
+
+def test_size_probe_retries_transient_error_then_succeeds(tmp_path, isolated_cache):
+    """A transient failure on the get_blob_properties size probe is retried (not aborted),
+    and the download still completes."""
+    payload = b"small-after-flaky-probe"
+    out = tmp_path / "small.bin"
+
+    client = MagicMock()
+    good_props = MagicMock()
+    good_props.size = len(payload)  # below threshold -> single-shot
+    # First probe raises a transient error, second succeeds.
+    client.get_blob_properties.side_effect = [IOError("transient service blip"), good_props]
+
+    stream = MagicMock(size=len(payload))
+    stream.readinto.side_effect = lambda f: (f.write(payload), len(payload))[1]
+    client.download_blob.return_value = stream
+
+    with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=client):
+        result = _download_azure_sdk(URL, str(out))
+
+    assert result == str(out)
+    assert out.read_bytes() == payload
+    assert client.get_blob_properties.call_count == 2  # retried once
+
+
+def test_ranged_get_part_is_atomic_on_interrupted_write(tmp_path):
+    """If the ranged GET dies mid-write, _ranged_get_part leaves no file at the final part
+    path (only a cleaned-up temp), so a resume never mistakes a truncated part for complete."""
+    part_filename = str(tmp_path / ".gs_download_0_2.bigblob")
+
+    def flaky_download_head(url, filename, head=None, start=0, progress_tracker=None):
+        with open(filename, "wb") as f:  # partial write to the temp path, then die
+            f.write(b"truncated-part-bytes")
+        raise IOError("[SYS] transport died mid-write")
+
+    with patch.object(file_download, "_download_head", side_effect=flaky_download_head):
+        with pytest.raises(IOError):
+            _ranged_get_part("https://s3.example.com/blob?sig=x", part_filename, 0, 99)
+
+    assert not os.path.exists(part_filename)                 # no truncated final part
+    assert not os.path.exists(part_filename + ".partial")    # temp cleaned up
+
+
+def test_ranged_get_part_atomic_success(tmp_path):
+    """On success, _ranged_get_part promotes the temp file to the final part path."""
+    part_filename = str(tmp_path / ".gs_download_0_2.bigblob")
+    payload = b"complete-part-bytes"
+
+    def ok_download_head(url, filename, head=None, start=0, progress_tracker=None):
+        with open(filename, "wb") as f:
+            f.write(payload)
+        return filename
+
+    with patch.object(file_download, "_download_head", side_effect=ok_download_head):
+        _ranged_get_part("https://s3.example.com/blob?sig=x", part_filename, 0, len(payload) - 1)
+
+    assert os.path.exists(part_filename)
+    with open(part_filename, "rb") as f:
+        assert f.read() == payload
+    assert not os.path.exists(part_filename + ".partial")
