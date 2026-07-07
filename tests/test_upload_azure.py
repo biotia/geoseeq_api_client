@@ -41,6 +41,7 @@ except ImportError:
 from geoseeq.constants import FIVE_MB
 from geoseeq.knex import GeoseeqGeneralError
 from geoseeq.result.file_upload import AZURE_UPLOAD_ID, ResultFileUpload
+from geoseeq.result.resumable_upload_tracker import ResumableUploadTracker
 
 SAS_URL = "https://acct.blob.core.windows.net/container/prefix/reads.fastq.gz?sig=abc"
 
@@ -491,6 +492,9 @@ def test_azure_upload_parallel_records_all_blocks_under_lock(tmp_path, isolated_
     parsed = [json.loads(line) for line in lines]
     recorded_parts = {blob["PartNumber"] for blob in parsed if "PartNumber" in blob}
     assert recorded_parts == {1, 2, 3, 4, 6, 7, 8, 9, 10}  # every block except the failed part 5
+
+
+def test_azure_upload_parallel_raises_and_skips_commit_on_persistent_failure(tmp_path):
     """In parallel mode, a block that always fails propagates the exception and never commits."""
     payload = b"0123456789"  # 3 blocks
     filepath = tmp_path / "reads.fastq.gz"
@@ -507,3 +511,26 @@ def test_azure_upload_parallel_records_all_blocks_under_lock(tmp_path, isolated_
 
     blob_client.commit_block_list.assert_not_called()
     assert rf.finish_calls == []
+
+
+def test_add_part_after_cleanup_is_safe_noop(tmp_path, isolated_cache):
+    """After cleanup() closes the tracker, a late add_part (e.g. a thread that was blocked on the
+    lock while another thread cleaned up) must be a no-op: it must NOT re-create the deleted file
+    with a headerless part line, which would crash the next run's _load_parts_from_file."""
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(b"x" * 20)
+
+    tracker = ResumableUploadTracker(str(filepath), 4, "target-uuid")
+    tracker.start_upload(AZURE_UPLOAD_ID, SAS_URL, is_atomic_upload=False)
+    tracker.add_part({"PartNumber": 1})
+    tracker.cleanup()
+    assert tracker.open is False  # cleanup() closes the tracker
+    assert _tracker_files(isolated_cache) == []  # file deleted
+
+    # A late add_part after cleanup must not resurrect the tracker file.
+    tracker.add_part({"PartNumber": 2})
+    assert _tracker_files(isolated_cache) == []
+
+    # A fresh tracker over the same file loads cleanly (no headerless-line KeyError crash).
+    reloaded = ResumableUploadTracker(str(filepath), 4, "target-uuid")
+    assert reloaded.upload_started is False

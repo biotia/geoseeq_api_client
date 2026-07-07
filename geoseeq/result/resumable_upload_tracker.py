@@ -57,11 +57,15 @@ class ResumableUploadTracker:
         self.upload_id, self.urls, self.is_atomic_upload = upload_id, urls, is_atomic_upload
 
     def add_part(self, part_upload_info):
-        if not self.open:
-            return
         # Lock so parallel stagers (Azure block staging runs in a ThreadPoolExecutor)
         # can't interleave the append + dict update and corrupt the tracker file.
         with self._add_part_lock:
+            # Re-check open UNDER the lock: another thread may have run cleanup() (which
+            # deletes the file and closes the tracker) while this call waited on the lock.
+            # Without this re-check we'd re-create the deleted file with a headerless
+            # part-only line, crashing the next run's _load_parts_from_file.
+            if not self.open:
+                return
             part_id = part_upload_info["PartNumber"]
             serialized = json.dumps(part_upload_info)
             with open(self.tracker_file, "a") as f:
@@ -73,7 +77,6 @@ class ResumableUploadTracker:
             # path cleans up explicitly after commit_block_list succeeds.
             if isinstance(self.urls, dict) and len(self._loaded_parts) == len(self.urls):
                 self.cleanup()
-                self.open = False
     
     def _load_parts_from_file(self):
         if not isfile(self.tracker_file):
@@ -103,9 +106,16 @@ class ResumableUploadTracker:
         return self._loaded_parts[part_number]
     
     def cleanup(self):
+        """Delete the tracker file and close the tracker so no further parts are recorded.
+
+        Idempotent and safe to call from any completion path (S3 auto-cleanup or Azure's
+        explicit post-commit cleanup); closing here keeps the object consistent regardless
+        of caller.
+        """
         if not self.open:
             return
         try:
             os.remove(self.tracker_file)
         except FileNotFoundError:
             pass
+        self.open = False
