@@ -30,12 +30,129 @@ from geoseeq.result import file_download, resumable_download_tracker
 from geoseeq.result.file_download import (
     _download_azure_resumable,
     _download_azure_sdk,
+    _download_head,
     _download_resumable,
     _ranged_get_part,
     download_url,
 )
+from geoseeq.constants import FIVE_MB
 
 URL = "https://example.blob.core.windows.net/c/bigblob?sig=x"
+
+
+class FakeStreamResponse:
+    """Minimal streaming ``requests.Response`` stand-in that records close/context use.
+
+    Serves ``payload`` via ``iter_content`` and reports ``content_length`` in headers. Tracks
+    ``closed`` (set on ``close()`` / ``__exit__``) so tests can assert the connection is never
+    leaked, and ``request_headers`` so tests can assert the Range header honored start/head.
+    """
+
+    def __init__(self, payload, content_length, url, request_headers=None):
+        self._payload = payload
+        self.headers = {"content-length": str(content_length)}
+        self.url = url
+        self.request_headers = request_headers
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    def iter_content(self, block_size):
+        for i in range(0, len(self._payload), block_size):
+            yield self._payload[i:i + block_size]
+
+    def close(self):
+        self.closed = True
+
+
+def test_ranged_download_head_streams_range_not_resumable(tmp_path):
+    """A ranged _download_head whose *range size* exceeds the resumable threshold streams the
+    requested byte range directly (honoring start/head) and never routes to _download_resumable."""
+    range_size = 10 * FIVE_MB + 100  # over the resumable threshold
+    full = (bytes(range(256)) * (range_size // 256 + 4))
+    start = 1000
+    end = start + range_size - 1  # inclusive
+    range_bytes = full[start:end + 1]
+    out = tmp_path / "part.bin"
+    responses = []
+
+    def fake_get(url, stream=True, headers=None):
+        r = FakeStreamResponse(range_bytes, len(range_bytes), url, request_headers=headers)
+        responses.append(r)
+        return r
+
+    resumable_called = []
+    with patch.object(file_download.requests, "get", side_effect=fake_get), \
+            patch.object(file_download, "_download_resumable",
+                         side_effect=lambda *a, **k: resumable_called.append(True)):
+        result = _download_head(URL, str(out), head=end, start=start)
+
+    assert result == str(out)
+    assert not resumable_called  # ranged request must not hit the resumable path
+    assert out.read_bytes() == range_bytes  # only the requested range is written
+    assert responses[0].request_headers == {"Range": f"bytes={start}-{end}"}
+    assert responses[0].closed  # direct-write branch closes the streaming response
+
+
+def test_full_large_download_head_routes_to_resumable_and_closes(tmp_path):
+    """A full (non-ranged) download over the threshold routes to _download_resumable, and the
+    streaming response is closed on the hand-off path (no leaked connection)."""
+    total = 10 * FIVE_MB + 1
+    out = tmp_path / "big.bin"
+    responses = []
+
+    def fake_get(url, stream=True, headers=None):
+        # Body is not consumed on the resumable path; content-length drives routing.
+        r = FakeStreamResponse(b"", total, url, request_headers=headers)
+        responses.append(r)
+        return r
+
+    resumable_args = {}
+
+    def fake_resumable(url, filename, total_size, progress_tracker=None):
+        resumable_args.update(url=url, filename=filename, total_size=total_size)
+        return filename
+
+    with patch.object(file_download.requests, "get", side_effect=fake_get), \
+            patch.object(file_download, "_download_resumable", side_effect=fake_resumable):
+        result = _download_head(URL, str(out))
+
+    assert result == str(out)
+    assert resumable_args["filename"] == str(out)
+    assert resumable_args["total_size"] == total
+    assert resumable_args["url"] == URL  # post-redirect url handed off
+    assert responses[0].request_headers is None  # full download sends no Range header
+    assert responses[0].closed  # hand-off path still closes the response
+
+
+def test_ranged_get_part_takes_direct_branch_for_large_range(tmp_path):
+    """A resumable part fetch (_ranged_get_part -> _download_head with a range) must take the
+    direct branch even when the part size exceeds the threshold, avoiding recursion."""
+    part_size = 10 * FIVE_MB + 50
+    part_bytes = b"P" * part_size
+    part_filename = str(tmp_path / ".gs_download_0_1.blob")
+    start, end = 0, part_size - 1
+
+    def fake_get(url, stream=True, headers=None):
+        return FakeStreamResponse(part_bytes, len(part_bytes), url, request_headers=headers)
+
+    resumable_called = []
+    with patch.object(file_download.requests, "get", side_effect=fake_get), \
+            patch.object(file_download, "_download_resumable",
+                         side_effect=lambda *a, **k: resumable_called.append(True)):
+        _ranged_get_part("https://s3.example.com/blob?sig=x", part_filename, start, end)
+
+    assert not resumable_called
+    with open(part_filename, "rb") as f:
+        assert f.read() == part_bytes
 
 
 class FakeAzureBackend:

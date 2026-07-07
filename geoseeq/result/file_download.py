@@ -23,23 +23,36 @@ def url_to_id(url):
 
 
 def _download_head(url, filename, head=None, start=0, progress_tracker=None):
+    """Download ``url`` to ``filename``, streaming directly for ranged or small requests.
+
+    Only a *full* (non-ranged) download larger than ``10 * FIVE_MB`` routes to the resumable
+    path. A ranged request (``head`` set, or ``start`` != 0 — e.g. a preview or a resumable
+    part fetch via ``_ranged_get_part``) must stream directly: its ``content-length`` is only
+    the range size, and ``_download_resumable`` restarts from byte 0, which would yield wrong
+    bytes and recurse. The streaming response is always closed, including on the resumable
+    hand-off, so no branch leaks the connection.
+    """
     headers = None
     if head and head > 0:
         headers = {"Range": f"bytes={start}-{head}"}
-    response = requests.get(url, stream=True, headers=headers)
-    response.raise_for_status()
-    total_size_in_bytes = int(response.headers.get('content-length', 0))
-    if progress_tracker: progress_tracker.set_num_chunks(total_size_in_bytes)
-    if total_size_in_bytes > 10 * FIVE_MB:  # Use resumable download
-        print("Using resumable download")
-        return _download_resumable(response.url, filename, total_size_in_bytes, progress_tracker)
-    else:
-        block_size = FIVE_MB
-        with open(filename, 'wb') as file:
-            for data in response.iter_content(block_size):
-                if progress_tracker: progress_tracker.update(len(data))
-                file.write(data)
-        return filename
+    is_ranged = headers is not None or start != 0
+    with requests.get(url, stream=True, headers=headers) as response:
+        response.raise_for_status()
+        total_size_in_bytes = int(response.headers.get('content-length', 0))
+        if progress_tracker: progress_tracker.set_num_chunks(total_size_in_bytes)
+        use_resumable = not is_ranged and total_size_in_bytes > 10 * FIVE_MB
+        if use_resumable:
+            final_url = response.url  # capture post-redirect URL before closing
+        else:
+            block_size = FIVE_MB
+            with open(filename, 'wb') as file:
+                for data in response.iter_content(block_size):
+                    if progress_tracker: progress_tracker.update(len(data))
+                    file.write(data)
+    if use_resumable:
+        logger.info("Using resumable download")
+        return _download_resumable(final_url, filename, total_size_in_bytes, progress_tracker)
+    return filename
     
 
 def _ranged_get_part(url, part_filename, start, end):
