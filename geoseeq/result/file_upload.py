@@ -125,25 +125,39 @@ class ResultFileUpload:
         return base64.b64encode(f"{num:08d}".encode()).decode()
 
     @staticmethod
-    def _azure_transient_errors():
-        """Exception types worth retrying when staging an Azure block.
+    def _is_transient_upload_error(exc):
+        """Return True only for genuinely transient block-staging errors worth retrying.
 
-        Covers requests connection/SSL/HTTP/timeout errors plus the azure-storage
-        transient exceptions. azure.core is imported lazily so this works even when the
-        optional [azure] extra (or a test stub) exposes only azure.storage.blob.
+        Retries connection/SSL/timeout failures and 408/429/5xx HTTP responses. Permanent
+        failures (auth, expired/invalid SAS, not-found, other 4xx) return False so the caller
+        fails fast instead of burning minutes on retries that will never succeed. azure.core is
+        imported lazily so classification still works when only azure.storage.blob is installed.
         """
-        errors = [
+        if isinstance(exc, (
             requests.exceptions.ConnectionError,
             requests.exceptions.SSLError,
-            requests.exceptions.HTTPError,
             requests.exceptions.Timeout,  # covers ReadTimeout and ConnectTimeout
-        ]
+        )):
+            return True
+        if isinstance(exc, requests.exceptions.HTTPError):
+            response = exc.response
+            if response is None:
+                return False
+            return response.status_code in (408, 429) or response.status_code >= 500
         try:
-            from azure.core.exceptions import AzureError, HttpResponseError
-            errors.extend([AzureError, HttpResponseError])
+            from azure.core.exceptions import (
+                HttpResponseError,
+                ServiceRequestError,
+                ServiceResponseError,
+            )
         except ImportError:
-            pass
-        return tuple(errors)
+            return False
+        if isinstance(exc, (ServiceRequestError, ServiceResponseError)):
+            return True
+        if isinstance(exc, HttpResponseError):
+            status = exc.status_code
+            return status in (408, 429) or bool(status and status >= 500)
+        return False  # bare AzureError (and anything else) is treated as permanent
 
     def _azure_upload_file(self, filepath, file_size, sas_url, chunk_size,
                            progress_tracker=None, atomic=True, threads=1, max_retries=3,
@@ -159,6 +173,12 @@ class ResultFileUpload:
         staged indices are recorded so a later interruption can resume again. The tracker is cleaned
         up only after the block list commits and the field is registered.
         """
+        if threads < 1:
+            raise ValueError(f"threads must be >= 1 to stage Azure blocks, got {threads}.")
+        if max_retries < 1:
+            # max_retries < 1 would skip the staging loop entirely, treating a block as
+            # "staged" without ever calling stage_block and committing an empty/partial blob.
+            raise ValueError(f"max_retries must be >= 1 to stage Azure blocks, got {max_retries}.")
         try:
             from azure.storage.blob import BlobClient, BlobBlock
         except ImportError:
@@ -195,17 +215,19 @@ class ResultFileUpload:
     def _azure_stage_one_block(self, blob_client, file_chunker, num, block_id, max_retries):
         """Stage a single Azure block, retrying transient errors with exponential backoff.
 
-        Mirrors ``_upload_one_part``: raises on the final failed attempt so the caller
-        aborts before committing a partial block list.
+        Mirrors ``_upload_one_part``: transient failures back off and retry; permanent failures
+        (auth, expired/invalid SAS, not-found, other 4xx) re-raise immediately so the caller aborts
+        before committing a partial block list.
         """
         chunk = file_chunker.get_chunk(num)
-        transient_errors = self._azure_transient_errors()
         attempts = 0
         while attempts < max_retries:
             try:
                 blob_client.stage_block(block_id, chunk)
                 return
-            except transient_errors as e:
+            except Exception as e:
+                if not self._is_transient_upload_error(e):
+                    raise  # permanent failure -> fail fast rather than retry
                 attempts += 1
                 logger.debug(
                     f"Staging block {num + 1} failed. Attempt {attempts} of {max_retries}. Error: {e}"

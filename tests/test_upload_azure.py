@@ -534,3 +534,178 @@ def test_add_part_after_cleanup_is_safe_noop(tmp_path, isolated_cache):
     # A fresh tracker over the same file loads cleanly (no headerless-line KeyError crash).
     reloaded = ResumableUploadTracker(str(filepath), 4, "target-uuid")
     assert reloaded.upload_started is False
+
+
+# --- Transient vs permanent block-staging error classification -------------------------------
+#
+# Retry only genuinely transient failures (connection/SSL/timeout, 408/429/5xx). Permanent
+# failures (auth, expired/invalid SAS, not-found, other 4xx) must fail fast so we don't burn
+# minutes retrying an error that will never succeed and that hides the actionable message.
+
+
+def _azure_core():
+    """Import azure-core exception types, skipping the test if azure-core isn't installed."""
+    return pytest.importorskip("azure.core.exceptions")
+
+
+def test_azure_upload_retries_transient_azure_service_error(tmp_path):
+    """A transient azure-core ServiceResponseError on stage_block is retried then succeeds."""
+    exc_mod = _azure_core()
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    calls = {"n": 0}
+
+    def flaky_stage(block_id, chunk):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise exc_mod.ServiceResponseError("transient azure failure")
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = flaky_stage
+    rf = _FakeResultFile()
+
+    with patch("geoseeq.result.file_upload.time.sleep"):  # skip backoff sleep
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=3)
+
+    # 3 blocks + 1 retry for the first failure = 4 stage_block calls.
+    assert blob_client.stage_block.call_count == 4
+    blob_client.commit_block_list.assert_called_once()
+    assert rf.finish_calls == [(AZURE_UPLOAD_ID, [], True)]
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_azure_upload_retries_transient_http_response_error(tmp_path, status):
+    """A retryable HttpResponseError (429 throttling / 503 unavailable) is retried then succeeds."""
+    exc_mod = _azure_core()
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    calls = {"n": 0}
+
+    def flaky_stage(block_id, chunk):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            err = exc_mod.HttpResponseError(f"status {status}")
+            err.status_code = status
+            raise err
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = flaky_stage
+    rf = _FakeResultFile()
+
+    with patch("geoseeq.result.file_upload.time.sleep"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=3)
+
+    assert blob_client.stage_block.call_count == 4
+    blob_client.commit_block_list.assert_called_once()
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_azure_upload_fails_fast_on_permanent_http_response_error(tmp_path, status):
+    """A permanent HttpResponseError (403 expired/invalid SAS, 404 not-found) is NOT retried:
+    stage_block is called exactly once, no backoff sleep happens, the upload raises immediately,
+    and neither the block list nor the field registration is attempted."""
+    exc_mod = _azure_core()
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    err = exc_mod.HttpResponseError(f"permanent {status}")
+    err.status_code = status
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = err
+    rf = _FakeResultFile()
+
+    sleep_mock = MagicMock()
+    with patch("geoseeq.result.file_upload.time.sleep", sleep_mock):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            with pytest.raises(exc_mod.HttpResponseError):
+                rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=3)
+
+    blob_client.stage_block.assert_called_once()  # no retries on a permanent failure
+    sleep_mock.assert_not_called()  # never entered the backoff path
+    blob_client.commit_block_list.assert_not_called()
+    assert rf.finish_calls == []
+
+
+def test_azure_upload_retries_transient_requests_http_error(tmp_path):
+    """A requests HTTPError with a 5xx status is transient and retried then succeeds."""
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    calls = {"n": 0}
+
+    def flaky_stage(block_id, chunk):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            response = MagicMock()
+            response.status_code = 500
+            err = requests.exceptions.HTTPError("server error")
+            err.response = response
+            raise err
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = flaky_stage
+    rf = _FakeResultFile()
+
+    with patch("geoseeq.result.file_upload.time.sleep"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=3)
+
+    assert blob_client.stage_block.call_count == 4
+    blob_client.commit_block_list.assert_called_once()
+
+
+def test_azure_upload_fails_fast_on_permanent_requests_http_error(tmp_path):
+    """A requests HTTPError with a permanent 4xx status (403) is not retried and fails fast."""
+    payload = b"0123456789"  # 3 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    response = MagicMock()
+    response.status_code = 403
+    err = requests.exceptions.HTTPError("forbidden")
+    err.response = response
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = err
+    rf = _FakeResultFile()
+
+    sleep_mock = MagicMock()
+    with patch("geoseeq.result.file_upload.time.sleep", sleep_mock):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            with pytest.raises(requests.exceptions.HTTPError):
+                rf._azure_upload_file(str(filepath), len(payload), SAS_URL, 4, threads=1, max_retries=3)
+
+    blob_client.stage_block.assert_called_once()
+    sleep_mock.assert_not_called()
+    blob_client.commit_block_list.assert_not_called()
+
+
+# --- Parameter validation --------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_threads", [0, -1])
+def test_azure_upload_rejects_non_positive_threads(tmp_path, bad_threads):
+    """threads < 1 is rejected up front with a clear ValueError before any staging begins."""
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(b"0123456789")
+    rf = _FakeResultFile()
+    with pytest.raises(ValueError, match="threads must be >= 1"):
+        rf._azure_upload_file(str(filepath), 10, SAS_URL, 4, threads=bad_threads)
+
+
+@pytest.mark.parametrize("bad_retries", [0, -1])
+def test_azure_upload_rejects_non_positive_max_retries(tmp_path, bad_retries):
+    """max_retries < 1 is rejected up front (a block would otherwise be treated as staged without
+    ever calling stage_block, committing an empty/partial blob)."""
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(b"0123456789")
+    rf = _FakeResultFile()
+    with pytest.raises(ValueError, match="max_retries must be >= 1"):
+        rf._azure_upload_file(str(filepath), 10, SAS_URL, 4, max_retries=bad_retries)
