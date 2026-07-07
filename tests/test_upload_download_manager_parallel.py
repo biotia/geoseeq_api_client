@@ -10,6 +10,7 @@ Everything here is mocked so the tests are deterministic and never hit the
 network.
 """
 import logging
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -151,6 +152,12 @@ class TestInProcessLoggerIdempotent(unittest.TestCase):
             if not getattr(h, "_geoseeq_in_process", False)
         ]
 
+    def _tagged_handlers(self):
+        return [
+            h for h in self.logger.handlers
+            if getattr(h, "_geoseeq_in_process", False)
+        ]
+
     def test_repeated_calls_add_at_most_one_handler(self):
         before = len(self.logger.handlers)
         _make_in_process_logger(logging.INFO)
@@ -161,6 +168,27 @@ class TestInProcessLoggerIdempotent(unittest.TestCase):
 
         self.assertEqual(after_one, before + 1)
         self.assertEqual(after_many, after_one)
+
+    def test_concurrent_calls_add_exactly_one_handler(self):
+        """Many threads racing to configure the logger add exactly one handler.
+
+        A barrier maximises the chance all threads reach the check together, so
+        without the lock this would add roughly one handler per thread.
+        """
+        n_threads = 16
+        barrier = threading.Barrier(n_threads)
+
+        def worker():
+            barrier.wait()
+            _make_in_process_logger(logging.INFO)
+
+        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(self._tagged_handlers()), 1)
 
 
 if __name__ == "__main__":
