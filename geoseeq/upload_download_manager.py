@@ -1,5 +1,6 @@
 import logging
-from multiprocessing import Pool, current_process
+from multiprocessing import current_process
+from multiprocessing.pool import ThreadPool
 from os.path import basename, join, dirname
 from geoseeq.result import ResultFile
 from geoseeq.result.file_download import download_url
@@ -10,10 +11,21 @@ logger.addHandler(logging.NullHandler())  # No output unless configured by calli
 
 
 def _make_in_process_logger(log_level):
+    """Attach a StreamHandler to the shared 'geoseeq_api' logger for workers.
+
+    Idempotent: parallelism now uses a ThreadPool, so every worker calls this
+    against the same logger instance in the same process. Without a guard, a
+    batch of N files would attach N handlers and multiply every log line. We
+    tag our handler and skip re-adding it if one is already present.
+    """
     logger = logging.getLogger('geoseeq_api')
     logger.setLevel(log_level)
+    for handler in logger.handlers:
+        if getattr(handler, '_geoseeq_in_process', False):
+            return logger
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter('[%(levelname)s] %(name)s :: ' + current_process().name + ' :: %(message)s'))
+    handler._geoseeq_in_process = True
     logger.addHandler(handler)
     return logger
 
@@ -127,7 +139,7 @@ class GeoSeeqUploadManager:
                 out.append(_upload_one_file(upload_arg))
         else:
             logger.info(f"Uploading files in parallel with {self.n_parallel_uploads} threads.")
-            with Pool(self.n_parallel_uploads) as p:
+            with ThreadPool(self.n_parallel_uploads) as p:
                 for uploaded_result_file in p.imap_unordered(_upload_one_file, upload_args):
                     out.append(uploaded_result_file)
         return out
@@ -229,7 +241,7 @@ class GeoSeeqDownloadManager:
                 out.append(_download_one_file(download_arg))
         else:
             logger.info(f"Downloading files in parallel with {self.n_parallel_downloads} threads.")
-            with Pool(self.n_parallel_downloads) as p:
+            with ThreadPool(self.n_parallel_downloads) as p:
                 for downloaded_file in p.imap_unordered(_download_one_file, download_args):
                     out.append(downloaded_file)
         return out
