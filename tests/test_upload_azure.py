@@ -1,8 +1,12 @@
 import base64
+import glob
+import json
+import os
 import threading
 import time
 import sys
 import types
+from os.path import join
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -34,10 +38,17 @@ except ImportError:
     sys.modules["azure.storage"] = _azure_storage
     sys.modules["azure.storage.blob"] = _azure_blob
 
+from geoseeq.constants import FIVE_MB
 from geoseeq.knex import GeoseeqGeneralError
 from geoseeq.result.file_upload import AZURE_UPLOAD_ID, ResultFileUpload
+from geoseeq.result.resumable_upload_tracker import ResumableUploadTracker
 
 SAS_URL = "https://acct.blob.core.windows.net/container/prefix/reads.fastq.gz?sig=abc"
+
+# multipart_upload_file only builds a ResumableUploadTracker for files > 10*FIVE_MB. We pass a
+# large file_size argument (the real on-disk file stays tiny so the tests are fast) to cross that
+# threshold, and an explicit small chunk_size so the tiny file still splits into several blocks.
+BIG_FILE_SIZE = 10 * FIVE_MB + 1
 
 
 class _FakeResultFile(ResultFileUpload):
@@ -300,6 +311,189 @@ def test_azure_upload_raises_and_skips_commit_on_persistent_failure(tmp_path):
     assert rf.finish_calls == []
 
 
+# --- Resumable Azure upload tests -------------------------------------------------------------
+#
+# These drive multipart_upload_file (not just _azure_upload_file) so the ResumableUploadTracker
+# creation/consultation path is exercised end to end. GEOSEEQ_CACHE_DIR is redirected to a temp
+# dir so the tracker file is isolated per test.
+
+
+@pytest.fixture
+def isolated_cache(tmp_path, monkeypatch):
+    """Point the resumable upload tracker's cache dir at a temp location for the test."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(
+        "geoseeq.result.resumable_upload_tracker.GEOSEEQ_CACHE_DIR", str(cache_dir)
+    )
+    return cache_dir
+
+
+def _tracker_dir(cache_dir):
+    """Directory the tracker writes its per-upload state files into."""
+    return join(str(cache_dir), "upload")
+
+
+def _tracker_files(cache_dir):
+    """All tracker state files currently on disk (empty list once cleaned up)."""
+    return glob.glob(join(_tracker_dir(cache_dir), "gs_resumable_upload_tracker*"))
+
+
+class _ResumableFake(ResultFileUpload):
+    """ResultFileUpload host that stubs the network seams so multipart_upload_file runs offline.
+
+    _prep_multipart_upload stands in for the server minting a write SAS; counting its calls lets a
+    test prove a resumed run reuses the persisted SAS instead of minting a new one.
+    """
+
+    def __init__(self, uuid="field-uuid", parent_uuid="parent-uuid"):
+        self.uuid = uuid
+        self.parent = types.SimpleNamespace(uuid=parent_uuid)
+        self.prep_calls = 0
+        self.finish_calls = []
+        self.got = False
+
+    def _prep_multipart_upload(self, filepath, file_size, chunk_size, optional_fields, atomic=False):
+        self.prep_calls += 1
+        return AZURE_UPLOAD_ID, SAS_URL
+
+    def _finish_multipart_upload(self, upload_id, complete_parts, atomic=False):
+        self.finish_calls.append((upload_id, complete_parts, atomic))
+
+    def get(self):
+        self.got = True
+        return self
+
+
+def _fail_indices_stage(fail_indices):
+    """stage_block side effect that raises a transient error for the given block indices."""
+    def stage(block_id, chunk):
+        if _block_index(block_id) in fail_indices:
+            raise requests.exceptions.ConnectionError(f"block {_block_index(block_id)} failed")
+    return stage
+
+
+def test_azure_upload_resumes_and_reuses_sas(tmp_path, isolated_cache):
+    """An interrupted large Azure upload resumes: already-staged blocks are not re-staged, the SAS
+    is reused (no second create_atomic_upload_urls), and the full ordered block list is committed."""
+    payload = b"x" * 20  # 20 bytes, chunk_size 4 -> 5 blocks (parts 1..5)
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    # Run 1: blocks 0 and 1 stage, block 2 fails -> upload aborts before committing.
+    run1_client = MagicMock()
+    run1_client.stage_block.side_effect = _fail_indices_stage({2})
+    rf1 = _ResumableFake()
+    with patch("geoseeq.result.file_upload.time.sleep"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=run1_client):
+            with pytest.raises(requests.exceptions.ConnectionError):
+                rf1.multipart_upload_file(
+                    str(filepath), BIG_FILE_SIZE, chunk_size=4, threads=1, max_retries=1,
+                )
+    run1_client.commit_block_list.assert_not_called()
+    assert rf1.prep_calls == 1  # SAS minted once on the first run
+    assert len(_tracker_files(isolated_cache)) == 1  # resume state persisted
+
+    # Run 2: everything stages fine. Blocks 0 and 1 were recorded in run 1, so they are skipped.
+    run2_client = MagicMock()  # no side effect -> all stage_block calls succeed
+    rf2 = _ResumableFake()  # same uuids -> resolves to the same tracker file on disk
+    with patch("geoseeq.result.file_upload.time.sleep"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=run2_client):
+            rf2.multipart_upload_file(
+                str(filepath), BIG_FILE_SIZE, chunk_size=4, threads=1, max_retries=1,
+            )
+
+    # SAS was reused: the resumed run never re-minted (prep) a new upload/SAS.
+    assert rf2.prep_calls == 0
+    # Only the not-yet-staged blocks (indices 2, 3, 4) were re-staged; 0 and 1 were skipped.
+    staged_indices = {_block_index(c.args[0]) for c in run2_client.stage_block.call_args_list}
+    assert staged_indices == {2, 3, 4}
+    # The committed block list is still the full ordered set of all 5 blocks.
+    committed = run2_client.commit_block_list.call_args.args[0]
+    assert [_block_index(b.id) for b in committed] == [0, 1, 2, 3, 4]
+    # is_atomic_upload (False, the multipart_upload_file default) round-tripped through the tracker.
+    assert rf2.finish_calls == [(AZURE_UPLOAD_ID, [], False)]
+
+
+def test_azure_upload_tracker_cleaned_up_after_success(tmp_path, isolated_cache):
+    """After a successful large Azure upload the tracker state file is removed."""
+    payload = b"x" * 20  # 5 blocks
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    rf = _ResumableFake()
+    with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+        rf.multipart_upload_file(str(filepath), BIG_FILE_SIZE, chunk_size=4, threads=1)
+
+    blob_client.commit_block_list.assert_called_once()
+    assert _tracker_files(isolated_cache) == []  # cleaned up on success
+
+
+def test_azure_upload_no_tracker_for_small_file(tmp_path, isolated_cache):
+    """A file at/below the resumable threshold uploads without ever creating a tracker file."""
+    payload = b"x" * 20
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    rf = _ResumableFake()
+    # file_size below the 10*FIVE_MB threshold -> no tracker created.
+    with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+        rf.multipart_upload_file(str(filepath), len(payload), chunk_size=4, threads=1)
+
+    blob_client.commit_block_list.assert_called_once()
+    assert not os.path.isdir(_tracker_dir(isolated_cache))
+
+
+def test_azure_upload_no_tracker_when_cache_disabled(tmp_path, isolated_cache):
+    """use_cache=False disables the resumable tracker even for a large file."""
+    payload = b"x" * 20
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    rf = _ResumableFake()
+    with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+        rf.multipart_upload_file(
+            str(filepath), BIG_FILE_SIZE, chunk_size=4, threads=1, use_cache=False,
+        )
+
+    blob_client.commit_block_list.assert_called_once()
+    assert not os.path.isdir(_tracker_dir(isolated_cache))
+
+
+def test_azure_upload_parallel_records_all_blocks_under_lock(tmp_path, isolated_cache):
+    """Parallel staging records every staged block in the tracker without corrupting the file.
+
+    One block is made to fail so the commit is skipped and the tracker file survives for inspection;
+    the remaining blocks all stage concurrently and every line in the tracker must be valid JSON
+    (proving the add_part lock serialized the concurrent appends)."""
+    payload = b"x" * 40  # 40 bytes, chunk_size 4 -> 10 blocks (parts 1..10)
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(payload)
+
+    blob_client = MagicMock()
+    blob_client.stage_block.side_effect = _fail_indices_stage({4})  # part 5 fails
+    rf = _ResumableFake()
+    with patch("geoseeq.result.file_upload.time.sleep"):
+        with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
+            with pytest.raises(requests.exceptions.ConnectionError):
+                rf.multipart_upload_file(
+                    str(filepath), BIG_FILE_SIZE, chunk_size=4, threads=5, max_retries=1,
+                )
+
+    blob_client.commit_block_list.assert_not_called()
+    tracker_files = _tracker_files(isolated_cache)
+    assert len(tracker_files) == 1
+    with open(tracker_files[0]) as f:
+        lines = [line for line in f.read().splitlines() if line]
+    # Header line + one line per successfully staged block; every line parses cleanly (no
+    # interleaved/corrupted writes from the concurrent stagers).
+    parsed = [json.loads(line) for line in lines]
+    recorded_parts = {blob["PartNumber"] for blob in parsed if "PartNumber" in blob}
+    assert recorded_parts == {1, 2, 3, 4, 6, 7, 8, 9, 10}  # every block except the failed part 5
+
+
 def test_azure_upload_parallel_raises_and_skips_commit_on_persistent_failure(tmp_path):
     """In parallel mode, a block that always fails propagates the exception and never commits."""
     payload = b"0123456789"  # 3 blocks
@@ -317,3 +511,26 @@ def test_azure_upload_parallel_raises_and_skips_commit_on_persistent_failure(tmp
 
     blob_client.commit_block_list.assert_not_called()
     assert rf.finish_calls == []
+
+
+def test_add_part_after_cleanup_is_safe_noop(tmp_path, isolated_cache):
+    """After cleanup() closes the tracker, a late add_part (e.g. a thread that was blocked on the
+    lock while another thread cleaned up) must be a no-op: it must NOT re-create the deleted file
+    with a headerless part line, which would crash the next run's _load_parts_from_file."""
+    filepath = tmp_path / "reads.fastq.gz"
+    filepath.write_bytes(b"x" * 20)
+
+    tracker = ResumableUploadTracker(str(filepath), 4, "target-uuid")
+    tracker.start_upload(AZURE_UPLOAD_ID, SAS_URL, is_atomic_upload=False)
+    tracker.add_part({"PartNumber": 1})
+    tracker.cleanup()
+    assert tracker.open is False  # cleanup() closes the tracker
+    assert _tracker_files(isolated_cache) == []  # file deleted
+
+    # A late add_part after cleanup must not resurrect the tracker file.
+    tracker.add_part({"PartNumber": 2})
+    assert _tracker_files(isolated_cache) == []
+
+    # A fresh tracker over the same file loads cleanly (no headerless-line KeyError crash).
+    reloaded = ResumableUploadTracker(str(filepath), 4, "target-uuid")
+    assert reloaded.upload_started is False
