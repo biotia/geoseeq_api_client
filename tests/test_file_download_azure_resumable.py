@@ -30,6 +30,7 @@ from geoseeq.result import file_download, resumable_download_tracker
 from geoseeq.result.file_download import (
     _download_azure_resumable,
     _download_azure_sdk,
+    _download_resumable,
     _ranged_get_part,
     download_url,
 )
@@ -291,3 +292,29 @@ def test_ranged_get_part_atomic_success(tmp_path):
     with open(part_filename, "rb") as f:
         assert f.read() == payload
     assert not os.path.exists(part_filename + ".partial")
+
+
+def test_s3_resumable_path_correct_bytes_with_default_download_part(tmp_path, isolated_cache):
+    """_download_resumable with download_part=None (S3/HTTP default: _ranged_get_part) produces
+    the exact original bytes — regression test for the response->url+download_part refactor."""
+    payload = b"S3payload" * 20  # 180 bytes, 3 x 60-byte chunks
+    chunk_size = 60
+    out = tmp_path / "s3blob"
+
+    def fake_download_head(url, filename, head=None, start=0, progress_tracker=None):
+        # Serve the inclusive byte range [start..head] from the payload.
+        data = payload[start: (head + 1) if head is not None else len(payload)]
+        with open(filename, "wb") as f:
+            f.write(data)
+        return filename
+
+    with patch.object(file_download, "_download_head", side_effect=fake_download_head):
+        result = _download_resumable(
+            "https://s3.example.com/bucket/key?sig=x",
+            str(out),
+            len(payload),
+            chunk_size=chunk_size,
+        )
+
+    assert result == str(out)
+    assert out.read_bytes() == payload  # byte-content correctness of concat
