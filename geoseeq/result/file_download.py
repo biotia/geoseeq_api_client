@@ -3,6 +3,7 @@ import urllib.request
 import logging
 import requests
 import os
+import shutil
 from os.path import basename, getsize, join, isfile, getmtime, dirname
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -31,7 +32,7 @@ def _download_head(url, filename, head=None, start=0, progress_tracker=None):
     if progress_tracker: progress_tracker.set_num_chunks(total_size_in_bytes)
     if total_size_in_bytes > 10 * FIVE_MB:  # Use resumable download
         print("Using resumable download")
-        return _download_resumable(response, filename, total_size_in_bytes, progress_tracker)
+        return _download_resumable(response.url, filename, total_size_in_bytes, progress_tracker)
     else:
         block_size = FIVE_MB
         with open(filename, 'wb') as file:
@@ -41,10 +42,43 @@ def _download_head(url, filename, head=None, start=0, progress_tracker=None):
         return filename
     
 
-def _download_resumable(response, filename, total_size_in_bytes, progress_tracker=None, chunk_size=5 * FIVE_MB, part_prefix=".gs_download_{}_{}."):
-    target_id = url_to_id(response.url)
+def _ranged_get_part(url, part_filename, start, end):
+    """Fetch one inclusive byte range via a ranged GET (works for S3/HTTP presigned URLs)."""
+    _download_head(url, part_filename, head=end, start=start, progress_tracker=None)
+
+
+def _concatenate_parts(filename, tracker, n_chunks):
+    """Concatenate downloaded parts into ``filename`` atomically (temp + os.replace).
+
+    Writing to a temp path and renaming keeps ``filename`` all-or-nothing: an interrupted
+    concat never leaves a truncated file that ``download_url``'s isfile()+size>0 cache
+    check would treat as a complete download.
+    """
+    tmp_path = filename + ".partial"
+    with open(tmp_path, "wb") as out_file:
+        for i in range(n_chunks):
+            part_filename = tracker.get_part_info(i)["part_filename"]
+            with open(part_filename, "rb") as part_file:
+                shutil.copyfileobj(part_file, out_file)
+    os.replace(tmp_path, filename)
+
+
+def _download_resumable(url, filename, total_size_in_bytes, progress_tracker=None,
+                        chunk_size=5 * FIVE_MB, part_prefix=".gs_download_{}_{}.",
+                        download_part=None):
+    """Download a large file as resumable ranged parts persisted to disk, then concatenate.
+
+    ``download_part(url, part_filename, start, end)`` fetches one inclusive byte range to
+    ``part_filename``. It defaults to ranged GETs (``_ranged_get_part``) for S3/HTTP
+    presigned URLs; the azure path supplies an SDK-backed downloader. Completed parts are
+    recorded by the ``ResumableDownloadTracker`` so an interrupted download resumes across
+    process restarts without re-fetching finished parts.
+    """
+    if download_part is None:
+        download_part = _ranged_get_part
+    target_id = url_to_id(url)
     tracker = ResumableDownloadTracker(chunk_size, target_id, filename)
-    if not tracker.download_started: tracker.start_download(response.url)
+    if not tracker.download_started: tracker.start_download(url)
     n_chunks = ceil(total_size_in_bytes / chunk_size)
     for i in range(n_chunks):
         bytes_start, bytes_end = i * chunk_size, min((i + 1) * chunk_size - 1, total_size_in_bytes - 1)
@@ -53,18 +87,12 @@ def _download_resumable(response, filename, total_size_in_bytes, progress_tracke
         else:
             logger.debug(f"Downloading part {i} of {n_chunks - 1}")
             part_filename = join(dirname(filename), part_prefix.format(i, n_chunks - 1) + basename(filename))
-            _download_head(response.url, part_filename, head=bytes_end, start=bytes_start, progress_tracker=None)
+            download_part(url, part_filename, bytes_start, bytes_end)
             part_info = dict(part_number=i, start=bytes_start, end=bytes_end, part_filename=part_filename)
             tracker.add_part(part_info)
         if progress_tracker: progress_tracker.update(bytes_end - bytes_start + 1)
-        
-    # at this point all parts have been downloaded
-    with open(filename, 'wb') as file:
-        for i in range(n_chunks):
-            part_info = tracker.get_part_info(i)
-            part_filename = part_info["part_filename"]
-            with open(part_filename, 'rb') as part_file:
-                file.write(part_file.read())
+
+    _concatenate_parts(filename, tracker, n_chunks)
     tracker.cleanup()
     return filename
 
@@ -74,21 +102,72 @@ def _download_generic(url, filename, head=None):
     return filename
 
 
-def _download_azure_sdk(url, filename, head=None, progress_tracker=None, max_concurrency=8, n_tries=3):
-    # ponytail: presigned blob URL works as-is with from_blob_url, no auth rework
+def _azure_sdk_part_downloader(max_concurrency, n_tries=3):
+    """Return a ``download_part(url, part_filename, start, end)`` backed by the azure SDK.
+
+    Each part is fetched as a single ranged read (``offset``/``length``) with the SDK's own
+    ``max_concurrency`` splitting that part into concurrent sub-reads, so downloads stay fast
+    while remaining resumable at the part level. The part is written to a temp file and
+    atomically renamed so a mid-stream failure never leaves a truncated part behind.
+    """
     from azure.storage.blob import BlobClient
+
+    def download_part(url, part_filename, start, end):
+        length = end - start + 1
+        tmp_path = part_filename + ".partial"
+        for attempt in range(n_tries):
+            try:
+                client = BlobClient.from_blob_url(url)
+                stream = client.download_blob(max_concurrency=max_concurrency, offset=start, length=length)
+                with open(tmp_path, "wb") as f:
+                    stream.readinto(f)
+                os.replace(tmp_path, part_filename)
+                return
+            except Exception as e:
+                logger.warning(f"azure part [{start}-{end}] failed (attempt {attempt + 1}/{n_tries}): {e}")
+                if os.path.isfile(tmp_path):
+                    os.remove(tmp_path)
+                if attempt + 1 == n_tries:
+                    raise
+
+    return download_part
+
+
+def _download_azure_resumable(url, filename, total_size, progress_tracker=None,
+                              max_concurrency=8, chunk_size=5 * FIVE_MB, n_tries=3):
+    """Download a large azure blob as resumable ranged parts via ``ResumableDownloadTracker``.
+
+    Mirrors the S3 ``_download_resumable`` path: parts are persisted to disk and re-used across
+    process restarts, so a 90 GB download that drops near the end resumes instead of restarting.
+    """
+    logger.info(
+        f"azure-storage-blob SDK: resumable download {filename} "
+        f"({total_size} bytes, chunk_size={chunk_size}, max_concurrency={max_concurrency})"
+    )
+    if progress_tracker:
+        progress_tracker.set_num_chunks(total_size)
+    download_part = _azure_sdk_part_downloader(max_concurrency, n_tries=n_tries)
+    return _download_resumable(
+        url, filename, total_size, progress_tracker=progress_tracker,
+        chunk_size=chunk_size, download_part=download_part,
+    )
+
+
+def _download_azure_single_shot(client, filename, head=None, progress_tracker=None,
+                                max_concurrency=8, n_tries=3):
+    """Single-shot SDK download to a temp file, atomically renamed on success.
+
+    Used for small blobs and head-bounded previews. A mid-stream transport failure
+    (e.g. `[SYS] unknown error (_ssl.c:2578)`) must not leave a truncated file at `filename`:
+    download_url() only checks isfile()+size>0, so a non-empty partial would be treated as a
+    valid cached download forever, making the caller's retry loop a no-op. Temp + os.replace()
+    keeps `filename` all-or-nothing, and the inner retry self-heals transient blips.
+    """
     logger.info(f"azure-storage-blob SDK: downloading {filename} with max_concurrency={max_concurrency}")
-    client = BlobClient.from_blob_url(url)
     kwargs = {"max_concurrency": max_concurrency}
     if head and head > 0:
         kwargs["offset"] = 0
         kwargs["length"] = head + 1
-    # Download to a temp file and rename on success. A mid-stream transport failure
-    # (e.g. `[SYS] unknown error (_ssl.c:2578)` under the parallel path) must not leave
-    # a truncated file at `filename`: download_url() only checks isfile()+size>0, so a
-    # non-empty partial would be treated as a valid cached download forever, making the
-    # caller's retry loop a no-op. Temp + os.replace() keeps `filename` all-or-nothing,
-    # and the inner retry self-heals transient blips without re-running the whole batch.
     tmp_path = filename + ".partial"
     for attempt in range(n_tries):
         try:
@@ -109,6 +188,35 @@ def _download_azure_sdk(url, filename, head=None, progress_tracker=None, max_con
                 raise
 
 
+def _download_azure_sdk(url, filename, head=None, progress_tracker=None,
+                        max_concurrency=8, chunk_size=5 * FIVE_MB, n_tries=3):
+    """Download an azure blob via the azure-storage-blob SDK.
+
+    Full downloads larger than ``10 * FIVE_MB`` use a resumable ranged strategy so an
+    interrupted transfer resumes across process restarts (parity with the S3 path). Smaller
+    blobs and head-bounded previews use a single-shot download. ``max_concurrency`` and
+    ``chunk_size`` are threaded from the caller so azure download parallelism is runtime
+    configurable rather than hardcoded.
+
+    Raises ImportError if azure-storage-blob is not installed so ``download_url`` can fall
+    back to ranged GETs.
+    """
+    # ponytail: presigned blob URL works as-is with from_blob_url, no auth rework
+    from azure.storage.blob import BlobClient
+    client = BlobClient.from_blob_url(url)
+    if not head or head <= 0:
+        total_size = client.get_blob_properties().size
+        if total_size > 10 * FIVE_MB:
+            return _download_azure_resumable(
+                url, filename, total_size, progress_tracker=progress_tracker,
+                max_concurrency=max_concurrency, chunk_size=chunk_size, n_tries=n_tries,
+            )
+    return _download_azure_single_shot(
+        client, filename, head=head, progress_tracker=progress_tracker,
+        max_concurrency=max_concurrency, n_tries=n_tries,
+    )
+
+
 def guess_download_kind(url):
     if 'azure' in url:
         return 'azure'
@@ -122,8 +230,13 @@ def guess_download_kind(url):
         return 'generic'
 
 
-def download_url(url, kind='guess', filename=None, head=None, progress_tracker=None, target_uuid=None):
-    """Return a local filepath to the downloaded file. Download the file."""
+def download_url(url, kind='guess', filename=None, head=None, progress_tracker=None,
+                 target_uuid=None, max_concurrency=8, chunk_size=5 * FIVE_MB):
+    """Return a local filepath to the downloaded file. Download the file.
+
+    ``max_concurrency`` and ``chunk_size`` tune azure downloads: large azure blobs are
+    fetched as resumable ``chunk_size`` parts, each read with the SDK's ``max_concurrency``.
+    """
     if filename and isfile(filename):
         file_size = getsize(filename)
         if file_size > 0:
@@ -139,7 +252,10 @@ def download_url(url, kind='guess', filename=None, head=None, progress_tracker=N
         return _download_head(url, filename, head=head, progress_tracker=progress_tracker)
     elif kind == 'azure':
         try:
-            return _download_azure_sdk(url, filename, head=head, progress_tracker=progress_tracker)
+            return _download_azure_sdk(
+                url, filename, head=head, progress_tracker=progress_tracker,
+                max_concurrency=max_concurrency, chunk_size=chunk_size,
+            )
         except ImportError:
             logger.warning(
                 "azure-storage-blob not installed; falling back to single-threaded ranged GETs. "
@@ -193,15 +309,18 @@ class ResultFileDownload:
             return False
         return True
 
-    def download(self, filename=None, flag_suffix='.gs_downloaded', cache=True, head=None, progress_tracker=None):
+    def download(self, filename=None, flag_suffix='.gs_downloaded', cache=True, head=None,
+                 progress_tracker=None, max_concurrency=8, chunk_size=5 * FIVE_MB):
         """Return a local filepath to the file in this result. Download the file if necessary.
-        
+
         When the file is downloaded, it is cached in the result object. Subsequent calls to download
         on this object will return the cached file unless cache=False is specified or the file is updated
         on the server.
 
         A flag file is created when the file download is complete. Subsequent calls to download
         will return the cached file if the flag file exists unless cache=False is specified.
+
+        ``max_concurrency`` and ``chunk_size`` tune azure downloads (see ``download_url``).
         """
         if not filename and not self._cached_filename:
             self._temp_filename = True
@@ -225,6 +344,7 @@ class ResultFileDownload:
         filepath = download_url(
             url, kind=blob_type, filename=filename,
             head=head, progress_tracker=progress_tracker,
+            max_concurrency=max_concurrency, chunk_size=chunk_size,
         )
         if cache and flag_suffix:
             # create flag file

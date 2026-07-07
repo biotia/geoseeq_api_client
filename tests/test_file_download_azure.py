@@ -38,6 +38,8 @@ def test_download_azure_sdk_writes_blob_to_file(tmp_path):
 
     blob_client = MagicMock()
     blob_client.download_blob.return_value = stream
+    # Small blob (<= 10*FIVE_MB): stays on the single-shot path.
+    blob_client.get_blob_properties.return_value.size = len(payload)
 
     with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client) as from_url:
         result = _download_azure_sdk("https://example.blob.core.windows.net/c/b?sig=x", str(out))
@@ -80,6 +82,7 @@ def test_download_azure_sdk_retries_and_leaves_no_partial(tmp_path):
     bad.readinto.side_effect = flaky_readinto
 
     blob_client = MagicMock()
+    blob_client.get_blob_properties.return_value.size = len(payload)  # small -> single-shot
     blob_client.download_blob.side_effect = [bad, good]  # fail once, then succeed
 
     with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
@@ -103,6 +106,7 @@ def test_download_azure_sdk_all_retries_fail_no_poison(tmp_path):
     bad.readinto.side_effect = flaky_readinto
 
     blob_client = MagicMock()
+    blob_client.get_blob_properties.return_value.size = 16  # small -> single-shot
     blob_client.download_blob.return_value = bad
 
     with patch("azure.storage.blob.BlobClient.from_blob_url", return_value=blob_client):
