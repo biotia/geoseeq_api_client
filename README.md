@@ -37,6 +37,7 @@ subcommands and options of each:
 | `upload`   | Upload local files and reads into GeoSeeq-managed storage |
 | `link`     | Register files already in S3-compatible storage as links, without copying bytes |
 | `manage`   | Create, edit, and delete projects, samples, and folders |
+| `repo`     | Clone and inspect local geoseeq project repositories |
 | `search`   | Search GeoSeeq for organizations, projects, and samples |
 | `view`     | Print details about GeoSeeq objects |
 | `app`      | List and trigger GeoSeeq pipeline apps and runs |
