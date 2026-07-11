@@ -23,14 +23,14 @@ $ geoseeq download metadata "GeoSeeq/Example CLI Project" > metadata.csv
 ## Download Short Read Sequencing data from one sample in a project as a set of FASTQ files
 
 ```
-$ geoseeq download sample-results --module-name "short_read::paired_end" GeoSeeq "Example CLI Project" "s1"
+$ geoseeq download fastqs --module-name "short_read::paired_end" "GeoSeeq/Example CLI Project" "s1"
 ```
 
 
-## Download all data from all sample in a project
+## Download all data from all samples in a project
 
-Download all results for all samples in the group `Example CLI Project`
+Download all files for all samples in the project `Example CLI Project`
 
 ```
-$ geoseeq download sample-results GeoSeeq "Example CLI Project"
+$ geoseeq download files "GeoSeeq/Example CLI Project"
 ```

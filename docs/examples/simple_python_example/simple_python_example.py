@@ -3,7 +3,7 @@ import gzip
 from random import randint
 
 import click
-from geoseeq_api import Knex, Organization
+from geoseeq import Knex, Organization
 from requests.exceptions import HTTPError
 
 """

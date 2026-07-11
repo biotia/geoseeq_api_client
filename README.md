@@ -28,6 +28,23 @@ Run the command line by typing `geoseeq` into a terminal prompt. See available o
 $ geoseeq --help
 ```
 
+The CLI is organized into command groups. Run `geoseeq <group> --help` for the
+subcommands and options of each:
+
+| Group | What it does |
+|-------|--------------|
+| `download` | Download files, fastqs, folders, or metadata from a project |
+| `upload`   | Upload local files and reads into GeoSeeq-managed storage |
+| `link`     | Register files already in S3-compatible storage as links, without copying bytes |
+| `manage`   | Create, edit, and delete projects, samples, and folders |
+| `repo`     | Clone and inspect local geoseeq project repositories |
+| `search`   | Search GeoSeeq for organizations, projects, and samples |
+| `view`     | Print details about GeoSeeq objects |
+| `app`      | List and trigger GeoSeeq pipeline apps and runs |
+| `s3`       | Register single files staged in a project's S3 credentials flow |
+| `find-grn` | Resolve a GeoSeeq Resource Name (GRN) to an object |
+| `eula`     | Accept end-user license agreements required by some pipelines |
+
 ### Configuration and Using an API token
 
 For many tasks you will need an API token to interact with GeoSeeq. You can get this token by logging into the [GeoSeeq Portal](https://portal.geoseeq.com/) going to your user profile and clicking the "Tokens" tab.
@@ -143,7 +160,7 @@ deprecated as of this release; prefer `geoseeq link reads` (bulk) or
 ## Using the Python API in a program
 
 
-Please see `geoseeq_api/cli/download.py` for examples of how to download data using the Python API directly.
+Please see `geoseeq/cli/download.py` for examples of how to download data using the Python API directly.
 
 ## Development in GitHub Codespaces
 

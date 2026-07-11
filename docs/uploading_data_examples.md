@@ -66,17 +66,14 @@ Assume you have data from a single ended sequencing run stored as fastq files on
  - `https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz`
  - `https://s3.wasabisys.com/mybucketname/Sample1_L2_R2.fastq.gz`
 
-You can upload these files to GeoSeeq using the command line:
+You can register these files with GeoSeeq using the command line. GeoSeeq lists
+the S3 prefix, groups the files into samples server-side, and links each file in
+place — no bytes are copied:
 
 ```
-# Create a file that contains S3 URIs you want to link called fastq_urls.txt
-$ cat fastq_urls.txt
-https://s3.wasabisys.com/mybucketname/Sample1_L1_R1.fastq.gz
-https://s3.wasabisys.com/mybucketname/Sample1_L1_R2.fastq.gz
-https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz
-https://s3.wasabisys.com/mybucketname/Sample1_L2_R2.fastq.gz
-
-$ geoseeq upload reads --link-type s3 "Example GeoSeeq Org" "Example CLI Project" fastq_urls.txt
+$ geoseeq link reads "Example GeoSeeq Org/Example CLI Project" \
+      s3://mybucketname/ \
+      --endpoint-url https://s3.wasabisys.com
 Using regex: "(?P<sample_name>[^_]*)_L(?P<lane_num>[0-9]*)_R(?P<pair_num>1|2)\.fastq\.gz"
 All files successfully grouped.
 sample_name: Sample1
@@ -85,12 +82,14 @@ sample_name: Sample1
     short_read::paired_end::read_2::lane_1: https://s3.wasabisys.com/mybucketname/Sample1_L1_R2.fastq.gz
     short_read::paired_end::read_1::lane_2: https://s3.wasabisys.com/mybucketname/Sample1_L2_R1.fastq.gz
     short_read::paired_end::read_2::lane_2: https://s3.wasabisys.com/mybucketname/Sample1_L2_R2.fastq.gz
-Do you want to upload these files? [y/N]: y
-Uploading Sample: Sample1
+
+(dry-run) pass --commit to actually link files.
 ```
 
-This will create a new sample that links to your data without re-uploading any data. This is the fastest way
-to link files which are already stored in the cloud.
+`link reads` runs in dry-run mode by default and prints the proposed groupings.
+Re-run with `--commit` to create the sample and link the files without
+re-uploading any data — the fastest way to register files already stored in the
+cloud. It needs the optional `[s3]` extras (`pip install 'geoseeq[s3]'`).
 
 You can link files from other types of cloud storage services such as:
  - FTP Servers
