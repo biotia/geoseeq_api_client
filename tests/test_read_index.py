@@ -96,7 +96,7 @@ def test_index_one_reads_file_uploads_two_sidecars(tmp_path: Path):
     def _result_file(sidecar_name):
         rf = MagicMock()
         def _upload(path):
-            if path.endswith(".index.json"):
+            if path.endswith(".fastq-index.json"):
                 captured["json"] = json.loads(Path(path).read_text())
         rf.upload_file.side_effect = _upload
         return rf
@@ -106,7 +106,7 @@ def test_index_one_reads_file_uploads_two_sidecars(tmp_path: Path):
 
     uploaded = [c.args[0] for c in folder.result_file.call_args_list]
     assert reads_file.name + ".gzi" in uploaded
-    assert reads_file.name + ".index.json" in uploaded
+    assert reads_file.name + ".fastq-index.json" in uploaded
     assert folder.result_file.call_count == 2  # exactly the two sidecars
     # gzi_file in the metadata must match the uploaded sidecar, not the temp name.
     assert captured["json"]["gzi_file"] == reads_file.name + ".gzi"

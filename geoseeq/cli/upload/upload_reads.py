@@ -239,7 +239,7 @@ def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids, replicate=Non
 
 def _index_one_reads_file(reads_file, local_path):
     """Best-effort: build a seek index + read stats for one gzipped fastq and
-    upload them as two sidecar files (`.gzi`, `.index.json`) into the same folder.
+    upload them as two sidecar files (`.gzi`, `.fastq-index.json`) into the same folder.
     Failures are logged, not raised — indexing never blocks the read upload."""
     import tempfile
     from os.path import join
@@ -255,10 +255,10 @@ def _index_one_reads_file(reads_file, local_path):
             # Point gzi_file at the uploaded sidecar name, not the temp filename,
             # so a consumer can locate the seek index from the JSON.
             index['gzi_file'] = reads_file.name + '.gzi'
-            index_json = write_index_json(index, join(tmp, 'reads.index.json'))
+            index_json = write_index_json(index, join(tmp, 'reads.fastq-index.json'))
             folder = reads_file.parent
             folder.result_file(reads_file.name + '.gzi').upload_file(gzi)
-            folder.result_file(reads_file.name + '.index.json').upload_file(index_json)
+            folder.result_file(reads_file.name + '.fastq-index.json').upload_file(index_json)
             click.echo(f"Indexed {basename(local_path)}: {index['read_count']} reads, "
                        f"{len(index['sections'])} sections.", err=True)
     except Exception as exc:
