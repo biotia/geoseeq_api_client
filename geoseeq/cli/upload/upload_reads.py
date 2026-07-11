@@ -284,6 +284,9 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
                 upload_manager.add_result_file(result_file, filepaths[path])
         upload_manager.upload_files()
 
+        if index_reads and link_type != 'upload':
+            logger.warning("--index-reads is ignored for --link-type "
+                           f"{link_type} (indexing only runs on byte uploads).")
         if index_reads and link_type == 'upload':
             for group in groups:
                 for field_name, path in group['fields'].items():

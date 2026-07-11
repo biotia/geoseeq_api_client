@@ -23,7 +23,7 @@ DEFAULT_SPACING = 100 << 20  # 100 MB uncompressed between seek points -> sub-MB
 def deps_available():
     try:
         import indexed_gzip  # noqa: F401
-        from isal import isal_zlib  # noqa: F401
+        from isal import igzip  # noqa: F401
         return True
     except ImportError:
         return False
