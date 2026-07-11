@@ -159,6 +159,9 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         name_pairs = list(zip([basename(fp) for fp in file_paths], file_paths))
 
     do_bgzf = convert_file_format == 'bgzf' and link_type == 'upload'
+    if convert_file_format and link_type != 'upload':
+        logger.warning(f"--convert-file-format is ignored for --link-type {link_type} "
+                       "(conversion only runs on byte uploads).")
     if do_bgzf and not yes:
         # BGZF makes the gzip stream seekable but adds no tar member manifest; warn
         # loudly and gate before spending CPU recompressing a tarball with no way to
