@@ -1,5 +1,7 @@
 import gzip
+import io
 import json
+import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -143,9 +145,6 @@ def test_index_json_roundtrips(tmp_path: Path):
 
 # --- tar index -----------------------------------------------------------------
 
-import tarfile
-import io
-
 
 def _make_tar(path, files, gzipped):
     mode = "w:gz" if gzipped else "w"
@@ -223,6 +222,22 @@ def test_read_tar_member_gzipped_without_gzi_raises(tmp_path: Path):
     _make_tar(tar, {"a.txt": b"hello"}, gzipped=True)
     with pytest.raises(ValueError, match="gzi_path"):
         read_index.read_tar_member(str(tar), {"offset": 512, "size": 5})
+
+
+def test_index_one_tar_file_gzipped_without_deps_uploads_manifest_only(tmp_path: Path, monkeypatch):
+    # The member manifest needs no optional deps; only the .gzi does. Without the
+    # indexing extra we should still upload the manifest, just skip the .gzi.
+    from geoseeq.cli.upload import upload as upload_mod
+    tar = tmp_path / "arc.tar.gz"
+    _make_tar(tar, {"a.txt": b"hi"}, gzipped=True)
+    folder = MagicMock()
+    monkeypatch.setattr("geoseeq.result.read_index.deps_available", lambda: False)
+
+    upload_mod._index_one_tar_file(folder, "arc.tar.gz", str(tar))
+
+    uploaded = [c.args[0] for c in folder.result_file.call_args_list]
+    assert "arc.tar.gz.tar-index.json" in uploaded  # manifest still uploaded
+    assert "arc.tar.gz.gzi" not in uploaded          # .gzi skipped without deps
 
 
 def test_index_one_tar_file_skips_non_tar(tmp_path: Path):

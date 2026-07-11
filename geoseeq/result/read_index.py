@@ -32,7 +32,7 @@ def deps_available():
 def _require_deps():
     if not deps_available():
         raise ImportError(
-            "--index-reads needs the 'indexing' extra: "
+            "This feature needs the 'indexing' extra: "
             "pip install 'geoseeq[indexing]' (installs isal + indexed_gzip)."
         )
 

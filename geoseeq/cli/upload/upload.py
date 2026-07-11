@@ -42,20 +42,27 @@ def _index_one_tar_file(result_folder, geoseeq_file_name, local_path):
     import tarfile
     import tempfile
     from os.path import join
-    from geoseeq.result.read_index import build_tar_index, write_index_json, is_gzipped
+    from geoseeq.result.read_index import build_tar_index, write_index_json, is_gzipped, deps_available
 
     if not tarfile.is_tarfile(local_path):
         return  # the flag is a broad post-pass; quietly skip non-tar files
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            gzi = join(tmp, 'archive.gzi') if is_gzipped(local_path) else None
+            gz = is_gzipped(local_path)
+            # The member manifest needs no optional deps; only the .gzi does. Skip the
+            # .gzi (not the whole index) when the indexing extra isn't installed.
+            want_gzi = gz and deps_available()
+            gzi = join(tmp, 'archive.gzi') if want_gzi else None
             index = build_tar_index(local_path, gzi)
-            if index['gzi_file']:  # record the uploaded sidecar name, not the temp one
+            if want_gzi:  # record the uploaded sidecar name, not the temp one
                 index['gzi_file'] = geoseeq_file_name + '.gzi'
             index_json = write_index_json(index, join(tmp, 'archive.tar-index.json'))
             result_folder.result_file(geoseeq_file_name + '.tar-index.json').upload_file(index_json)
             if gzi:
                 result_folder.result_file(geoseeq_file_name + '.gzi').upload_file(gzi)
+            if gz and not want_gzi:
+                logger.warning(f"{local_path}: uploaded tar manifest only; .gzi seek index "
+                               "skipped (install the 'indexing' extra for gzipped random access).")
             click.echo(f"Indexed {basename(local_path)}: {index['member_count']} members"
                        + (", + gzi seek index." if gzi else "."), err=True)
     except Exception as exc:
