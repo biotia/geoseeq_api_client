@@ -2,7 +2,9 @@ import gzip
 import shutil
 import struct
 import subprocess
+import tarfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -159,3 +161,56 @@ def test_cli_files_convert_and_index_tar_are_mutually_exclusive(tmp_path: Path):
     )
     assert result.exit_code != 0
     assert "mutually exclusive" in result.output
+
+
+def _make_real_tarball(path: Path) -> Path:
+    """Write a real .tar.gz so tarfile.is_tarfile() returns True."""
+    inner = path.parent / "inner.txt"
+    inner.write_text("hello")
+    with tarfile.open(path, "w:gz") as tf:
+        tf.add(str(inner), arcname="inner.txt")
+    return path
+
+
+def _patch_knex_and_folder(monkeypatch):
+    """Patch out the API layer so cli_upload_file reaches the tarball gate."""
+    fake_folder = MagicMock()
+    monkeypatch.setattr(
+        "geoseeq.cli.upload.upload.handle_folder_id",
+        lambda *a, **kw: fake_folder,
+    )
+    monkeypatch.setattr(
+        "geoseeq.cli.upload.upload.GeoSeeqUploadManager",
+        MagicMock(return_value=MagicMock()),
+    )
+
+
+def test_cli_files_tarball_gate_aborts_without_yes(tmp_path: Path, monkeypatch):
+    """A tarball + --convert-file-format bgzf without --yes prompts and aborts on 'n'."""
+    _patch_knex_and_folder(monkeypatch)
+    tar = _make_real_tarball(tmp_path / "archive.tar.gz")
+    result = CliRunner().invoke(
+        cli_upload_file,
+        ["--convert-file-format", "bgzf", "some_folder", str(tar)],
+        input="n\n",
+    )
+    assert result.exit_code != 0
+    assert "tarball" in result.output.lower() or "Warning" in result.output
+
+
+def test_cli_files_tarball_gate_bypassed_with_yes(tmp_path: Path, monkeypatch):
+    """--yes skips the tarball confirmation gate entirely."""
+    _patch_knex_and_folder(monkeypatch)
+    # Also patch convert_one_to_bgzf so no real compression happens.
+    monkeypatch.setattr(
+        "geoseeq.cli.upload.upload.convert_one_to_bgzf",
+        lambda path, out_dir: (path, None),
+    )
+    tar = _make_real_tarball(tmp_path / "archive.tar.gz")
+    result = CliRunner().invoke(
+        cli_upload_file,
+        ["--convert-file-format", "bgzf", "--yes", "some_folder", str(tar)],
+    )
+    # Gate is not hit; command proceeds past the tarball check (may fail later on
+    # network, but exit_code != caused-by-tarball-gate means the gate was skipped).
+    assert "Convert" not in result.output or result.exit_code == 0
