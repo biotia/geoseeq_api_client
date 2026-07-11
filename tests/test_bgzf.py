@@ -8,7 +8,9 @@ import pytest
 from click.testing import CliRunner
 
 from geoseeq.result import bgzf
-from geoseeq.cli.upload.upload_reads import cli_upload_reads_wizard, _bgzf_one_reads_file
+from geoseeq.cli.upload.upload_reads import cli_upload_reads_wizard
+from geoseeq.cli.upload.upload import cli_upload_file
+from geoseeq.cli.upload._convert import convert_one_to_bgzf
 
 
 def _content(n_reads=50000):
@@ -122,25 +124,38 @@ def test_make_bgzf_with_index_already_bgzf_is_detected(tmp_path: Path):
     assert gzip.open(str(dst), "rb").read() == content
 
 
-def test_bgzf_helper_falls_back_on_failure(tmp_path: Path, monkeypatch):
+def test_convert_helper_falls_back_on_failure(tmp_path: Path, monkeypatch):
     src = tmp_path / "reads.fastq.gz"
     _write_gz(src, _content(100))
+    # _convert imported make_bgzf_with_index by name, so patch it there.
     monkeypatch.setattr(
-        "geoseeq.result.bgzf.make_bgzf_with_index",
+        "geoseeq.cli.upload._convert.make_bgzf_with_index",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    upload_path, gzi_path = _bgzf_one_reads_file(str(src), str(tmp_path / "out"))
+    upload_path, gzi_path = convert_one_to_bgzf(str(src), str(tmp_path / "out"))
 
     assert upload_path == str(src)  # fell back to the original file
     assert gzi_path is None
 
 
-def test_cli_bgzf_and_index_reads_are_mutually_exclusive(tmp_path: Path):
+def test_cli_reads_convert_and_index_are_mutually_exclusive(tmp_path: Path):
     fq = tmp_path / "x.fastq.gz"  # must exist to pass click's Path(exists=True)
     _write_gz(fq, _content(10))
     result = CliRunner().invoke(
-        cli_upload_reads_wizard, ["--bgzf", "--index-reads", "some_project", str(fq)]
+        cli_upload_reads_wizard,
+        ["--convert-file-format", "bgzf", "--index-reads", "some_project", str(fq)],
+    )
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
+def test_cli_files_convert_and_index_tar_are_mutually_exclusive(tmp_path: Path):
+    f = tmp_path / "x.tar.gz"
+    _write_gz(f, _content(10))
+    result = CliRunner().invoke(
+        cli_upload_file,
+        ["--convert-file-format", "bgzf", "--index-tar", "some_folder", str(f)],
     )
     assert result.exit_code != 0
     assert "mutually exclusive" in result.output

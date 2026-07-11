@@ -20,10 +20,6 @@ from os.path import basename
 
 from Bio import bgzf
 
-# htslib uses 0xff00 uncompressed bytes/block, leaving room for the block overhead
-# so the total compressed block stays under the uint16 BSIZE cap (65536).
-BGZF_BLOCK_SIZE = 0xFF00
-
 
 def is_gzipped(filepath):
     with open(filepath, "rb") as f:

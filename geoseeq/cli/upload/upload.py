@@ -1,10 +1,13 @@
 import logging
 import json
+import contextlib
+import tarfile
+import tempfile
 
 import click
 import pandas as pd
 import requests
-from os.path import basename, isdir, isfile, exists
+from os.path import basename, isdir, isfile, exists, join
 from geoseeq.knex import GeoseeqNotFoundError
 from multiprocessing import Pool, current_process
 
@@ -28,6 +31,7 @@ from geoseeq.cli.shared_params import (
     ignore_errors_option,
 )
 from geoseeq.upload_download_manager import GeoSeeqUploadManager
+from geoseeq.cli.upload._convert import convert_file_format_option, convert_one_to_bgzf
 
 logger = logging.getLogger('geoseeq_api')
 
@@ -84,12 +88,13 @@ def _index_one_tar_file(result_folder, geoseeq_file_name, local_path):
 @no_new_versions_option
 @click.option('--index-tar/--no-index-tar', default=False,
               help='For uploaded tar files, also build a member index (+ a .gzi seek index if gzipped) and upload them as sidecar files enabling random access to members (default off). The .gzi needs the "indexing" extra.')
+@convert_file_format_option
 @click.option('-n', '--geoseeq-file-name', default=None, multiple=True,
               help='Specify a different name for the file on GeoSeeq than the local file name.',
               show_default=True)
 @folder_id_arg
 @click.argument('file_paths', type=click.Path(exists=True), nargs=-1)
-def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb, ignore_errors, yes, private, link_type, recursive, hidden, no_new_versions, index_tar, geoseeq_file_name, folder_id, file_paths):
+def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb, ignore_errors, yes, private, link_type, recursive, hidden, no_new_versions, index_tar, convert_file_format, geoseeq_file_name, folder_id, file_paths):
     """Upload files to GeoSeeq.
 
     This command uploads files to either a sample or project on GeoSeeq. It can be used to upload
@@ -136,6 +141,11 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
     """
     if num_retries < 1:
         raise click.UsageError('--num-retries must be at least 1')
+    if convert_file_format and index_tar:
+        raise click.UsageError(
+            "--convert-file-format and --index-tar are mutually exclusive: conversion rewrites the "
+            "file (e.g. as block-gzip), while --index-tar indexes the original archive in place."
+        )
     knex = state.get_knex()
     result_folder = handle_folder_id(knex, folder_id, yes=yes, private=private, create=True)
     if geoseeq_file_name:
@@ -147,7 +157,20 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         name_pairs = list(zip(geoseeq_file_name, file_paths))
     else:
         name_pairs = list(zip([basename(fp) for fp in file_paths], file_paths))
-    
+
+    do_bgzf = convert_file_format == 'bgzf' and link_type == 'upload'
+    if do_bgzf and not yes:
+        # BGZF makes the gzip stream seekable but adds no tar member manifest; warn
+        # loudly and gate before spending CPU recompressing a tarball with no way to
+        # locate its members.
+        tarballs = [fp for _, fp in name_pairs if isfile(fp) and tarfile.is_tarfile(fp)]
+        if tarballs:
+            click.echo(
+                "Warning: --convert-file-format bgzf makes the gzip stream seekable but does NOT add "
+                "a tar member manifest, so files inside the archive cannot be located. Use --index-tar "
+                "(mutually exclusive) if you need per-member random access.", err=True)
+            click.confirm(f"Convert {len(tarballs)} tarball(s) to BGZF without a member manifest?", abort=True)
+
     upload_manager = GeoSeeqUploadManager(
         n_parallel_uploads=cores,
         threads_per_upload=threads_per_upload,
@@ -162,18 +185,32 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         session=None, #knex.new_session(),
         chunk_size_mb=chunk_size_mb if chunk_size_mb > 0 else None,
     )
-    for geoseeq_file_name, file_path in name_pairs:
-        if isfile(file_path):
-            upload_manager.add_local_file_to_result_folder(result_folder, file_path, geoseeq_file_name=geoseeq_file_name)
-        elif isdir(file_path) and recursive:
-            upload_manager.add_local_folder_to_result_folder(result_folder, file_path, recursive=recursive, hidden_files=hidden, prefix=file_path, geoseeq_file_name=geoseeq_file_name)
-        elif isdir(file_path) and not recursive:
-            raise click.UsageError('Cannot upload a folder without --recursive')
-    click.echo(upload_manager.get_preview_string(), err=True)
-    if not yes:
-        click.confirm('Continue?', abort=True)
-    logger.info(f'Uploading {len(upload_manager)} files to {result_folder}')
-    upload_manager.upload_files()
+    tmp_ctx = tempfile.TemporaryDirectory() if do_bgzf else contextlib.nullcontext()
+    with tmp_ctx as bgzf_tmp:
+        bgzf_gzis = []  # (geoseeq_file_name, gzi_path) sidecars to upload after conversion
+        for i, (geoseeq_file_name, file_path) in enumerate(name_pairs):
+            if isfile(file_path):
+                upload_path = file_path
+                if do_bgzf:
+                    upload_path, gzi_path = convert_one_to_bgzf(file_path, join(bgzf_tmp, str(i)))
+                    if gzi_path:
+                        bgzf_gzis.append((geoseeq_file_name, gzi_path))
+                upload_manager.add_local_file_to_result_folder(result_folder, upload_path, geoseeq_file_name=geoseeq_file_name)
+            elif isdir(file_path) and recursive:
+                if do_bgzf:
+                    logger.warning(f"--convert-file-format does not convert files inside uploaded folder "
+                                   f"{file_path}; pass files directly as arguments to convert them.")
+                upload_manager.add_local_folder_to_result_folder(result_folder, file_path, recursive=recursive, hidden_files=hidden, prefix=file_path, geoseeq_file_name=geoseeq_file_name)
+            elif isdir(file_path) and not recursive:
+                raise click.UsageError('Cannot upload a folder without --recursive')
+        click.echo(upload_manager.get_preview_string(), err=True)
+        if not yes:
+            click.confirm('Continue?', abort=True)
+        logger.info(f'Uploading {len(upload_manager)} files to {result_folder}')
+        upload_manager.upload_files()
+
+        for geoseeq_file_name, gzi_path in bgzf_gzis:
+            result_folder.result_file(geoseeq_file_name + '.gzi').upload_file(gzi_path)
 
     if index_tar and link_type == 'upload':
         for gs_name, file_path in name_pairs:
