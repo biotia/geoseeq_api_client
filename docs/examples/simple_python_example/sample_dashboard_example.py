@@ -19,7 +19,7 @@ knex.add_api_token(token)
 
 
 sample = sample_from_uuid(knex, sample_id)
-dashboard = sample.get_or_create_default_dashbaord()
+dashboard = sample.get_or_create_default_dashboard()
 
 # Add tiles
 file = sample_result_file_from_uuid(knex, file_id)
@@ -29,7 +29,7 @@ dashboard.add_tile(file2, title="Tile title 2", width="half", order=1)
 dashboard.save()
 
 
-dashboard2 = sample.get_or_create_dashbaord_by_title(title="BDX Dashboard")
+dashboard2 = sample.get_or_create_dashboard_by_title(title="BDX Dashboard")
 
 # Rename dahboard
 # dashboard2.title = "Another title"
