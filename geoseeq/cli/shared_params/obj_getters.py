@@ -44,27 +44,34 @@ def _get_org_proj_and_sample(knex, org_name, project_name, sample_name, yes, pri
     return org, proj, sample
 
 
-def _get_org_proj_sample_and_folder(knex, org_name, project_name, sample_name, folder_name, yes, private, create=True):
-    org, proj, sample = _get_org_proj_and_sample(knex, org_name, project_name, sample_name, yes, private, create=create)
+def _get_or_create_folder(folder, folder_name, yes, create):
+    """Get-or-create a result folder with deterministic replicate resolution.
+
+    Resolves the replicate first (adopt an existing folder for the module, or
+    default to ``"1"``) so a plain get finds the folder by name rather than
+    404'ing on a random replicate. When ``create`` is False this is get-only
+    and re-raises ``GeoseeqNotFoundError`` if the folder is missing. When
+    ``create`` is True a missing folder is created, still confirming first
+    unless ``yes`` is set.
+    """
+    folder._resolve_replicate()
     try:
-        folder = sample.result_folder(folder_name).get()
+        return folder.get()
     except GeoseeqNotFoundError:
         if not create:
             raise
         if not yes:
             click.confirm(f'Folder "{folder_name}" does not exist. Create it?', abort=True)
-        folder = sample.result_folder(folder_name).create()
+        return folder.create()
+
+
+def _get_org_proj_sample_and_folder(knex, org_name, project_name, sample_name, folder_name, yes, private, create=True):
+    org, proj, sample = _get_org_proj_and_sample(knex, org_name, project_name, sample_name, yes, private, create=create)
+    folder = _get_or_create_folder(sample.result_folder(folder_name), folder_name, yes, create)
     return org, proj, sample, folder
 
 
 def _get_org_proj_and_folder(knex, org_name, project_name, folder_name, yes, private, create=True):
     org, proj = _get_org_and_proj(knex, org_name, project_name, yes, private, create=create)
-    try:
-        folder = proj.result_folder(folder_name).get()
-    except GeoseeqNotFoundError:
-        if not create:
-            raise
-        if not yes:
-            click.confirm(f'Folder "{folder_name}" does not exist. Create it?', abort=True)
-        folder = proj.result_folder(folder_name).create()
+    folder = _get_or_create_folder(proj.result_folder(folder_name), folder_name, yes, create)
     return org, proj, folder

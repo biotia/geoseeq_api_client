@@ -15,6 +15,13 @@ from .result_file import ProjectResultFile, SampleResultFile
 from .utils import *
 
 
+# Canonical replicate for a result folder resolved by module_name with no
+# explicit replicate. Matches the staging endpoint's default so a plain
+# get-or-create lands on one stable folder instead of the server minting a
+# fresh random replicate on every run.
+DEFAULT_REPLICATE = "1"
+
+
 class ResultFolder(RemoteObject):
     remote_fields = [
         "uuid",
@@ -49,6 +56,59 @@ class ResultFolder(RemoteObject):
         key = self.module_name + self.parent.pre_hash()
         key += self.replicate if self.replicate else ""
         return key
+
+    def _resolve_replicate(self):
+        """Deterministically pick this folder's replicate when none was given.
+
+        Forward-looking get-or-create default: instead of letting the server
+        mint a fresh random replicate on every plain resolve, reuse the
+        parent's existing folder for ``module_name`` so repeated resolution
+        lands on one stable folder rather than spawning a sibling.
+
+        - explicit replicate already set -> no-op (respect the caller)
+        - no existing folder for the module -> the canonical ``DEFAULT_REPLICATE``
+        - exactly one existing folder -> adopt its replicate (covers folders
+          whose first create got a random replicate under the old default)
+        - more than one -> ambiguous legacy state; use the most recently
+          updated and warn, pointing the user at an explicit replicate.
+
+        Works for both ``SampleResultFolder`` (parent = ``sample``) and
+        ``ProjectResultFolder`` (parent = ``grp``) via ``self.parent``.
+        """
+        if self.replicate:
+            return
+        existing = [
+            f
+            for f in self.parent.get_result_folders()
+            if f.module_name == self.module_name
+        ]
+        if not existing:
+            self.replicate = DEFAULT_REPLICATE
+            return
+        if len(existing) == 1:
+            self.replicate = existing[0].replicate or DEFAULT_REPLICATE
+            return
+        existing.sort(key=lambda f: getattr(f, "updated_at", "") or "", reverse=True)
+        chosen = existing[0].replicate or DEFAULT_REPLICATE
+        logger.warning(
+            "Parent '%s' has %d '%s' result folders; using replicate '%s'. "
+            "Pass an explicit replicate to target a specific one.",
+            getattr(self.parent, "name", self.parent),
+            len(existing),
+            self.module_name,
+            chosen,
+        )
+        self.replicate = chosen
+
+    def idem(self):
+        """Resolve the replicate, then get-or-create the folder."""
+        self._resolve_replicate()
+        return super().idem()
+
+    def create(self):
+        """Resolve the replicate, then create the folder."""
+        self._resolve_replicate()
+        return super().create()
 
     def copy(self, new_parent, save=True):
         copied = new_parent.analysis_result(
