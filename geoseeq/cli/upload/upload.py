@@ -172,6 +172,9 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         for gs_name, file_path in name_pairs:
             if isfile(file_path):
                 _index_one_tar_file(result_folder, gs_name, file_path)
+            elif isdir(file_path):
+                logger.warning(f"--index-tar does not index tarballs inside uploaded folder "
+                               f"{file_path}; pass tar files directly as arguments to index them.")
     elif index_tar:
         logger.warning(f"--index-tar is ignored for --link-type {link_type} "
                        "(indexing only runs on byte uploads).")

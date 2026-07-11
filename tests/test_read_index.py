@@ -200,6 +200,23 @@ def test_build_and_read_tar_index_gzipped(tmp_path: Path):
     assert got == b"second file"
 
 
+@needs_deps
+def test_gzipped_tar_random_access_with_real_checkpoints(tmp_path: Path):
+    # Members spread over enough uncompressed bytes that a small spacing yields
+    # internal gzi checkpoints, so seeking to a late member starts from a
+    # checkpoint rather than scanning from byte 0 — the feature's actual fast path.
+    files = {f"f{i}.bin": bytes([65 + i]) * 100_000 for i in range(6)}  # 600 KB uncompressed
+    tar = tmp_path / "big.tar.gz"
+    _make_tar(tar, files, gzipped=True)
+    gzi = tmp_path / "big.gzi"
+
+    index = read_index.build_tar_index(str(tar), str(gzi), spacing=1 << 16)  # 64 KB spacing
+    by_name = {m["name"]: m for m in index["members"]}
+
+    last = read_index.read_tar_member(str(tar), by_name["f5.bin"], gzi_path=str(gzi))
+    assert last == bytes([70]) * 100_000  # 'F' * 100000, reached via a non-zero checkpoint
+
+
 def test_index_one_tar_file_skips_non_tar(tmp_path: Path):
     from geoseeq.cli.upload.upload import _index_one_tar_file
     not_tar = tmp_path / "notes.txt"
