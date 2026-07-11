@@ -236,7 +236,35 @@ def _bulk_prepare(knex, lib, groups, module_name, need_file_uuids, replicate=Non
     return files_by_key
 
 
-def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state, replicate=None):
+def _index_one_reads_file(reads_file, local_path):
+    """Best-effort: build a seek index + read stats for one gzipped fastq and
+    upload them as two sidecar files (`.gzi`, `.index.json`) into the same folder.
+    Failures are logged, not raised — indexing never blocks the read upload."""
+    import tempfile
+    from os.path import join
+    from geoseeq.result.read_index import build_read_index, write_index_json
+
+    if not local_path.endswith(('.gz', '.bgz')):
+        logger.warning(f"Skipping index for {local_path}: not gzipped (seek index needs gzip).")
+        return
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            gzi = join(tmp, 'reads.gzi')
+            index = build_read_index(local_path, gzi)
+            # Point gzi_file at the uploaded sidecar name, not the temp filename,
+            # so a consumer can locate the seek index from the JSON.
+            index['gzi_file'] = reads_file.name + '.gzi'
+            index_json = write_index_json(index, join(tmp, 'reads.index.json'))
+            folder = reads_file.parent
+            folder.result_file(reads_file.name + '.gzi').upload_file(gzi)
+            folder.result_file(reads_file.name + '.index.json').upload_file(index_json)
+            click.echo(f"Indexed {basename(local_path)}: {index['read_count']} reads, "
+                       f"{len(index['sections'])} sections.", err=True)
+    except Exception as exc:
+        logger.warning(f"Read indexing failed for {local_path}: {exc}")
+
+
+def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state, replicate=None, index_reads=False):
 
     with requests.Session() as session:
         upload_manager = GeoSeeqUploadManager(
@@ -258,6 +286,15 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
                 result_file = files_by_key[(group['sample_name'], field_name)]
                 upload_manager.add_result_file(result_file, filepaths[path])
         upload_manager.upload_files()
+
+        if index_reads and link_type != 'upload':
+            logger.warning("--index-reads is ignored for --link-type "
+                           f"{link_type} (indexing only runs on byte uploads).")
+        if index_reads and link_type == 'upload':
+            for group in groups:
+                for field_name, path in group['fields'].items():
+                    result_file = files_by_key[(group['sample_name'], field_name)]
+                    _index_one_reads_file(result_file, filepaths[path])
 
 
 
@@ -364,10 +401,12 @@ def flatten_list_of_bams(filepaths):
     required=False,
     help='Optional CSV and column names used to map existing names to new ones. Provide: <file> <current_name_col> <new_name_col>.'
 )
+@click.option('--index-reads/--no-index-reads', default=False,
+              help='Also build a gzip seek index (.gzi) + read counts per gzipped fastq and upload them as sidecar files (default off). Needs the "indexing" extra.')
 @module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
 @click.argument('fastq_files', type=click.Path(exists=True), nargs=-1)
-def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, private, link_type, no_new_versions, name_map, module_name, project_id, fastq_files):
+def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, private, link_type, no_new_versions, name_map, index_reads, module_name, project_id, fastq_files):
     """Upload fastq read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number
@@ -430,7 +469,7 @@ def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, priv
     _maybe_warn_link_type_s3_deprecated(link_type, filepaths)
     regex = get_regex(knex, filepaths, module_name, proj, regex)
     groups = group_files(knex, filepaths, module_name, regex, yes, name_map)
-    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state, replicate=replicate)
+    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state, replicate=replicate, index_reads=index_reads)
 
 
 # @click.command('bam')

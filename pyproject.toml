@@ -40,6 +40,10 @@ s3 = [
 azure = [
     "azure-storage-blob>=12.19",
 ]
+indexing = [
+    "isal>=1.1",
+    "indexed_gzip>=1.8",
+]
 
 [project.urls]
 Homepage = "https://github.com/biotia/geoseeq_api_client"
