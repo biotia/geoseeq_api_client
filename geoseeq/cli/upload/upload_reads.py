@@ -251,6 +251,9 @@ def _index_one_reads_file(reads_file, local_path):
         with tempfile.TemporaryDirectory() as tmp:
             gzi = join(tmp, 'reads.gzi')
             index = build_read_index(local_path, gzi)
+            # Point gzi_file at the uploaded sidecar name, not the temp filename,
+            # so a consumer can locate the seek index from the JSON.
+            index['gzi_file'] = reads_file.name + '.gzi'
             index_json = write_index_json(index, join(tmp, 'reads.index.json'))
             folder = reads_file.parent
             folder.result_file(reads_file.name + '.gzi').upload_file(gzi)

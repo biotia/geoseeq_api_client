@@ -10,7 +10,9 @@ from geoseeq.result import read_index
 
 # The indexer needs the optional `indexing` extra; skip real-build tests without it.
 _HAS_DEPS = read_index.deps_available()
-needs_deps = pytest.mark.skipif(not _HAS_DEPS, reason="requires geoseeq[indexing] (isal + indexed_gzip)")
+needs_deps = pytest.mark.skipif(
+    not _HAS_DEPS, reason="requires geoseeq[indexing] (isal + indexed_gzip)"
+)
 
 
 def _write_fastq_gz(path, n_reads, readlen=50):
@@ -86,12 +88,26 @@ def test_index_one_reads_file_uploads_two_sidecars(tmp_path: Path):
     _write_fastq_gz(fq, n_reads=500)
     reads_file, folder = _mock_reads_file()
 
+    # Capture the JSON sidecar content at upload time (temp file still exists then).
+    captured = {}
+
+    def _result_file(sidecar_name):
+        rf = MagicMock()
+        def _upload(path):
+            if path.endswith(".index.json"):
+                captured["json"] = json.loads(Path(path).read_text())
+        rf.upload_file.side_effect = _upload
+        return rf
+    folder.result_file.side_effect = _result_file
+
     _index_one_reads_file(reads_file, str(fq))
 
     uploaded = [c.args[0] for c in folder.result_file.call_args_list]
     assert reads_file.name + ".gzi" in uploaded
     assert reads_file.name + ".index.json" in uploaded
     assert folder.result_file.call_count == 2  # exactly the two sidecars
+    # gzi_file in the metadata must match the uploaded sidecar, not the temp name.
+    assert captured["json"]["gzi_file"] == reads_file.name + ".gzi"
 
 
 def test_index_one_reads_file_skips_non_gzip(tmp_path: Path):

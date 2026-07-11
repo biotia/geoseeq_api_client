@@ -53,9 +53,11 @@ def build_read_index(filepath, gzi_path, spacing=DEFAULT_SPACING, bufsize=1 << 2
     # TODO: one-pass fusion — feed a single decompressed stream to both the
     # checkpoint recorder and the counter instead of decompressing twice.
     f = igz.IndexedGzipFile(filepath, spacing=spacing)
-    f.build_full_index()
-    f.export_index(gzi_path)
-    f.close()
+    try:
+        f.build_full_index()
+        f.export_index(gzi_path)
+    finally:
+        f.close()
 
     # Read counts + per-section counts (isal decompress pass). igzip.open handles
     # multi-member gzip (concatenated per-lane .gz), which a bare decompressobj would
@@ -84,5 +86,5 @@ def build_read_index(filepath, gzi_path, spacing=DEFAULT_SPACING, bufsize=1 << 2
 
 def write_index_json(index, json_path):
     with open(json_path, "w") as f:
-        json.dump(index, f)
+        json.dump(index, f, indent=4)
     return json_path
