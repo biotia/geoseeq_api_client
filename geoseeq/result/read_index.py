@@ -144,6 +144,11 @@ def read_tar_member(tar_path, member, gzi_path=None):
     """Read one member's bytes via random access, given its index entry
     ({offset, size} from :func:`build_tar_index`). Uses the .gzi seek index for
     gzipped tars; a plain seek otherwise."""
+    if is_gzipped(tar_path) and not gzi_path:
+        raise ValueError(
+            "tar_path is gzipped; pass the gzi_path from build_tar_index to random-access "
+            "members. Member offsets are uncompressed, so a plain seek would read garbage."
+        )
     offset, size = member["offset"], member["size"]
     if gzi_path:
         _require_deps()

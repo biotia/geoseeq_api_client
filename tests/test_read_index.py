@@ -217,6 +217,14 @@ def test_gzipped_tar_random_access_with_real_checkpoints(tmp_path: Path):
     assert last == bytes([70]) * 100_000  # 'F' * 100000, reached via a non-zero checkpoint
 
 
+def test_read_tar_member_gzipped_without_gzi_raises(tmp_path: Path):
+    # Guard against silently seeking uncompressed offsets into compressed bytes.
+    tar = tmp_path / "arc.tar.gz"
+    _make_tar(tar, {"a.txt": b"hello"}, gzipped=True)
+    with pytest.raises(ValueError, match="gzi_path"):
+        read_index.read_tar_member(str(tar), {"offset": 512, "size": 5})
+
+
 def test_index_one_tar_file_skips_non_tar(tmp_path: Path):
     from geoseeq.cli.upload.upload import _index_one_tar_file
     not_tar = tmp_path / "notes.txt"
