@@ -51,6 +51,21 @@ def test_build_read_index_records_sections_by_spacing(tmp_path: Path):
     assert reads_before[-1] <= index["read_count"]
 
 
+@needs_deps
+def test_build_read_index_counts_all_members_of_concatenated_gzip(tmp_path: Path):
+    # Concatenated per-lane .gz files are one valid multi-member gzip stream; the
+    # counter must read past the first member, not stop at it.
+    a, b = tmp_path / "a.fastq.gz", tmp_path / "b.fastq.gz"
+    _write_fastq_gz(a, n_reads=300)
+    _write_fastq_gz(b, n_reads=200)
+    combined = tmp_path / "combined.fastq.gz"
+    combined.write_bytes(a.read_bytes() + b.read_bytes())
+
+    index = read_index.build_read_index(str(combined), str(tmp_path / "c.gzi"), spacing=1 << 20)
+
+    assert index["read_count"] == 500  # 300 + 200, not just the first member
+
+
 def test_require_deps_raises_helpful_error(monkeypatch):
     monkeypatch.setattr(read_index, "deps_available", lambda: False)
     with pytest.raises(ImportError, match="geoseeq\\[indexing\\]"):

@@ -244,7 +244,7 @@ def _index_one_reads_file(reads_file, local_path):
     from os.path import join
     from geoseeq.result.read_index import build_read_index, write_index_json
 
-    if not local_path.endswith('.gz'):
+    if not local_path.endswith(('.gz', '.bgz')):
         logger.warning(f"Skipping index for {local_path}: not gzipped (seek index needs gzip).")
         return
     try:

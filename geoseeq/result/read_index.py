@@ -47,30 +47,29 @@ def build_read_index(filepath, gzi_path, spacing=DEFAULT_SPACING, bufsize=1 << 2
     """
     _require_deps()
     import indexed_gzip as igz
-    from isal import isal_zlib
+    from isal import igzip
 
     # Seekable .gzi (indexed_gzip runs its own C decompress pass).
+    # TODO: one-pass fusion — feed a single decompressed stream to both the
+    # checkpoint recorder and the counter instead of decompressing twice.
     f = igz.IndexedGzipFile(filepath, spacing=spacing)
     f.build_full_index()
     f.export_index(gzi_path)
     f.close()
 
-    # Read counts + per-section counts (isal decompress pass).
-    d = isal_zlib.decompressobj(16 + isal_zlib.MAX_WBITS)
+    # Read counts + per-section counts (isal decompress pass). igzip.open handles
+    # multi-member gzip (concatenated per-lane .gz), which a bare decompressobj would
+    # truncate at the first member.
     newlines = uncomp = 0
     next_bound = spacing
     sections = [{"offset": 0, "reads_before": 0}]
-    with open(filepath, "rb") as fh:
-        for chunk in iter(lambda: fh.read(bufsize), b""):
-            out = d.decompress(chunk)
+    with igzip.open(filepath, "rb") as fh:
+        for out in iter(lambda: fh.read(bufsize), b""):
             newlines += out.count(b"\n")
             uncomp += len(out)
             if uncomp >= next_bound:
                 sections.append({"offset": uncomp, "reads_before": newlines // 4})
                 next_bound += spacing
-        out = d.flush()
-        newlines += out.count(b"\n")
-        uncomp += len(out)
 
     return {
         "format": INDEX_FORMAT,
