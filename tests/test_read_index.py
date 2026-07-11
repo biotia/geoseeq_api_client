@@ -139,3 +139,86 @@ def test_index_json_roundtrips(tmp_path: Path):
     index = {"format": read_index.INDEX_FORMAT, "read_count": 7, "sections": []}
     path = read_index.write_index_json(index, str(tmp_path / "x.json"))
     assert json.loads(Path(path).read_text())["read_count"] == 7
+
+
+# --- tar index -----------------------------------------------------------------
+
+import tarfile
+import io
+
+
+def _make_tar(path, files, gzipped):
+    mode = "w:gz" if gzipped else "w"
+    with tarfile.open(path, mode) as tf:
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+
+def test_build_tar_index_plain(tmp_path: Path):
+    files = {"a.txt": b"hello", "b/c.txt": b"world!!"}
+    tar = tmp_path / "plain.tar"
+    _make_tar(tar, files, gzipped=False)
+
+    index = read_index.build_tar_index(str(tar))
+
+    assert index["format"] == read_index.TAR_INDEX_FORMAT
+    assert index["compressed"] is False
+    assert index["gzi_file"] is None
+    assert index["member_count"] == 2
+    by_name = {m["name"]: m for m in index["members"]}
+    assert by_name["a.txt"]["size"] == 5 and by_name["b/c.txt"]["size"] == 7
+
+
+def test_read_tar_member_plain_random_access(tmp_path: Path):
+    files = {"a.txt": b"hello", "big.bin": b"X" * 1000, "z.txt": b"tail"}
+    tar = tmp_path / "plain.tar"
+    _make_tar(tar, files, gzipped=False)
+    index = read_index.build_tar_index(str(tar))
+    by_name = {m["name"]: m for m in index["members"]}
+
+    # Read the last member without scanning the whole archive.
+    assert read_index.read_tar_member(str(tar), by_name["z.txt"]) == b"tail"
+    assert read_index.read_tar_member(str(tar), by_name["a.txt"]) == b"hello"
+
+
+@needs_deps
+def test_build_and_read_tar_index_gzipped(tmp_path: Path):
+    files = {"a.txt": b"hello", "b.txt": b"second file", "c.txt": b"third"}
+    tar = tmp_path / "arc.tar.gz"
+    _make_tar(tar, files, gzipped=True)
+    gzi = tmp_path / "arc.gzi"
+
+    index = read_index.build_tar_index(str(tar), str(gzi))
+
+    assert index["compressed"] is True
+    assert gzi.exists() and index["gzi_file"] == "arc.gzi"
+    by_name = {m["name"]: m for m in index["members"]}
+    # Random access into the gzipped tar via the seek index.
+    got = read_index.read_tar_member(str(tar), by_name["b.txt"], gzi_path=str(gzi))
+    assert got == b"second file"
+
+
+def test_index_one_tar_file_skips_non_tar(tmp_path: Path):
+    from geoseeq.cli.upload.upload import _index_one_tar_file
+    not_tar = tmp_path / "notes.txt"
+    not_tar.write_text("just text")
+    folder = MagicMock()
+
+    _index_one_tar_file(folder, "notes.txt", str(not_tar))
+
+    folder.result_file.assert_not_called()
+
+
+def test_index_one_tar_file_uploads_sidecar(tmp_path: Path):
+    from geoseeq.cli.upload.upload import _index_one_tar_file
+    tar = tmp_path / "plain.tar"
+    _make_tar(tar, {"a.txt": b"hi"}, gzipped=False)
+    folder = MagicMock()
+
+    _index_one_tar_file(folder, "plain.tar", str(tar))
+
+    uploaded = [c.args[0] for c in folder.result_file.call_args_list]
+    assert "plain.tar.tar-index.json" in uploaded
+    assert "plain.tar.gzi" not in uploaded  # plain tar -> no gzi sidecar

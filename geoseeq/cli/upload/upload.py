@@ -35,6 +35,33 @@ recursive_option = click.option('--recursive/--no-recursive', default=True, help
 hidden_option = click.option('--hidden/--no-hidden', default=False, help='Upload hidden files in subfolders')
 
 
+def _index_one_tar_file(result_folder, geoseeq_file_name, local_path):
+    """Best-effort: index a tar's members (+ a .gzi seek index if gzipped) and upload
+    them as sidecar files (`.tar-index.json`, `.gzi`) for random access to members.
+    Non-tar inputs are skipped; failures are logged, never block the upload."""
+    import tarfile
+    import tempfile
+    from os.path import join
+    from geoseeq.result.read_index import build_tar_index, write_index_json, is_gzipped
+
+    if not tarfile.is_tarfile(local_path):
+        return  # the flag is a broad post-pass; quietly skip non-tar files
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            gzi = join(tmp, 'archive.gzi') if is_gzipped(local_path) else None
+            index = build_tar_index(local_path, gzi)
+            if index['gzi_file']:  # record the uploaded sidecar name, not the temp one
+                index['gzi_file'] = geoseeq_file_name + '.gzi'
+            index_json = write_index_json(index, join(tmp, 'archive.tar-index.json'))
+            result_folder.result_file(geoseeq_file_name + '.tar-index.json').upload_file(index_json)
+            if gzi:
+                result_folder.result_file(geoseeq_file_name + '.gzi').upload_file(gzi)
+            click.echo(f"Indexed {basename(local_path)}: {index['member_count']} members"
+                       + (", + gzi seek index." if gzi else "."), err=True)
+    except Exception as exc:
+        logger.warning(f"Tar indexing failed for {local_path}: {exc}")
+
+
 @click.command('files')
 @use_common_state
 @click.option('--cores', default=1, help='Number of uploads to run in parallel', show_default=True)
@@ -48,12 +75,14 @@ hidden_option = click.option('--hidden/--no-hidden', default=False, help='Upload
 @recursive_option
 @hidden_option
 @no_new_versions_option
+@click.option('--index-tar/--no-index-tar', default=False,
+              help='For uploaded tar files, also build a member index (+ a .gzi seek index if gzipped) and upload them as sidecar files enabling random access to members (default off). The .gzi needs the "indexing" extra.')
 @click.option('-n', '--geoseeq-file-name', default=None, multiple=True,
               help='Specify a different name for the file on GeoSeeq than the local file name.',
               show_default=True)
 @folder_id_arg
 @click.argument('file_paths', type=click.Path(exists=True), nargs=-1)
-def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb, ignore_errors, yes, private, link_type, recursive, hidden, no_new_versions, geoseeq_file_name, folder_id, file_paths):
+def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb, ignore_errors, yes, private, link_type, recursive, hidden, no_new_versions, index_tar, geoseeq_file_name, folder_id, file_paths):
     """Upload files to GeoSeeq.
 
     This command uploads files to either a sample or project on GeoSeeq. It can be used to upload
@@ -108,9 +137,9 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
             raise click.UsageError('Cannot use --geoseeq-file-name with recursive folder uploads')
         if len(geoseeq_file_name) != len(file_paths):
             raise click.UsageError('Number of --geoseeq-file-name arguments must match number of file_paths')
-        name_pairs = zip(geoseeq_file_name, file_paths)
+        name_pairs = list(zip(geoseeq_file_name, file_paths))
     else:
-        name_pairs = zip([basename(fp) for fp in file_paths], file_paths)
+        name_pairs = list(zip([basename(fp) for fp in file_paths], file_paths))
     
     upload_manager = GeoSeeqUploadManager(
         n_parallel_uploads=cores,
@@ -138,6 +167,14 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         click.confirm('Continue?', abort=True)
     logger.info(f'Uploading {len(upload_manager)} files to {result_folder}')
     upload_manager.upload_files()
+
+    if index_tar and link_type == 'upload':
+        for gs_name, file_path in name_pairs:
+            if isfile(file_path):
+                _index_one_tar_file(result_folder, gs_name, file_path)
+    elif index_tar:
+        logger.warning(f"--index-tar is ignored for --link-type {link_type} "
+                       "(indexing only runs on byte uploads).")
 
 
 @click.command('folders')
