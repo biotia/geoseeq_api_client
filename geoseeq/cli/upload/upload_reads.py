@@ -264,9 +264,35 @@ def _index_one_reads_file(reads_file, local_path):
         logger.warning(f"Read indexing failed for {local_path}: {exc}")
 
 
-def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state, replicate=None, index_reads=False):
+def _bgzf_one_reads_file(local_path, out_dir):
+    """Recompress a reads file to seekable BGZF (+ .gzi) for upload.
 
-    with requests.Session() as session:
+    Returns (upload_path, gzi_path). BGZF is an enhancement, not a requirement: on
+    any failure we fall back to uploading the original file (gzi_path is None) so the
+    upload still succeeds. The BGZF temp keeps the original filename so the stored
+    name is unchanged."""
+    import os
+    from os.path import join, basename
+    from geoseeq.result.bgzf import make_bgzf_with_index
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        bgzf_path = join(out_dir, basename(local_path))  # preserve the filename
+        gzi_path = bgzf_path + '.gzi'
+        stats = make_bgzf_with_index(local_path, bgzf_path, gzi_path)
+        click.echo(f"BGZF {basename(local_path)}: {stats['gzi_blocks']} blocks"
+                   + (" (already bgzf)" if stats['already_bgzf'] else " (recompressed)")
+                   + ".", err=True)
+        return bgzf_path, gzi_path
+    except Exception as exc:
+        logger.warning(f"BGZF recompression failed for {local_path}: {exc}; uploading original.")
+        return local_path, None
+
+
+def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new_versions, cores, state, replicate=None, index_reads=False, bgzf=False):
+    import tempfile
+    from os.path import join
+
+    with requests.Session() as session, tempfile.TemporaryDirectory() as bgzf_tmp:
         upload_manager = GeoSeeqUploadManager(
             n_parallel_uploads=cores,
             session=session,
@@ -281,12 +307,27 @@ def _do_upload(groups, module_name, link_type, lib, filepaths, overwrite, no_new
         files_by_key = _bulk_prepare(
             lib.knex, lib, groups, module_name, need_file_uuids=False, replicate=replicate
         )
+        do_bgzf = bgzf and link_type == 'upload'
+        bgzf_gzis = []  # (result_file, gzi_path) to upload as sidecars after the reads
+        n = 0
         for group in groups:
             for field_name, path in group['fields'].items():
                 result_file = files_by_key[(group['sample_name'], field_name)]
-                upload_manager.add_result_file(result_file, filepaths[path])
+                upload_path = filepaths[path]
+                if do_bgzf:
+                    upload_path, gzi_path = _bgzf_one_reads_file(upload_path, join(bgzf_tmp, str(n)))
+                    if gzi_path:
+                        bgzf_gzis.append((result_file, gzi_path))
+                    n += 1
+                upload_manager.add_result_file(result_file, upload_path)
         upload_manager.upload_files()
 
+        for result_file, gzi_path in bgzf_gzis:
+            result_file.parent.result_file(result_file.name + '.gzi').upload_file(gzi_path)
+
+        if bgzf and link_type != 'upload':
+            logger.warning(f"--bgzf is ignored for --link-type {link_type} "
+                           "(recompression only runs on byte uploads).")
         if index_reads and link_type != 'upload':
             logger.warning("--index-reads is ignored for --link-type "
                            f"{link_type} (indexing only runs on byte uploads).")
@@ -403,10 +444,12 @@ def flatten_list_of_bams(filepaths):
 )
 @click.option('--index-reads/--no-index-reads', default=False,
               help='Also build a gzip seek index (.gzi) + read counts per gzipped fastq and upload them as sidecar files (default off). Needs the "indexing" extra.')
+@click.option('--bgzf/--no-bgzf', default=False,
+              help='Recompress each fastq to BGZF (block-gzip) before upload and attach a .gzi block index, making the reads randomly seekable with samtools/tabix (default off). Mutually exclusive with --index-reads.')
 @module_option(FASTQ_MODULE_NAMES)
 @project_id_arg
 @click.argument('fastq_files', type=click.Path(exists=True), nargs=-1)
-def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, private, link_type, no_new_versions, name_map, index_reads, module_name, project_id, fastq_files):
+def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, private, link_type, no_new_versions, name_map, index_reads, bgzf, module_name, project_id, fastq_files):
     """Upload fastq read files to GeoSeeq.
 
     This command automatically groups files by their sample name, lane number
@@ -462,6 +505,11 @@ def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, priv
 
     ---
     """
+    if bgzf and index_reads:
+        raise click.UsageError(
+            "--bgzf and --index-reads are mutually exclusive: --bgzf rewrites the reads "
+            "as seekable block-gzip, while --index-reads indexes the original gzip stream in place."
+        )
     knex = state.get_knex()
     proj = handle_project_id(knex, project_id, yes, private)
     filepaths = {basename(line): line for line in flatten_list_of_fastxs(fastq_files)}
@@ -469,7 +517,7 @@ def cli_upload_reads_wizard(state, cores, overwrite, replicate, yes, regex, priv
     _maybe_warn_link_type_s3_deprecated(link_type, filepaths)
     regex = get_regex(knex, filepaths, module_name, proj, regex)
     groups = group_files(knex, filepaths, module_name, regex, yes, name_map)
-    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state, replicate=replicate, index_reads=index_reads)
+    _do_upload(groups, module_name, link_type, proj, filepaths, overwrite, no_new_versions, cores, state, replicate=replicate, index_reads=index_reads, bgzf=bgzf)
 
 
 # @click.command('bam')
