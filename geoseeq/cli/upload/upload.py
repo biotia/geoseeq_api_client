@@ -188,27 +188,38 @@ def cli_upload_file(state, cores, threads_per_upload, num_retries, chunk_size_mb
         session=None, #knex.new_session(),
         chunk_size_mb=chunk_size_mb if chunk_size_mb > 0 else None,
     )
+    # Add the ORIGINAL paths first, so the preview and confirmation reflect the
+    # user's files — and so aborting costs no recompression (BGZF conversion is
+    # deferred until after the confirm below).
+    for geoseeq_file_name, file_path in name_pairs:
+        if isfile(file_path):
+            upload_manager.add_local_file_to_result_folder(result_folder, file_path, geoseeq_file_name=geoseeq_file_name)
+        elif isdir(file_path) and recursive:
+            if do_bgzf:
+                logger.warning(f"--convert-file-format does not convert files inside uploaded folder "
+                               f"{file_path}; pass files directly as arguments to convert them.")
+            upload_manager.add_local_folder_to_result_folder(result_folder, file_path, recursive=recursive, hidden_files=hidden, prefix=file_path, geoseeq_file_name=geoseeq_file_name)
+        elif isdir(file_path) and not recursive:
+            raise click.UsageError('Cannot upload a folder without --recursive')
+    click.echo(upload_manager.get_preview_string(), err=True)
+    if not yes:
+        click.confirm('Continue?', abort=True)
+
     tmp_ctx = tempfile.TemporaryDirectory() if do_bgzf else contextlib.nullcontext()
     with tmp_ctx as bgzf_tmp:
         bgzf_gzis = []  # (geoseeq_file_name, gzi_path) sidecars to upload after conversion
-        for i, (geoseeq_file_name, file_path) in enumerate(name_pairs):
-            if isfile(file_path):
-                upload_path = file_path
-                if do_bgzf:
-                    upload_path, gzi_path = convert_one_to_bgzf(file_path, join(bgzf_tmp, str(i)))
+        if do_bgzf:
+            converted = {}  # original path -> converted BGZF temp path
+            for i, (geoseeq_file_name, file_path) in enumerate(name_pairs):
+                if isfile(file_path):
+                    conv, gzi_path = convert_one_to_bgzf(file_path, join(bgzf_tmp, str(i)))
+                    converted[file_path] = conv
                     if gzi_path:
                         bgzf_gzis.append((geoseeq_file_name, gzi_path))
-                upload_manager.add_local_file_to_result_folder(result_folder, upload_path, geoseeq_file_name=geoseeq_file_name)
-            elif isdir(file_path) and recursive:
-                if do_bgzf:
-                    logger.warning(f"--convert-file-format does not convert files inside uploaded folder "
-                                   f"{file_path}; pass files directly as arguments to convert them.")
-                upload_manager.add_local_folder_to_result_folder(result_folder, file_path, recursive=recursive, hidden_files=hidden, prefix=file_path, geoseeq_file_name=geoseeq_file_name)
-            elif isdir(file_path) and not recursive:
-                raise click.UsageError('Cannot upload a folder without --recursive')
-        click.echo(upload_manager.get_preview_string(), err=True)
-        if not yes:
-            click.confirm('Continue?', abort=True)
+            # Repoint the already-previewed uploads at their converted temp files.
+            upload_manager._result_files = [
+                (rf, converted.get(lp, lp), lt) for rf, lp, lt in upload_manager._result_files
+            ]
         logger.info(f'Uploading {len(upload_manager)} files to {result_folder}')
         upload_manager.upload_files()
 

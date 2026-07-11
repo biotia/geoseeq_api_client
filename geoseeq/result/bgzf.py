@@ -30,7 +30,8 @@ def is_bgzf(filepath):
     """True if the file already starts with a BGZF block header (gzip + 'BC' extra)."""
     with open(filepath, "rb") as f:
         head = f.read(18)
-    return len(head) >= 14 and head[:4] == b"\x1f\x8b\x08\x04" and head[12:14] == b"BC"
+    # Require a full 18-byte BGZF block header so downstream framing reads are safe.
+    return len(head) >= 18 and head[:4] == b"\x1f\x8b\x08\x04" and head[12:14] == b"BC"
 
 
 def _open_decompressed(filepath):
