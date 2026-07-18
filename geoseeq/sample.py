@@ -214,7 +214,7 @@ class Sample(RemoteObject):
                 # up in _grn_to_file -> None.split(":")).
                 if read_type in ["short_read::paired_end"]:
                     for pair in file_grns:
-                        if not pair or pair[0] is None or pair[1] is None:
+                        if not pair or len(pair) < 2 or pair[0] is None or pair[1] is None:
                             continue
                         files[read_type][folder_name].append(
                             [

@@ -43,6 +43,14 @@ def test_paired_end_lane_1_unchanged():
     assert files["short_read::paired_end"]["raw::raw_reads"] == [["FILE(grn:r1)", "FILE(grn:r2)"]]
 
 
+def test_paired_end_malformed_short_pair_skipped():
+    # a length-1 "pair" must not IndexError; it's skipped
+    blob = {"short_read::paired_end": {"raw::raw_reads": [["grn:r1"], ["grn:r1", "grn:r2"]]}}
+    s = _sample(blob)
+    files = s.get_all_fastqs()
+    assert files["short_read::paired_end"]["raw::raw_reads"] == [["FILE(grn:r1)", "FILE(grn:r2)"]]
+
+
 def test_paired_end_multiple_real_lanes_all_kept():
     blob = {"short_read::paired_end": {"raw::raw_reads": [["grn:l1r1", "grn:l1r2"], ["grn:l2r1", "grn:l2r2"]]}}
     s = _sample(blob)
