@@ -207,17 +207,28 @@ class Sample(RemoteObject):
             files[read_type] = {}
             for folder_name, file_grns in folders.items():
                 files[read_type][folder_name] = []
+                # file_grns is a lane-indexed array; lanes with no reads are
+                # placeholders ([None, None] for paired end, None for single).
+                # A sample whose reads sit on lane 3, say, leaves lanes 1-2 empty,
+                # so skip those instead of resolving a None grn (which would blow
+                # up in _grn_to_file -> None.split(":")).
                 if read_type in ["short_read::paired_end"]:
-                    files[read_type][folder_name].append(
-                        [
-                            self._grn_to_file(file_grns[0][0]),
-                            self._grn_to_file(file_grns[0][1]),
-                        ]
-                    )
+                    for pair in file_grns:
+                        if not pair or pair[0] is None or pair[1] is None:
+                            continue
+                        files[read_type][folder_name].append(
+                            [
+                                self._grn_to_file(pair[0]),
+                                self._grn_to_file(pair[1]),
+                            ]
+                        )
                 else:
-                    files[read_type][folder_name].append(
-                        self._grn_to_file(file_grns[0])
-                    )
+                    for grn in file_grns:
+                        if grn is None:
+                            continue
+                        files[read_type][folder_name].append(
+                            self._grn_to_file(grn)
+                        )
         return files
 
     def get_one_fasta(self):
