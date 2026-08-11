@@ -245,7 +245,8 @@ class SampleResultFolder(ResultFolder, SampleBioInfoFolder):
         )
         self.load_blob(blob)
 
-    def result_file(self, field_name, pipeline_run=None, data={}):
+    def result_file(self, field_name, pipeline_run=None, data={},
+                    version_replicate=None, version_index=None):
         d = {
             "data": data,
             "field_name": field_name,
@@ -253,7 +254,10 @@ class SampleResultFolder(ResultFolder, SampleBioInfoFolder):
             "sample_ar": self,
         }
         logger.debug(f"Creating SampleAnalysisResultField for SampleAnalysisResult. {d}")
-        return SampleResultFile(self.knex, self, field_name, pipeline_run=pipeline_run, data=data)
+        return SampleResultFile(
+            self.knex, self, field_name, pipeline_run=pipeline_run, data=data,
+            version_replicate=version_replicate, version_index=version_index,
+        )
 
     def field(self, *args, **kwargs):
         return self.result_file(*args, **kwargs)
@@ -331,8 +335,12 @@ class ProjectResultFolder(ResultFolder):
         blob = self.knex.post(f"sample_group_ars?format=json", json=data)
         self.load_blob(blob)
 
-    def result_file(self, field_name, pipeline_run=None, data={}):
-        return ProjectResultFile(self.knex, self, field_name, pipeline_run=pipeline_run, data=data)
+    def result_file(self, field_name, pipeline_run=None, data={},
+                    version_replicate=None, version_index=None):
+        return ProjectResultFile(
+            self.knex, self, field_name, pipeline_run=pipeline_run, data=data,
+            version_replicate=version_replicate, version_index=version_index,
+        )
 
     def field(self, *args, **kwargs):
         return self.result_file(*args, **kwargs)
