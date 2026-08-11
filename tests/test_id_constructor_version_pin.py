@@ -20,6 +20,7 @@ from geoseeq.result.result_file import ProjectResultFile
 
 
 NAME = "My Org/My Project/My Result Folder/My Result File"
+SAMPLE_NAME = "My Org/My Project/My Sample/My Result Folder/My Result File"
 
 
 def _folder_returning(r_file):
@@ -94,3 +95,56 @@ def test_both_pins_propagate_value_error():
             from_ids.project_result_file_from_id(
                 real_knex, NAME, version_replicate="abc", version_index=0
             )
+
+
+# ---------------------------------------------------------------------------
+# Sample twin — sample_result_file_from_name / sample_result_file_from_id
+# ---------------------------------------------------------------------------
+
+
+def test_sample_result_file_from_name_forwards_pin():
+    """sample_result_file_from_name forwards the pin to result_file() and .get()s it."""
+    r_file = MagicMock()
+    r_folder = _folder_returning(r_file)
+    with patch.object(from_names, "sample_result_folder_from_name", return_value=r_folder):
+        out = from_names.sample_result_file_from_name(
+            Knex(), SAMPLE_NAME, version_replicate="xyz"
+        )
+    r_folder.result_file.assert_called_once_with(
+        "My Result File", version_replicate="xyz", version_index=None
+    )
+    r_file.get.assert_called_once()
+    assert out is r_file
+
+
+def test_sample_result_file_from_id_forwards_pin_via_name_path():
+    """A pinned sample id resolves through the name path and forwards the pin."""
+    r_file = MagicMock()
+    r_folder = _folder_returning(r_file)
+    with patch.object(from_names, "sample_result_folder_from_name", return_value=r_folder):
+        out = from_ids.sample_result_file_from_id(
+            Knex(), SAMPLE_NAME, version_replicate="xyz"
+        )
+    r_folder.result_file.assert_called_once_with(
+        "My Result File", version_replicate="xyz", version_index=None
+    )
+    r_file.get.assert_called_once()
+    assert out is r_file
+
+
+def test_sample_result_file_from_id_uuid_pin_raises():
+    """Pinning a sample result file version by UUID/GRN raises NotImplementedError."""
+    uuid = "d5e5f5a5-1111-2222-3333-444455556666"
+    with pytest.raises(NotImplementedError):
+        from_ids.sample_result_file_from_id(Knex(), uuid, version_replicate="xyz")
+
+
+def test_sample_result_file_from_id_no_pin_uses_generic_dispatch():
+    """Without a pin, sample resolution stays on the unchanged _generic_from_id dispatch."""
+    r_file = MagicMock()
+    r_folder = _folder_returning(r_file)
+    with patch.object(from_names, "sample_result_folder_from_name", return_value=r_folder):
+        from_ids.sample_result_file_from_id(Knex(), SAMPLE_NAME)
+    r_folder.result_file.assert_called_once_with(
+        "My Result File", version_replicate=None, version_index=None
+    )
