@@ -169,6 +169,9 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload, ResultFileS
                 self.load_blob(field.get_blob(), allow_overwrite=allow_overwrite)
                 self._already_fetched = True
                 self._modified = False
+                # Pin here too, since this path bypasses _get().
+                if self.version_replicate is not None or self.version_index is not None:
+                    self._pin_to_version()
                 return
 
     def get_post_data(self):

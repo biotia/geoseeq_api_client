@@ -70,6 +70,7 @@ def test_no_pin_keeps_current_version():
     knex = MagicMock()
     knex.get.side_effect = [dict(CURRENT_BLOB)]
     parent = MagicMock()
+    parent.idem = MagicMock()
     result_file = SampleResultFile(knex, parent, "R1")
     result_file._get()
     assert result_file.stored_data == {"url": "https://example.com/current"}
@@ -90,6 +91,21 @@ def test_both_pins_raises_value_error():
             MagicMock(), MagicMock(), "R1",
             version_replicate="aaaaaaaaaaaa", version_index=0,
         )
+
+
+def test_get_from_list_pins_to_version():
+    """Fetching via the _get_from_list workaround path also pins to the version."""
+    knex = MagicMock()
+    knex.get.side_effect = [dict(VERSIONS_BLOB)]
+    parent = MagicMock()
+    parent.idem = MagicMock()
+    matching_field = MagicMock()
+    matching_field.name = "R1"
+    matching_field.get_blob.return_value = dict(CURRENT_BLOB)
+    parent.get_result_files.return_value = [matching_field]
+    result_file = SampleResultFile(knex, parent, "R1", version_replicate="bbbbbbbbbbbb")
+    result_file._get_from_list()
+    assert result_file.stored_data == {"url": "https://example.com/v0"}
 
 
 def test_project_result_file_threads_version_params():
