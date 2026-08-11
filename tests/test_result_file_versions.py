@@ -90,3 +90,14 @@ def test_both_pins_raises_value_error():
             MagicMock(), MagicMock(), "R1",
             version_replicate="aaaaaaaaaaaa", version_index=0,
         )
+
+
+def test_project_result_file_threads_version_params():
+    """ProjectResultFolder.result_file() forwards version params to ProjectResultFile."""
+    from geoseeq.result.result_file import ProjectResultFile
+    knex = MagicMock()
+    knex.get.side_effect = [dict(CURRENT_BLOB), dict(VERSIONS_BLOB)]
+    parent = MagicMock()
+    rf = ProjectResultFile(knex, parent, "R1", version_replicate="bbbbbbbbbbbb")
+    rf._get()
+    assert rf.stored_data == {"url": "https://example.com/v0"}
