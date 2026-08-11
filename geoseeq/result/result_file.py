@@ -35,7 +35,8 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload, ResultFileS
     ]
     parent_field = "parent"
 
-    def __init__(self, knex, parent, field_name, pipeline_run=None, data={}):
+    def __init__(self, knex, parent, field_name, pipeline_run=None, data={},
+                 version_replicate=None, version_index=None):
         super().__init__(self)
         self.knex = knex
         self.parent = parent
@@ -44,6 +45,13 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload, ResultFileS
         self.pipeline_run = pipeline_run
         self._cached_filename = None  # Used if the field points to S3, FTP, etc
         self._temp_filename = False
+        if version_replicate is not None and version_index is not None:
+            raise ValueError(
+                "Specify at most one of version_replicate or version_index, not both."
+            )
+        # Optional pin to a historical version of this field.
+        self.version_replicate = version_replicate
+        self.version_index = version_index
 
     @property
     def is_sample_result(self):
@@ -126,6 +134,26 @@ class ResultFile(RemoteObject, ResultFileUpload, ResultFileDownload, ResultFileS
         self.parent.idem()
         blob = self.knex.get(self.nested_url())
         self.load_blob(blob, allow_overwrite=allow_overwrite)
+        if self.version_replicate is not None or self.version_index is not None:
+            self._pin_to_version()
+
+    def _pin_to_version(self):
+        """Overwrite stored_data with the pinned historical version of this field."""
+        blob = self.knex.get(f"{self.canon_url()}/{self.uuid}/versions")
+        versions = blob["versioned_fields"]
+        if self.version_replicate is not None:
+            match = self._find_version(versions, "version_replicate", self.version_replicate)
+        else:
+            match = self._find_version(versions, "index", self.version_index)
+        self.stored_data = match["stored_data"]
+
+    @staticmethod
+    def _find_version(versions, key, value):
+        """Return the version entry whose key equals value, or raise if none match."""
+        for version in versions:
+            if version.get(key) == value:
+                return version
+        raise RemoteObjectError(f"No field version found with {key}={value!r}.")
 
     def _get_from_list(self, allow_overwrite=False):
         """Fetch the result from the server by listing the parent's children and finding this field.
