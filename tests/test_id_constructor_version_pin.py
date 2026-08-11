@@ -148,3 +148,29 @@ def test_sample_result_file_from_id_no_pin_uses_generic_dispatch():
     r_folder.result_file.assert_called_once_with(
         "My Result File", version_replicate=None, version_index=None
     )
+
+
+# ---------------------------------------------------------------------------
+# Malformed-name guard — a pinned id that is neither GRN/UUID nor a valid
+# absolute name must raise the clean ValueError, not a raw IndexError.
+# ---------------------------------------------------------------------------
+
+# Too few slashes for either type: a raw name-path parse would IndexError at
+# tkns[3]/tkns[4]; the guard must turn this into a clean ValueError instead.
+MALFORMED_NAME = "My Org/My Project"
+
+
+def test_project_result_file_from_id_malformed_name_pin_raises_value_error():
+    """A malformed name + pin raises ValueError (not IndexError) for the project variant."""
+    with pytest.raises(ValueError):
+        from_ids.project_result_file_from_id(
+            Knex(), MALFORMED_NAME, version_replicate="abc"
+        )
+
+
+def test_sample_result_file_from_id_malformed_name_pin_raises_value_error():
+    """A malformed name + pin raises ValueError (not IndexError) for the sample variant."""
+    with pytest.raises(ValueError):
+        from_ids.sample_result_file_from_id(
+            Knex(), MALFORMED_NAME, version_replicate="xyz"
+        )
