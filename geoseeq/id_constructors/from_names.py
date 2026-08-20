@@ -103,29 +103,33 @@ def result_folder_from_name(knex, name):
 
 
 @with_knex
-def sample_result_file_from_name(knex, name):
+def sample_result_file_from_name(knex, name, version_replicate=None, version_index=None):
     """Return the sample result file object which the name points to.
-    
+
     e.g. "My Org/My Project/My Sample/My Result Folder/My Result File"
+
+    Optionally pin the file to a historical version via version_replicate or version_index.
     """
     tkns = name.split("/")
     result_file_name = tkns[4]
     r_folder = sample_result_folder_from_name(knex, name)
-    r_file = r_folder.result_file(result_file_name)
+    r_file = r_folder.result_file(result_file_name, version_replicate=version_replicate, version_index=version_index)
     r_file.get()
     return r_file
 
 
 @with_knex
-def project_result_file_from_name(knex, name):
+def project_result_file_from_name(knex, name, version_replicate=None, version_index=None):
     """Return the project result file object which the name points to.
-    
+
     e.g. "My Org/My Project/My Result Folder/My Result File"
+
+    Optionally pin the file to a historical version via version_replicate or version_index.
     """
     tkns = name.split("/")
     result_file_name = tkns[3]
     r_folder = project_result_folder_from_name(knex, name)
-    r_file = r_folder.result_file(result_file_name)
+    r_file = r_folder.result_file(result_file_name, version_replicate=version_replicate, version_index=version_index)
     r_file.get()
     return r_file
 

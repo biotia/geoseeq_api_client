@@ -82,23 +82,45 @@ def result_folder_from_id(knex, id):
 
 
 @with_knex
-def sample_result_file_from_id(knex, id):
-    """Return the sample result file object which the id points to."""
+def sample_result_file_from_id(knex, id, version_replicate=None, version_index=None):
+    """Return the sample result file object which the id points to.
+
+    Optionally pin the file to a historical version via version_replicate or version_index.
+    Pinning is only supported for absolute-name ids, not UUIDs/GRNs.
+    """
+    if version_replicate is not None or version_index is not None:
+        if is_grn_or_uuid(id):
+            raise NotImplementedError("Pinning a result file version by UUID/GRN is not supported; use an absolute name.")
+        if not is_abs_name(id, 'sample_result_file'):
+            raise ValueError(f'"{id}" is not a GRN, UUID, or absolute name for sample_result_file')
+        return sample_result_file_from_name(knex, id, version_replicate=version_replicate, version_index=version_index)
     return _generic_from_id(knex, id, sample_result_file_from_uuid, sample_result_file_from_name, 'sample_result_file')
 
 
 @with_knex
-def project_result_file_from_id(knex, id):
-    """Return the project result file object which the id points to."""
+def project_result_file_from_id(knex, id, version_replicate=None, version_index=None):
+    """Return the project result file object which the id points to.
+
+    Optionally pin the file to a historical version via version_replicate or version_index.
+    Pinning is only supported for absolute-name ids, not UUIDs/GRNs.
+    """
+    if version_replicate is not None or version_index is not None:
+        if is_grn_or_uuid(id):
+            raise NotImplementedError("Pinning a result file version by UUID/GRN is not supported; use an absolute name.")
+        if not is_abs_name(id, 'project_result_file'):
+            raise ValueError(f'"{id}" is not a GRN, UUID, or absolute name for project_result_file')
+        return project_result_file_from_name(knex, id, version_replicate=version_replicate, version_index=version_index)
     return _generic_from_id(knex, id, project_result_file_from_uuid, project_result_file_from_name, 'project_result_file')
 
 
 @with_knex
 def result_file_from_id(knex, id):
     """Return a result file object which the id points to.
-    
+
     Guess the result file is a sample result file. If not, try a project result file.
     """
+    # Version pinning is unsupported on this auto-detect variant; callers needing a pin
+    # should use the typed project_result_file_from_id/sample_result_file_from_id.
     try:
         return _generic_from_id(knex, id, result_file_from_uuid, result_file_from_name, 'sample_result_file')
     except ValueError:
