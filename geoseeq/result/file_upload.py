@@ -403,8 +403,18 @@ class ResultFileUpload:
         return self
 
     def upload_file(self, filepath, multipart_thresh=FIVE_MB, overwrite=True, no_new_versions=False, **kwargs):
-        if self.exists() and not overwrite:  
-            raise GeoseeqGeneralError(f"Overwrite is set to False and file {self.uuid} already exists.")
+        """Upload `filepath` to this result file, returning the uploaded result file.
+
+        When `overwrite` is False the upload is refused only if this result file
+        already has downloadable data that would be replaced. The mere existence
+        of the result file *record* is not enough: the CLI routinely creates the
+        record (directly or in bulk) before calling this method, and an empty
+        record has nothing to overwrite.
+        """
+        if not overwrite and self.has_downloadable_file():
+            raise GeoseeqGeneralError(
+                f"Overwrite is set to False but file '{self.name}' already has downloadable data."
+            )
         if not kwargs.get("use_atomic_upload", False):
             self.idem()
         else:
